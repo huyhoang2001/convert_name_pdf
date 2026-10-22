@@ -1,0 +1,10 @@
+﻿node_modules/
+dist/
+portable-package/
+portable-release/
+release/
+graphify-out/
+*.tsbuildinfo
+.env*
+!.env.example
+*.log

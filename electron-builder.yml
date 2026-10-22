@@ -1,0 +1,16 @@
+appId: com.safe-pdf-rename.desktop
+productName: SAFE PDF RENAME
+electronDist: node_modules/electron/dist
+electronLanguages:
+  - en-US
+  - vi
+directories:
+  buildResources: assets
+  output: portable-package
+files:
+  - dist/**
+  - electron/**
+  - package.json
+win:
+  target: portable
+  icon: assets/logo.ico

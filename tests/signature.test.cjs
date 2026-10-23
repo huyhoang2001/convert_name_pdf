@@ -7,19 +7,18 @@ const ExcelJS = require('exceljs');
 const signature = require('../electron/signature.cjs');
 const { readWorkbook, saveWorkbook } = require('../electron/signature-workbook.cjs');
 
-test('signature records accept integer counts and grouped numeric fees', () => {
+test('signature records accept integer counts and fees above 9,999', () => {
   const record = { id: 'row', date: '', person: '', document: '', certifier: '', copies: '2', fee: '10,000', notes: '' };
   assert.doesNotThrow(() => signature.validate([record]));
+  assert.doesNotThrow(() => signature.validate([{ ...record, fee: '150095000' }]));
   assert.throws(() => signature.validate([{ ...record, copies: '2.5' }]), /whole number/);
   assert.throws(() => signature.validate([{ ...record, fee: '1,00' }]), /whole number/);
 });
 
-test('signature fee input is capped at 9,999 in release builds and unrestricted in development', async () => {
+test('signature fee input accepts large whole-number fees', async () => {
   const { canEnterSignatureFee } = await import('../src/signature-fee.js');
-  assert.equal(canEnterSignatureFee('9999', false), true);
-  assert.equal(canEnterSignatureFee('10000', false), false);
-  assert.equal(canEnterSignatureFee('33333333', true), true);
-  assert.equal(canEnterSignatureFee('12.5', true), false);
+  assert.equal(canEnterSignatureFee('150095000'), true);
+  assert.equal(canEnterSignatureFee('12.5'), false);
 });
 
 test('signature register reads template columns, ignores sequence-only rows, and saves back with the template header', async () => {

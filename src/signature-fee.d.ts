@@ -1,1 +1,1 @@
-export function canEnterSignatureFee(value: string, development: boolean): boolean;
+export function canEnterSignatureFee(value: string): boolean;

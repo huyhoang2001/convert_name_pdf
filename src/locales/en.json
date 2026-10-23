@@ -172,7 +172,6 @@
   "signatureRequestor": "Enter information",
   "signatureCopiesInput": "Number of originals / certified copies",
   "signatureFeeInput": "Fee",
-  "signatureFeeLimit": "The fee cannot exceed 9,999 VND in this release.",
   "signatureNotesInput": "Notes (optional)",
   "signatureEmpty": "No sheets yet. Add a sheet or import a workbook to begin.",
   "signatureSaved": "Signature register saved.",

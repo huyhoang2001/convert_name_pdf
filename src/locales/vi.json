@@ -179,5 +179,12 @@
   "translationCertifier": "Họ tên, chức danh người ký chứng thực",
   "translationCopies": "Số lượng bản dịch đã được chứng thực chữ ký",
   "translationFee": "Phí chứng thực",
-  "translationNotes": "Ghi chú"
+  "translationNotes": "Ghi chú",
+  "sheetAdd": "Thêm trang tính",
+  "sheetRename": "Đổi tên trang tính",
+  "sheetDelete": "Xóa trang tính",
+  "sheetNamePrompt": "Tên trang tính (tối đa 31 ký tự)",
+  "sheetNameInvalid": "Tên trang tính phải là duy nhất, tối đa 31 ký tự và không chứa \\ / ? * : [ ].",
+  "sheetDeleteConfirm": "Xóa trang tính này cùng toàn bộ bản ghi?",
+  "sheetsImported": "trang tính đã nhập"
 }

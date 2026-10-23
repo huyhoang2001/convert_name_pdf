@@ -1,6 +1,6 @@
 const fields = ['number', 'date', 'person', 'document', 'languages', 'certifier', 'copies', 'fee', 'notes'];
 const headers = {
-  EN: ['No. / certification number', 'Certification date', 'Full name and ID/passport', 'Translated document', 'Translated from / to', 'Certifying signer and title', 'Certified translation copies', 'Certification fee', 'Notes'],
+  EN: ['Serial / certification number', 'Certification date', 'Full name and identification document number', 'Translated document name', 'Translated from / to', 'Certifying signer and title', 'Number of certified translated copies', 'Certification fee', 'Notes'],
   VI: ['Số thứ tự / số chứng thực', 'Ngày tháng năm chứng thực', 'Họ tên, số Thẻ căn cước công dân/Thẻ căn cước, Căn cước điện tử/Giấy chứng nhận căn cước hoặc Hộ chiếu/giấy tờ có giá trị đi lại quốc tế', 'Tên của giấy tờ, văn bản đã được dịch', 'Dịch từ tiếng sang tiếng', 'Họ tên, chức danh người ký chứng thực', 'Số lượng bản dịch đã được chứng thực chữ ký', 'Phí chứng thực', 'Ghi chú']
 };
 function fromRows(rows) {
@@ -18,4 +18,19 @@ function validate(records) {
   }
   return records;
 }
-module.exports = { fields, headers, fromRows, validate };
+function loadSheets(data) {
+  if (Array.isArray(data) && data.length && Array.isArray(data[0]?.rows)) return validateSheets(data);
+  if (Array.isArray(data)) return [{ id: 'default', name: 'D\u1ecbch thu\u1eadt', rows: validate(data) }];
+  return validateSheets(data);
+}
+function validateSheets(sheets) {
+  if (!Array.isArray(sheets) || !sheets.length || sheets.length > 100) throw Error('Invalid translation sheets.');
+  const ids = new Set(), names = new Set();
+  for (const sheet of sheets) {
+    const key = typeof sheet?.name === 'string' ? sheet.name.trim().toLocaleLowerCase() : '';
+    if (!sheet || typeof sheet.id !== 'string' || !sheet.id || ids.has(sheet.id) || !key || key.length > 31 || /[\\/?*:[\]]/.test(key) || names.has(key)) throw Error('Invalid translation sheet name.');
+    ids.add(sheet.id); names.add(key); validate(sheet.rows);
+  }
+  return sheets;
+}
+module.exports = { fields, headers, fromRows, validate, loadSheets, validateSheets };

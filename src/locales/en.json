@@ -179,5 +179,12 @@
   "translationCertifier": "Certifying signer and title",
   "translationCopies": "Number of certified translated copies",
   "translationFee": "Certification fee",
-  "translationNotes": "Notes"
+  "translationNotes": "Notes",
+  "sheetAdd": "Add sheet",
+  "sheetRename": "Rename sheet",
+  "sheetDelete": "Delete sheet",
+  "sheetNamePrompt": "Sheet name (up to 31 characters)",
+  "sheetNameInvalid": "Enter a unique sheet name up to 31 characters. Excel sheet names cannot contain \\ / ? * : [ ].",
+  "sheetDeleteConfirm": "Delete this sheet and all its records?",
+  "sheetsImported": "sheets imported"
 }

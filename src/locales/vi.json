@@ -149,6 +149,7 @@
   "homeIntro": "Chọn một công cụ để bắt đầu.",
   "renameCardDescription": "Xem lại và sao chép an toàn các tệp PDF được đánh số với tên mới.",
   "countCardDescription": "Kiểm tra tệp được đánh số và tìm số còn thiếu trong từng dãy.",
+  "translationCardDescription": "Nhập và quản lý sổ chứng thực bản dịch bằng Excel.",
   "openTool": "Mở công cụ",
   "translation": "Dịch thuật",
   "translationIntro": "Quản lý sổ chứng thực bản dịch.",

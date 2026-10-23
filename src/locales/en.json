@@ -149,6 +149,7 @@
   "homeIntro": "Choose a tool to get started.",
   "renameCardDescription": "Review and safely copy numbered PDF files with new names.",
   "countCardDescription": "Check numbered files and find gaps in each sequence.",
+  "translationCardDescription": "Import and manage certified translation records in Excel.",
   "openTool": "Open tool",
   "translation": "Translation",
   "translationIntro": "Manage certified translation records.",

@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { fields, headers, fromRows, validate, loadSheets, validateSheets } = require('../electron/translation.cjs');
+const { fields, headers, fromRows, fromRowsIfRegister, validate, loadSheets, validateSheets } = require('../electron/translation.cjs');
 const vi = require('../src/locales/vi.json');
 const en = require('../src/locales/en.json');
 
@@ -13,6 +13,10 @@ test('translation workbook rows map localized headers into records', () => {
 
 test('translation registry rejects incomplete imported workbook headers and malformed persisted rows', () => {
   assert.throws(() => fromRows([['wrong']]), /all 9/);
+  assert.equal(fromRowsIfRegister([['cover sheet']]), null);
+  const shortened = [...headers.VI];
+  shortened[2] = shortened[2].slice(0, -3);
+  assert.equal(fromRows([ [null, ...shortened], [null, '1', '1/7/2026', 'Name', 'Passport', 'Japanese - Vietnamese', 'Signer', '01', '10,000', ''] ])[0].number, '1');
   assert.throws(() => validate([{ id: 'x', number: 1 }]), /Invalid/);
 });
 

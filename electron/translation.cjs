@@ -3,11 +3,22 @@ const headers = {
   EN: ['Serial / certification number', 'Certification date', 'Full name and identification document number', 'Translated document name', 'Translated from / to', 'Certifying signer and title', 'Number of certified translated copies', 'Certification fee', 'Notes'],
   VI: ['Số thứ tự / số chứng thực', 'Ngày tháng năm chứng thực', 'Họ tên, số Thẻ căn cước công dân/Thẻ căn cước, Căn cước điện tử/Giấy chứng nhận căn cước hoặc Hộ chiếu/giấy tờ có giá trị đi lại quốc tế', 'Tên của giấy tờ, văn bản đã được dịch', 'Dịch từ tiếng sang tiếng', 'Họ tên, chức danh người ký chứng thực', 'Số lượng bản dịch đã được chứng thực chữ ký', 'Phí chứng thực', 'Ghi chú']
 };
+function normalizeHeader(value) { return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); }
 function fromRows(rows) {
   const h = rows[0] || [];
-  const indexes = fields.map((field, i) => [field, h.findIndex(v => [headers.EN[i], headers.VI[i], field].includes(String(v ?? '').trim()))]);
+  const indexes = fields.map((field, i) => {
+    const expected = [headers.EN[i], headers.VI[i], field].map(normalizeHeader);
+    return [field, h.findIndex(value => {
+      const actual = normalizeHeader(value);
+      return expected.some(header => actual === header || (Math.min(actual.length, header.length) >= 32 && (actual.startsWith(header) || header.startsWith(actual))));
+    })];
+  });
   if (indexes.some(([, index]) => index < 0)) throw Error('Import file must contain all 9 translation register columns.');
   return rows.slice(1).filter(row => row.some(value => String(value ?? '').trim())).map((row, i) => Object.fromEntries([['id', `import-${Date.now()}-${i}`], ...indexes.map(([field, index]) => [field, String(row[index] ?? '')])]));
+}
+function fromRowsIfRegister(rows) {
+  try { return fromRows(rows); }
+  catch (error) { if (error.message === 'Import file must contain all 9 translation register columns.') return null; throw error; }
 }
 function validate(records) {
   if (!Array.isArray(records) || records.length > 100000) throw Error('Invalid translation register data.');
@@ -33,4 +44,4 @@ function validateSheets(sheets) {
   }
   return sheets;
 }
-module.exports = { fields, headers, fromRows, validate, loadSheets, validateSheets };
+module.exports = { fields, headers, fromRows, fromRowsIfRegister, validate, loadSheets, validateSheets };

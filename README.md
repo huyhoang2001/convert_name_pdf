@@ -20,6 +20,10 @@ The portable executable runs a packaged Electron app and does not change Windows
 
 Use **Window → Check for updates** to check the latest GitHub Release. When a matching portable executable is attached, the app downloads it and replaces the currently running copy after the portable launcher exits. **Window → Install update from file** accepts a replacement portable `.exe`. A rollback copy is kept until the updated app opens successfully. Settings remain under the user's AppData folder across portable updates. Name release assets `SAFE-PDF-RENAME-<version>.exe`; the updater also recognizes GitHub's normalized `SAFE.PDF.RENAME.<version>.exe` names.
 
+## Publishing a release
+
+The Windows portable release workflow runs when a version tag is pushed. Update the `version` in `package.json`, commit and push the changes, then push the matching tag (for example, `v1.0.2`). GitHub Actions runs `npm test`, builds the portable `.exe`, and attaches it to a GitHub Release. The tag must match the package version. The workflow uses the repository's built-in `GITHUB_TOKEN`; no extra secrets are required.
+
 ## Limits
 
 The algorithm follows the supplied BAT's filename and numbering rules. It does not inspect PDF contents. Windows path lengths at or above 260 characters are rejected. A source can still change in the tiny interval between freshness check and copy; exclusive destination creation prevents overwriting existing files.

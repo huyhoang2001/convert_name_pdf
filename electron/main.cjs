@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell, session } = require('electron');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { Readable } = require('node:stream');
@@ -6,6 +6,8 @@ const { pipeline } = require('node:stream/promises');
 const pdf = require('./pdf.cjs');
 const count = require('./count.cjs');
 const translation = require('./translation.cjs');
+const translationWorkbook = require('./translation-workbook.cjs');
+const signatureWorkbook = require('./signature-workbook.cjs');
 const { isNewerVersion, isPortableReleaseAsset, isWindowsExecutable, portableUpdateScript } = require('./update.cjs');
 const fs = require('node:fs');
 const releasesApi = 'https://api.github.com/repos/huyhoang2001/convert_name_pdf/releases/latest';
@@ -13,6 +15,8 @@ const releasesPage = 'https://github.com/huyhoang2001/convert_name_pdf/releases/
 const completedPaths = new Set();
 const completedReportPaths = new Set();
 const completedCountReportPaths = new Set();
+const importedTranslationWorkbooks = new Map();
+const importedSignatureWorkbooks = new Map();
 app.setPath('userData', path.join(app.getPath('appData'), app.getName()));
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 let mainWindow;
@@ -200,9 +204,80 @@ ipcMain.handle('count-existing-report', (_, folder) => {
   catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 });
 ipcMain.handle('count-save-report', (_, input) => { const report = count.saveReport(input.root, input.language); completedCountReportPaths.add(path.resolve(report)); return report; });
-ipcMain.handle('translation-load', () => { try { return translation.loadSheets(JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'translations.json'), 'utf8'))); } catch (error) { if (error.code === 'ENOENT') return translation.loadSheets([]); throw error; } });
+function clearTranslationData() {
+  fs.rmSync(path.join(app.getPath('userData'), 'translations.json'), { force: true });
+  importedTranslationWorkbooks.clear();
+  return [];
+}
+ipcMain.handle('translation-load', () => clearTranslationData());
+ipcMain.handle('translation-clear-cache', async () => { clearTranslationData(); await Promise.all([session.defaultSession.clearCache(), session.defaultSession.clearStorageData({ storages: ['cookies', 'shadercache', 'serviceworkers', 'cachestorage'] })]); return true; });
 ipcMain.handle('translation-save', (_, sheets) => { translation.validateSheets(sheets); fs.mkdirSync(app.getPath('userData'), { recursive: true }); fs.writeFileSync(path.join(app.getPath('userData'), 'translations.json'), JSON.stringify(sheets, null, 2), 'utf8'); return sheets.length; });
 ipcMain.handle('translation-parse-rows', (_, rows) => translation.fromRowsIfRegister(rows));
+ipcMain.handle('translation-import-workbook', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, { title: 'Import translation workbook', properties: ['openFile'], filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] });
+  if (result.canceled) return null;
+  const file = fs.realpathSync(result.filePaths[0]);
+  const imported = await translationWorkbook.readWorkbook(file);
+  importedTranslationWorkbooks.set(file, imported.sourceMap);
+  return imported;
+});
+ipcMain.handle('translation-refresh-workbook', async (_, value) => {
+  const file = typeof value === 'string' ? path.resolve(value) : '';
+  if (!importedTranslationWorkbooks.has(file)) throw Error('Import or create this workbook in the current session before refreshing it.');
+  const refreshed = await translationWorkbook.readWorkbook(file);
+  importedTranslationWorkbooks.set(file, refreshed.sourceMap);
+  return refreshed;
+});
+ipcMain.handle('translation-save-workbook', async (_, input) => {
+  const file = typeof input?.file === 'string' ? path.resolve(input.file) : '';
+  const sourceMap = importedTranslationWorkbooks.get(file);
+  if (!sourceMap || JSON.stringify(Object.entries(sourceMap).sort()) !== JSON.stringify(Object.entries(input.sourceMap || {}).sort())) throw Error('Import this workbook in the current session before saving it.');
+  const result = await translationWorkbook.saveWorkbook(file, input.sheets, sourceMap, 'VI');
+  importedTranslationWorkbooks.set(file, Object.fromEntries(input.sheets.map(sheet => [sheet.id, sheet.name])));
+  return result;
+});
+ipcMain.handle('translation-new-workbook', async (_, sheets) => {
+  translation.validateSheets(sheets);
+  const result = await dialog.showSaveDialog(mainWindow, { title: 'Create translation workbook', defaultPath: path.join(app.getPath('documents'), 'dich-thuat.xlsx'), filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] });
+  if (result.canceled || !result.filePath) return null;
+  const file = path.resolve(path.extname(result.filePath) ? result.filePath : `${result.filePath}.xlsx`);
+  await translationWorkbook.createWorkbook(file, sheets, 'VI');
+  const sourceMap = Object.fromEntries(sheets.map(sheet => [sheet.id, sheet.name]));
+  importedTranslationWorkbooks.set(file, sourceMap);
+  return { file, sourceMap };
+});
+ipcMain.handle('signature-import-workbook', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, { title: 'Import signature authentication workbook', properties: ['openFile'], filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] });
+  if (result.canceled) return null;
+  const file = fs.realpathSync(result.filePaths[0]);
+  const imported = await signatureWorkbook.readWorkbook(file);
+  importedSignatureWorkbooks.set(file, imported.sourceMap);
+  return imported;
+});
+ipcMain.handle('signature-refresh-workbook', async (_, value) => {
+  const file = typeof value === 'string' ? path.resolve(value) : '';
+  if (!importedSignatureWorkbooks.has(file)) throw Error('Import or create this signature workbook in the current session before refreshing it.');
+  const refreshed = await signatureWorkbook.readWorkbook(file);
+  importedSignatureWorkbooks.set(file, refreshed.sourceMap);
+  return refreshed;
+});
+ipcMain.handle('signature-save-workbook', async (_, input) => {
+  const file = typeof input?.file === 'string' ? path.resolve(input.file) : '';
+  const sourceMap = importedSignatureWorkbooks.get(file);
+  if (!sourceMap || JSON.stringify(Object.entries(sourceMap).sort()) !== JSON.stringify(Object.entries(input.sourceMap || {}).sort())) throw Error('Import or create this signature workbook in the current session before saving it.');
+  await signatureWorkbook.saveWorkbook(file, input.sheets, sourceMap);
+  importedSignatureWorkbooks.set(file, Object.fromEntries(input.sheets.map(sheet => [sheet.id, sheet.name])));
+  return input.sheets.length;
+});
+ipcMain.handle('signature-new-workbook', async (_, sheets) => {
+  const result = await dialog.showSaveDialog(mainWindow, { title: 'Create signature authentication workbook', defaultPath: path.join(app.getPath('documents'), 'so-chung-thuc-chu-ky.xlsx'), filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] });
+  if (result.canceled || !result.filePath) return null;
+  const file = path.resolve(path.extname(result.filePath) ? result.filePath : `${result.filePath}.xlsx`);
+  await signatureWorkbook.createWorkbook(file, sheets);
+  const sourceMap = Object.fromEntries(sheets.map(sheet => [sheet.id, sheet.name]));
+  importedSignatureWorkbooks.set(file, sourceMap);
+  return { file, sourceMap };
+});
 ipcMain.handle('preview', (_, input) => pdf.preview({ ...input, destinations: getDestinations() }));
 ipcMain.handle('run', async (_, input) => { if(!input || typeof input.token !== 'string') throw Error('Invalid run request'); const result=pdf.run(input); for(const key of ['backupPath','outputPath','reportPath']) completedPaths.add(path.resolve(result[key])); completedReportPaths.add(path.resolve(result.reportPath)); return result; });
 ipcMain.handle('read-report', (_, value) => { if(typeof value !== 'string' || (!completedReportPaths.has(path.resolve(value)) && !completedCountReportPaths.has(path.resolve(value))) || !fs.existsSync(value)) throw Error('Invalid report'); return fs.readFileSync(path.resolve(value), 'utf8'); });

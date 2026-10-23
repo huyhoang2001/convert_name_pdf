@@ -7,5 +7,13 @@ contextBridge.exposeInMainWorld('pdfApp', {
   preview: input => ipcRenderer.invoke('preview', input), run: input => ipcRenderer.invoke('run', input),
   countScan: root => ipcRenderer.invoke('count-scan', root), getExistingCountReport: root => ipcRenderer.invoke('count-existing-report', root), saveCountReport: (root, language) => ipcRenderer.invoke('count-save-report', { root, language }),
   getTranslations: () => ipcRenderer.invoke('translation-load'), saveTranslations: rows => ipcRenderer.invoke('translation-save', rows), parseTranslationRows: rows => ipcRenderer.invoke('translation-parse-rows', rows),
+  importTranslationWorkbook: () => ipcRenderer.invoke('translation-import-workbook'), saveTranslationWorkbook: input => ipcRenderer.invoke('translation-save-workbook', input),
+  newTranslationWorkbook: sheets => ipcRenderer.invoke('translation-new-workbook', sheets),
+  refreshTranslationWorkbook: file => ipcRenderer.invoke('translation-refresh-workbook', file),
+  clearTranslationCache: () => ipcRenderer.invoke('translation-clear-cache'),
+  importSignatureWorkbook: () => ipcRenderer.invoke('signature-import-workbook'),
+  refreshSignatureWorkbook: file => ipcRenderer.invoke('signature-refresh-workbook', file),
+  saveSignatureWorkbook: input => ipcRenderer.invoke('signature-save-workbook', input),
+  newSignatureWorkbook: sheets => ipcRenderer.invoke('signature-new-workbook', sheets),
   openPath: value => ipcRenderer.invoke('open-path', value), readReport: value => ipcRenderer.invoke('read-report', value)
 });

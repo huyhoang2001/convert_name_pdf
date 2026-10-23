@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { fields, headers, fromRows, fromRowsIfRegister, validate, loadSheets, validateSheets } = require('../electron/translation.cjs');
+const { fields, headers, fromRows, fromRowsIfRegister, toInteger, validate, loadSheets, validateSheets } = require('../electron/translation.cjs');
 const vi = require('../src/locales/vi.json');
 const en = require('../src/locales/en.json');
 
@@ -14,6 +14,8 @@ test('translation workbook rows map localized headers into records', () => {
 test('translation registry rejects incomplete imported workbook headers and malformed persisted rows', () => {
   assert.throws(() => fromRows([['wrong']]), /all 9/);
   assert.equal(fromRowsIfRegister([['cover sheet']]), null);
+  assert.equal(fromRows([headers.EN, ['', '', '', '', '', '', '', '', '', 'extraneous']]).length, 0);
+  assert.equal(fromRows([headers.EN, ['399', '', '', '', '', '', '', '', ''], ['400', '', '', '', '', '', '', '', '']]).length, 0);
   const shortened = [...headers.VI];
   shortened[2] = shortened[2].slice(0, -3);
   assert.equal(fromRows([ [null, ...shortened], [null, '1', '1/7/2026', 'Name', 'Passport', 'Japanese - Vietnamese', 'Signer', '01', '10,000', ''] ])[0].number, '1');
@@ -36,4 +38,15 @@ test('Excel import accepts the exact English and Vietnamese export headers', () 
   const keys = ['translationNumber', 'translationDate', 'translationPerson', 'translationDocument', 'translationLanguages', 'translationCertifier', 'translationCopies', 'translationFee', 'translationNotes'];
   assert.deepEqual(headers.EN, keys.map(key => en[key]));
   assert.deepEqual(headers.VI, keys.map(key => vi[key]));
+});
+
+test('short information header imports, fee values are integers, and translations reindex after deletion', () => {
+  const shortHeaders = [...headers.EN];
+  shortHeaders[2] = 'Enter information ' + String.fromCodePoint(0x24d8);
+  assert.equal(fromRows([shortHeaders]).length, 0);
+  shortHeaders[2] = 'Nhap thong tin';
+  assert.equal(fromRows([shortHeaders]).length, 0);
+  assert.equal(toInteger('10,000', 'fee'), 10000);
+  assert.throws(() => toInteger('10.5', 'fee'), /whole number/);
+  assert.throws(() => toInteger('1,00', 'fee'), /whole number/);
 });

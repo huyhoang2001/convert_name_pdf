@@ -14,3 +14,4 @@ files:
 win:
   target: portable
   icon: assets/logo.ico
+  artifactName: SAFE-PDF-RENAME-${version}.${ext}

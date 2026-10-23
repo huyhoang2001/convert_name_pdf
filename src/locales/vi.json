@@ -172,6 +172,7 @@
   "signatureRequestor": "Nhập thông tin",
   "signatureCopiesInput": "Số bản chính / bản sao chứng thực",
   "signatureFeeInput": "Lệ phí",
+  "signatureFeeLimit": "Phí không được vượt quá 9.999 VND trong phiên bản này.",
   "signatureNotesInput": "Ghi chú (Tùy chọn)",
   "signatureEmpty": "Chưa có trang tính. Thêm trang tính hoặc nhập tệp Excel để bắt đầu.",
   "signatureSaved": "Đã lưu sổ chứng thực.",

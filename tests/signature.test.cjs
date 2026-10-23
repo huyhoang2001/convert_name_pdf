@@ -14,6 +14,14 @@ test('signature records accept integer counts and grouped numeric fees', () => {
   assert.throws(() => signature.validate([{ ...record, fee: '1,00' }]), /whole number/);
 });
 
+test('signature fee input is capped at 9,999 in release builds and unrestricted in development', async () => {
+  const { canEnterSignatureFee } = await import('../src/signature-fee.js');
+  assert.equal(canEnterSignatureFee('9999', false), true);
+  assert.equal(canEnterSignatureFee('10000', false), false);
+  assert.equal(canEnterSignatureFee('33333333', true), true);
+  assert.equal(canEnterSignatureFee('12.5', true), false);
+});
+
 test('signature register reads template columns, ignores sequence-only rows, and saves back with the template header', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'signature-'));
   const file = path.join(dir, 'register.xlsx');

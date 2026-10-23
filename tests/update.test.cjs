@@ -3,13 +3,19 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { isNewerVersion, isWindowsExecutable, portableUpdateScript } = require('../electron/update.cjs');
+const { isNewerVersion, isPortableReleaseAsset, isWindowsExecutable, portableUpdateScript } = require('../electron/update.cjs');
 
 test('compares release versions and skips intermediate releases', () => {
   assert.equal(isNewerVersion('1.0.4', 'v1.2.0'), true);
   assert.equal(isNewerVersion('1.2.0', '1.2.0'), false);
   assert.equal(isNewerVersion('1.2.1', '1.2.0'), false);
   assert.throws(() => isNewerVersion('1.0', '1.1.0'), /Invalid version/);
+});
+
+test('recognizes portable release asset names after GitHub normalizes spaces', () => {
+  assert.equal(isPortableReleaseAsset('SAFE.PDF.RENAME.1.0.1.exe'), true);
+  assert.equal(isPortableReleaseAsset('SAFE-PDF-RENAME-1.0.2.exe'), true);
+  assert.equal(isPortableReleaseAsset('unrelated.exe'), false);
 });
 
 test('accepts only files with the Windows executable signature', () => {

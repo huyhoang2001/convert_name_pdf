@@ -18,7 +18,7 @@ The portable executable runs a packaged Electron app and does not change Windows
 
 ## Updates
 
-Use **Window → Check for updates** to check the latest GitHub Release. When a matching portable executable is attached, the app downloads it and replaces the currently running copy after the portable launcher exits. **Window → Install update from file** accepts a replacement portable `.exe`. A rollback copy is kept until the updated app opens successfully. Settings remain under the user's AppData folder across portable updates. Publish release assets using the `SAFE PDF RENAME <version>.exe` filename pattern for online updates to detect them.
+Use **Window → Check for updates** to check the latest GitHub Release. When a matching portable executable is attached, the app downloads it and replaces the currently running copy after the portable launcher exits. **Window → Install update from file** accepts a replacement portable `.exe`. A rollback copy is kept until the updated app opens successfully. Settings remain under the user's AppData folder across portable updates. Name release assets `SAFE-PDF-RENAME-<version>.exe`; the updater also recognizes GitHub's normalized `SAFE.PDF.RENAME.<version>.exe` names.
 
 ## Limits
 

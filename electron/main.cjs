@@ -6,7 +6,7 @@ const { pipeline } = require('node:stream/promises');
 const pdf = require('./pdf.cjs');
 const count = require('./count.cjs');
 const translation = require('./translation.cjs');
-const { isNewerVersion, isWindowsExecutable, portableUpdateScript } = require('./update.cjs');
+const { isNewerVersion, isPortableReleaseAsset, isWindowsExecutable, portableUpdateScript } = require('./update.cjs');
 const fs = require('node:fs');
 const releasesApi = 'https://api.github.com/repos/huyhoang2001/convert_name_pdf/releases/latest';
 const releasesPage = 'https://github.com/huyhoang2001/convert_name_pdf/releases/latest';
@@ -129,7 +129,7 @@ async function checkForUpdates() {
     const release = await getLatestRelease();
     if (!release) return void await showUpdateMessage('No published releases were found.', 'Chưa tìm thấy bản phát hành nào.');
     if (!isNewerVersion(app.getVersion(), release.tag_name)) return void await showUpdateMessage(`You are using the latest version (${app.getVersion()}).`, `Bạn đang sử dụng phiên bản mới nhất (${app.getVersion()}).`);
-    const asset = release.assets?.find(item => /^SAFE PDF RENAME \d.*\.exe$/i.test(item.name));
+    const asset = release.assets?.find(item => isPortableReleaseAsset(item.name));
     if (!asset) {
       const result = await dialog.showMessageBox(mainWindow, { type: 'info', title: updateText('Update available', 'Có bản cập nhật'), message: updateText(`Version ${release.tag_name} is available. Open its release page to download the portable app.`, `Đã có phiên bản ${release.tag_name}. Mở trang phát hành để tải ứng dụng di động.`), buttons: [updateText('Open release page', 'Mở trang phát hành'), updateText('Later', 'Để sau')] });
       if (result.response === 0) await shell.openExternal(releasesPage);

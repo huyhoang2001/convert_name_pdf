@@ -13,6 +13,8 @@ function isNewerVersion(current, latest) {
   return false;
 }
 
+function isPortableReleaseAsset(name) { return /^SAFE[ ._-]PDF[ ._-]RENAME[ ._-]\d.*\.exe$/i.test(String(name)); }
+
 function isWindowsExecutable(filePath) {
   try {
     if (!fs.statSync(filePath).isFile()) return false;
@@ -53,4 +55,4 @@ Set shell = CreateObject("WScript.Shell")
 shell.Run """" & target & """", 1, False
 `;
 
-module.exports = { isNewerVersion, isWindowsExecutable, portableUpdateScript };
+module.exports = { isNewerVersion, isPortableReleaseAsset, isWindowsExecutable, portableUpdateScript };

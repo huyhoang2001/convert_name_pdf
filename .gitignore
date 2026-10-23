@@ -2,6 +2,7 @@
 dist/
 portable-package/
 portable-package-sheets*/
+portable-package-*/
 portable-release/
 release/
 graphify-out/

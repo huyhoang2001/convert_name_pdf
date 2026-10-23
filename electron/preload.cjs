@@ -6,6 +6,6 @@ contextBridge.exposeInMainWorld('pdfApp', {
   getTheme: () => ipcRenderer.invoke('get-theme'), saveTheme: theme => ipcRenderer.invoke('save-theme', theme),
   preview: input => ipcRenderer.invoke('preview', input), run: input => ipcRenderer.invoke('run', input),
   countScan: root => ipcRenderer.invoke('count-scan', root), getExistingCountReport: root => ipcRenderer.invoke('count-existing-report', root), saveCountReport: (root, language) => ipcRenderer.invoke('count-save-report', { root, language }),
-  getTranslations: () => ipcRenderer.invoke('translation-load'), saveTranslations: rows => ipcRenderer.invoke('translation-save', rows),
+  getTranslations: () => ipcRenderer.invoke('translation-load'), saveTranslations: rows => ipcRenderer.invoke('translation-save', rows), parseTranslationRows: rows => ipcRenderer.invoke('translation-parse-rows', rows),
   openPath: value => ipcRenderer.invoke('open-path', value), readReport: value => ipcRenderer.invoke('read-report', value)
 });

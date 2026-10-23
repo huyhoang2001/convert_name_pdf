@@ -5,6 +5,7 @@ const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const pdf = require('./pdf.cjs');
 const count = require('./count.cjs');
+const translation = require('./translation.cjs');
 const { isNewerVersion, isWindowsExecutable, portableUpdateScript } = require('./update.cjs');
 const fs = require('node:fs');
 const releasesApi = 'https://api.github.com/repos/huyhoang2001/convert_name_pdf/releases/latest';
@@ -199,6 +200,8 @@ ipcMain.handle('count-existing-report', (_, folder) => {
   catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 });
 ipcMain.handle('count-save-report', (_, input) => { const report = count.saveReport(input.root, input.language); completedCountReportPaths.add(path.resolve(report)); return report; });
+ipcMain.handle('translation-load', () => { try { return translation.validate(JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'translations.json'), 'utf8'))); } catch (error) { if (error.code === 'ENOENT') return []; throw error; } });
+ipcMain.handle('translation-save', (_, rows) => { translation.validate(rows); fs.mkdirSync(app.getPath('userData'), { recursive: true }); fs.writeFileSync(path.join(app.getPath('userData'), 'translations.json'), JSON.stringify(rows, null, 2), 'utf8'); return rows.length; });
 ipcMain.handle('preview', (_, input) => pdf.preview({ ...input, destinations: getDestinations() }));
 ipcMain.handle('run', async (_, input) => { if(!input || typeof input.token !== 'string') throw Error('Invalid run request'); const result=pdf.run(input); for(const key of ['backupPath','outputPath','reportPath']) completedPaths.add(path.resolve(result[key])); completedReportPaths.add(path.resolve(result.reportPath)); return result; });
 ipcMain.handle('read-report', (_, value) => { if(typeof value !== 'string' || (!completedReportPaths.has(path.resolve(value)) && !completedCountReportPaths.has(path.resolve(value))) || !fs.existsSync(value)) throw Error('Invalid report'); return fs.readFileSync(path.resolve(value), 'utf8'); });

@@ -12,6 +12,7 @@
     "test": "node --test"
   },
   "dependencies": {
+    "exceljs": "^4.4.0",
     "page-mascot": "^0.1.0",
     "react": "latest",
     "react-dom": "latest"
@@ -25,7 +26,7 @@
     "electron": "latest",
     "electron-builder": "latest",
     "typescript": "latest",
-    "vite": "6.4.1",
+    "vite": "^6.4.5",
     "wait-on": "latest"
   }
 }

@@ -1,6 +1,7 @@
 ﻿node_modules/
 dist/
 portable-package/
+portable-package-sheets*/
 portable-release/
 release/
 graphify-out/

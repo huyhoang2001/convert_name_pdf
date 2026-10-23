@@ -25,7 +25,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Verify tag matches app version
@@ -40,6 +40,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Download Electron runtime
+        run: npx electron --version
 
       - name: Run tests
         run: npm test

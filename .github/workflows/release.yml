@@ -5,6 +5,12 @@ on:
     tags:
       - 'v*.*.*'
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Version tag to publish
+        required: true
+        default: v1.0.2
+        type: string
 
 permissions:
   contents: write
@@ -25,7 +31,7 @@ jobs:
       - name: Verify tag matches app version
         shell: pwsh
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           $version = node -p "require('./package.json').version"
           if ($env:RELEASE_TAG -ne "v$version") {
@@ -44,6 +50,7 @@ jobs:
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          name: SAFE PDF RENAME ${{ github.ref_name }}
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          name: SAFE PDF RENAME ${{ inputs.release_tag || github.ref_name }}
           generate_release_notes: true
           files: portable-package/SAFE-PDF-RENAME-*.exe

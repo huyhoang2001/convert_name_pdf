@@ -16,6 +16,10 @@ Backup and Output locations default to `Documents/SAFE PDF RENAME/Backup` and `D
 
 The portable executable runs a packaged Electron app and does not change Windows execution policy. The original BAT invokes PowerShell with `-ExecutionPolicy Bypass` for its embedded script; this app does not invoke that BAT or PowerShell.
 
+## Updates
+
+Use **Window → Check for updates** to check the latest GitHub Release. When a matching portable executable is attached, the app downloads it and replaces the currently running copy after the portable launcher exits. **Window → Install update from file** accepts a replacement portable `.exe`. A rollback copy is kept until the updated app opens successfully. Settings remain under the user's AppData folder across portable updates. Publish release assets using the `SAFE PDF RENAME <version>.exe` filename pattern for online updates to detect them.
+
 ## Limits
 
 The algorithm follows the supplied BAT's filename and numbering rules. It does not inspect PDF contents. Windows path lengths at or above 260 characters are rejected. A source can still change in the tiny interval between freshness check and copy; exclusive destination creation prevents overwriting existing files.

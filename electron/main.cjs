@@ -1,12 +1,21 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
 const path = require('node:path');
+const { spawn } = require('node:child_process');
+const { Readable } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
 const pdf = require('./pdf.cjs');
 const count = require('./count.cjs');
+const { isNewerVersion, isWindowsExecutable, portableUpdateScript } = require('./update.cjs');
 const fs = require('node:fs');
+const releasesApi = 'https://api.github.com/repos/huyhoang2001/convert_name_pdf/releases/latest';
+const releasesPage = 'https://github.com/huyhoang2001/convert_name_pdf/releases/latest';
 const completedPaths = new Set();
 const completedReportPaths = new Set();
 const completedCountReportPaths = new Set();
+app.setPath('userData', path.join(app.getPath('appData'), app.getName()));
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
+let mainWindow;
+const updateText = (en, vi) => getLanguage() === 'VI' ? vi : en;
 function defaultDestinations() {
   const base = path.join(app.getPath('documents'), 'SAFE PDF RENAME');
   return { backup: path.join(base, 'Backup'), output: path.join(base, 'Output') };
@@ -22,6 +31,7 @@ function saveLanguage(language) {
   if (!['EN', 'VI'].includes(language)) throw Error('Unsupported language.');
   fs.mkdirSync(app.getPath('userData'), { recursive: true });
   fs.writeFileSync(settingsFile(), JSON.stringify({ ...getSettings(), language }, null, 2), 'utf8');
+  setApplicationMenu();
   return language;
 }
 
@@ -33,11 +43,130 @@ function saveTheme(theme) {
   return theme;
 }
 
-function window() {
-  const win = new BrowserWindow({ width: 1050, height: 760, minWidth: 800, minHeight: 600, title: 'SAFE PDF RENAME', icon: path.join(__dirname, '../dist/logo.ico'), webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false } });
-  if (app.isPackaged) win.loadFile(path.join(__dirname, '../dist/index.html')); else win.loadURL('http://localhost:5175');
+function setApplicationMenu() {
+  const text = (en, vi) => updateText(en, vi);
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { label: text('File', 'Tệp'), submenu: [{ role: 'quit', label: text('Quit', 'Thoát') }] },
+    { label: text('Edit', 'Chỉnh sửa'), submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
+    { label: text('View', 'Xem'), submenu: [{ role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'togglefullscreen' }] },
+    { label: text('Window', 'Cửa sổ'), submenu: [
+      { role: 'minimize' }, { role: 'close' }, { type: 'separator' },
+      { label: text('Check for updates...', 'Kiểm tra bản cập nhật...'), click: () => void checkForUpdates() },
+      { label: text('Install update from file...', 'Cài đặt bản cập nhật từ tệp...'), click: () => void importUpdate() }
+    ] },
+    { label: text('Help', 'Trợ giúp'), submenu: [{ label: text('About SAFE PDF RENAME', 'Giới thiệu SAFE PDF RENAME'), click: () => void dialog.showMessageBox(mainWindow, { type: 'info', title: 'SAFE PDF RENAME', message: `SAFE PDF RENAME ${app.getVersion()}` }) }] }
+  ]));
 }
-app.whenReady().then(window);
+
+function showUpdateMessage(en, vi, type = 'info') {
+  return dialog.showMessageBox(mainWindow, { type, title: updateText('SAFE PDF RENAME updates', 'Cập nhật SAFE PDF RENAME'), message: updateText(en, vi), buttons: [updateText('OK', 'Đóng')] });
+}
+
+async function getLatestRelease() {
+  const response = await fetch(releasesApi, { headers: { 'User-Agent': 'SAFE-PDF-RENAME' }, signal: AbortSignal.timeout(15000) });
+  if (response.status === 404) return null;
+  if (!response.ok) throw Error(`GitHub returned HTTP ${response.status}.`);
+  return response.json();
+}
+
+function portableExecutablePath() {
+  const value = process.env.PORTABLE_EXECUTABLE_FILE;
+  if (!app.isPackaged || process.platform !== 'win32' || !value || !path.isAbsolute(value) || !fs.existsSync(value)) throw Error('Portable executable path is unavailable.');
+  return path.resolve(value);
+}
+
+async function installPortableUpdate(filePath, confirmed = false) {
+  const target = portableExecutablePath();
+  if (path.resolve(filePath).toLowerCase() === target.toLowerCase() || !isWindowsExecutable(filePath)) throw Error('Choose a different valid Windows executable.');
+  if (!confirmed) {
+    const confirm = await dialog.showMessageBox(mainWindow, {
+      type: 'warning', title: updateText('Install update', 'Cài đặt bản cập nhật'),
+      message: updateText('The selected portable executable will replace the app after it closes. Your settings and PDF files will not be changed.', 'Tệp ứng dụng đã chọn sẽ thay thế ứng dụng sau khi đóng. Cài đặt và tệp PDF của bạn sẽ không bị thay đổi.'),
+      buttons: [updateText('Install and restart', 'Cài đặt và khởi động lại'), updateText('Cancel', 'Hủy')], defaultId: 1, cancelId: 1
+    });
+    if (confirm.response !== 0) return;
+  }
+
+  const updatesDir = path.join(app.getPath('userData'), 'updates');
+  fs.mkdirSync(updatesDir, { recursive: true });
+  const staged = path.join(updatesDir, 'SAFE PDF RENAME update.exe');
+  const helper = path.join(updatesDir, 'install-update.vbs');
+  const pending = path.join(updatesDir, 'pending.json');
+  if (fs.existsSync(`${target}.previous`)) throw Error('A previous version backup already exists. Restore or remove it before updating.');
+  try {
+    fs.copyFileSync(filePath, staged);
+    fs.writeFileSync(helper, portableUpdateScript, 'utf8');
+    fs.writeFileSync(pending, JSON.stringify({ target }), 'utf8');
+    if (path.dirname(filePath) === updatesDir && path.basename(filePath).startsWith('SAFE PDF RENAME downloaded update ')) fs.rmSync(filePath, { force: true });
+    await new Promise((resolve, reject) => {
+      const child = spawn('wscript.exe', ['//B', '//NoLogo', helper, target, staged, String(process.ppid)], { detached: true, windowsHide: true, stdio: 'ignore' });
+      child.once('error', reject);
+      child.once('spawn', () => { child.unref(); resolve(); });
+    });
+  } catch (error) {
+    try { fs.rmSync(staged, { force: true }); } catch {}
+    try { fs.rmSync(pending, { force: true }); } catch {}
+    throw error;
+  }
+  await showUpdateMessage('The update is staged. The app will close and reopen with the selected version.', 'Bản cập nhật đã sẵn sàng. Ứng dụng sẽ đóng và mở lại với phiên bản mới.');
+  app.quit();
+}
+
+async function importUpdate() {
+  try {
+    portableExecutablePath();
+    const result = await dialog.showOpenDialog(mainWindow, { title: updateText('Select the new portable app', 'Chọn ứng dụng di động mới'), filters: [{ name: 'SAFE PDF RENAME portable app', extensions: ['exe'] }], properties: ['openFile'] });
+    if (!result.canceled && result.filePaths[0]) await installPortableUpdate(result.filePaths[0]);
+  } catch (error) {
+    await showUpdateMessage(`Could not install the update: ${error.message}`, `Không thể cài đặt bản cập nhật: ${error.message}`, 'error');
+  }
+}
+
+async function checkForUpdates() {
+  let downloaded;
+  try {
+    const release = await getLatestRelease();
+    if (!release) return void await showUpdateMessage('No published releases were found.', 'Chưa tìm thấy bản phát hành nào.');
+    if (!isNewerVersion(app.getVersion(), release.tag_name)) return void await showUpdateMessage(`You are using the latest version (${app.getVersion()}).`, `Bạn đang sử dụng phiên bản mới nhất (${app.getVersion()}).`);
+    const asset = release.assets?.find(item => /^SAFE PDF RENAME \d.*\.exe$/i.test(item.name));
+    if (!asset) {
+      const result = await dialog.showMessageBox(mainWindow, { type: 'info', title: updateText('Update available', 'Có bản cập nhật'), message: updateText(`Version ${release.tag_name} is available. Open its release page to download the portable app.`, `Đã có phiên bản ${release.tag_name}. Mở trang phát hành để tải ứng dụng di động.`), buttons: [updateText('Open release page', 'Mở trang phát hành'), updateText('Later', 'Để sau')] });
+      if (result.response === 0) await shell.openExternal(releasesPage);
+      return;
+    }
+    const result = await dialog.showMessageBox(mainWindow, { type: 'info', title: updateText('Update available', 'Có bản cập nhật'), message: updateText(`Version ${release.tag_name} is available. Download and install it now?`, `Đã có phiên bản ${release.tag_name}. Tải và cài đặt ngay?`), buttons: [updateText('Download and install', 'Tải và cài đặt'), updateText('Later', 'Để sau')] });
+    if (result.response !== 0) return;
+    if (!asset.browser_download_url.startsWith('https://github.com/huyhoang2001/convert_name_pdf/releases/download/') || !Number.isSafeInteger(asset.size) || asset.size < 2 || asset.size > 500 * 1024 * 1024) throw Error('The published portable app download is invalid.');
+    const response = await fetch(asset.browser_download_url, { signal: AbortSignal.timeout(120000) });
+    if (!response.ok || !response.body) throw Error(`Update download failed (HTTP ${response.status}).`);
+    const updatesDir = path.join(app.getPath('userData'), 'updates');
+    fs.mkdirSync(updatesDir, { recursive: true });
+    downloaded = path.join(updatesDir, `SAFE PDF RENAME downloaded update ${Date.now()}.exe`);
+    await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(downloaded, { flags: 'wx' }));
+    if (fs.statSync(downloaded).size !== asset.size || !isWindowsExecutable(downloaded)) throw Error('The downloaded update did not pass file verification.');
+    await installPortableUpdate(downloaded, true);
+  } catch (error) {
+    if (downloaded) try { fs.rmSync(downloaded, { force: true }); } catch {}
+    await showUpdateMessage(`Could not check for updates: ${error.message}`, `Không thể kiểm tra bản cập nhật: ${error.message}`, 'error');
+  }
+}
+
+function window() {
+  mainWindow = new BrowserWindow({ width: 1200, height: 800, minWidth: 800, minHeight: 600, title: 'SAFE PDF RENAME', icon: path.join(__dirname, '../dist/logo.ico'), webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false } });
+  const portablePath = process.env.PORTABLE_EXECUTABLE_FILE;
+  if (portablePath) {
+    const pending = path.join(app.getPath('userData'), 'updates', 'pending.json');
+    try {
+      if (JSON.parse(fs.readFileSync(pending, 'utf8')).target.toLowerCase() === path.resolve(portablePath).toLowerCase()) {
+        mainWindow.once('ready-to-show', () => {
+          try { fs.rmSync(`${portablePath}.previous`, { force: true }); fs.rmSync(pending, { force: true }); } catch {}
+        });
+      }
+    } catch {}
+  }
+  if (app.isPackaged) mainWindow.loadFile(path.join(__dirname, '../dist/index.html')); else mainWindow.loadURL('http://localhost:5175');
+}
+app.whenReady().then(() => { setApplicationMenu(); window(); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 ipcMain.handle('pick-folder', async () => (await dialog.showOpenDialog({ properties: ['openDirectory'] })).filePaths[0] || null);
 ipcMain.handle('get-destinations', () => getDestinations());

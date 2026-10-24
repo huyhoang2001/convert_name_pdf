@@ -8,6 +8,8 @@ const count = require('./count.cjs');
 const translation = require('./translation.cjs');
 const translationWorkbook = require('./translation-workbook.cjs');
 const signatureWorkbook = require('./signature-workbook.cjs');
+const copies = require('./copies.cjs');
+const copiesWorkbook = require('./copies-workbook.cjs');
 const { isNewerVersion, isPortableReleaseAsset, isWindowsExecutable, portableUpdateScript } = require('./update.cjs');
 const fs = require('node:fs');
 const releasesApi = 'https://api.github.com/repos/huyhoang2001/convert_name_pdf/releases/latest';
@@ -17,6 +19,7 @@ const completedReportPaths = new Set();
 const completedCountReportPaths = new Set();
 const importedTranslationWorkbooks = new Map();
 const importedSignatureWorkbooks = new Map();
+const importedCopiesWorkbooks = new Map();
 app.setPath('userData', path.join(app.getPath('appData'), app.getName()));
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 let mainWindow;
@@ -254,6 +257,7 @@ ipcMain.handle('signature-import-workbook', async () => {
   importedSignatureWorkbooks.set(file, imported.sourceMap);
   return imported;
 });
+ipcMain.handle('signature-clear-cache', async () => { importedSignatureWorkbooks.clear(); await Promise.all([session.defaultSession.clearCache(), session.defaultSession.clearStorageData({ storages: ['cookies', 'shadercache', 'serviceworkers', 'cachestorage'] })]); return true; });
 ipcMain.handle('signature-refresh-workbook', async (_, value) => {
   const file = typeof value === 'string' ? path.resolve(value) : '';
   if (!importedSignatureWorkbooks.has(file)) throw Error('Import or create this signature workbook in the current session before refreshing it.');
@@ -277,6 +281,47 @@ ipcMain.handle('signature-new-workbook', async (_, sheets) => {
   const sourceMap = Object.fromEntries(sheets.map(sheet => [sheet.id, sheet.name]));
   importedSignatureWorkbooks.set(file, sourceMap);
   return { file, sourceMap };
+});
+ipcMain.handle('copies-import-workbook', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, { title: 'Import copies workbook', properties: ['openFile'], filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] });
+  if (result.canceled) return null;
+  const file = fs.realpathSync(result.filePaths[0]);
+  const imported = await copiesWorkbook.readWorkbook(file);
+  importedCopiesWorkbooks.set(file, imported.sourceMap);
+  return imported;
+});
+ipcMain.handle('copies-clear-cache', async () => { importedCopiesWorkbooks.clear(); await Promise.all([session.defaultSession.clearCache(), session.defaultSession.clearStorageData({ storages: ['cookies', 'shadercache', 'serviceworkers', 'cachestorage'] })]); return true; });
+ipcMain.handle('copies-refresh-workbook', async (_, value) => {
+  const file = typeof value === 'string' ? path.resolve(value) : '';
+  if (!importedCopiesWorkbooks.has(file)) throw Error('Import or create this copies workbook in the current session before refreshing it.');
+  const refreshed = await copiesWorkbook.readWorkbook(file);
+  importedCopiesWorkbooks.set(file, refreshed.sourceMap);
+  return refreshed;
+});
+ipcMain.handle('copies-save-workbook', async (_, input) => {
+  const file = typeof input?.file === 'string' ? path.resolve(input.file) : '';
+  const sourceMap = importedCopiesWorkbooks.get(file);
+  if (!sourceMap || JSON.stringify(Object.entries(sourceMap).sort()) !== JSON.stringify(Object.entries(input.sourceMap || {}).sort())) throw Error('Import or create this copies workbook in the current session before saving it.');
+  const result = await copiesWorkbook.saveWorkbook(file, input.sheets, sourceMap);
+  importedCopiesWorkbooks.set(file, Object.fromEntries(input.sheets.map(sheet => [sheet.id, sheet.name])));
+  return result;
+});
+ipcMain.handle('copies-new-workbook', async (_, sheets) => {
+  copies.validateSheets(sheets);
+  const result = await dialog.showSaveDialog(mainWindow, { title: 'Create copies workbook', defaultPath: path.join(app.getPath('documents'), 'copies.xlsx'), filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] });
+  if (result.canceled || !result.filePath) return null;
+  const file = path.resolve(path.extname(result.filePath) ? result.filePath : `${result.filePath}.xlsx`);
+  await copiesWorkbook.createWorkbook(file, sheets);
+  const sourceMap = Object.fromEntries(sheets.map(sheet => [sheet.id, sheet.name]));
+  importedCopiesWorkbooks.set(file, sourceMap);
+  return { file, sourceMap };
+});
+ipcMain.handle('copies-export-workbook', async (_, sheets) => {
+  copies.validateSheets(sheets);
+  const result = await dialog.showSaveDialog(mainWindow, { title: 'Export copies workbook', defaultPath: path.join(app.getPath('documents'), 'copies.xlsx'), filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] });
+  if (result.canceled || !result.filePath) return null;
+  const file = path.resolve(path.extname(result.filePath) ? result.filePath : `${result.filePath}.xlsx`);
+  return copiesWorkbook.writeWorkbook(file, sheets);
 });
 ipcMain.handle('preview', (_, input) => pdf.preview({ ...input, destinations: getDestinations() }));
 ipcMain.handle('run', async (_, input) => { if(!input || typeof input.token !== 'string') throw Error('Invalid run request'); const result=pdf.run(input); for(const key of ['backupPath','outputPath','reportPath']) completedPaths.add(path.resolve(result[key])); completedReportPaths.add(path.resolve(result.reportPath)); return result; });

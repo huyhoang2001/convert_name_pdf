@@ -7,6 +7,38 @@ const ExcelJS = require('exceljs');
 const { headers } = require('../electron/translation.cjs');
 const { readWorkbook, createWorkbook, saveWorkbook } = require('../electron/translation-workbook.cjs');
 
+test('translation import accepts the shortened identity-document heading used by existing registers', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'translation-header-'));
+  const file = path.join(dir, 'register.xlsx');
+  try {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('2026');
+    sheet.addRow(headers.VI);
+    sheet.getCell('C1').value = 'Họ tên, số Thẻ căn cước công dân/Thẻ căn cước, Căn cước điện tử/Giấy chứng nhận căn cước hoặc Hộ chiếu/giấy tờ có giá trị đi lại quốc';
+    sheet.addRow(['1', '1/7/2026', 'TRẦN THU HẰNG - CCCD 123', 'Hộ chiếu', 'Việt - Anh', 'Công chứng viên', '01', 10000, '']);
+    workbook.addWorksheet('Cover');
+    await workbook.xlsx.writeFile(file);
+    const imported = await readWorkbook(file);
+    assert.equal(imported.sheets.length, 1);
+    assert.equal(imported.sheets[0].rows.length, 1);
+    assert.equal(imported.sheets[0].rows[0].person, 'TRẦN THU HẰNG - CCCD 123');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('translation import gives clear errors for workbooks without a register or valid xlsx data', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'translation-errors-'));
+  const file = path.join(dir, 'unrelated.xlsx');
+  const corrupt = path.join(dir, 'damaged.xlsx');
+  try {
+    const workbook = new ExcelJS.Workbook();
+    workbook.addWorksheet('Cover').getCell('A1').value = 'Not a register';
+    await workbook.xlsx.writeFile(file);
+    await assert.rejects(readWorkbook(file), /No translation register sheets were found.*9 required Translation columns/);
+    fs.writeFileSync(corrupt, 'not an xlsx');
+    await assert.rejects(readWorkbook(corrupt), /could not be read as an Excel \.xlsx workbook/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('translation import filters empty/extraneous rows and saves in place with dates, sizing, and other sheets preserved', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'translation-'));
   const file = path.join(dir, 'register.xlsx');

@@ -30,10 +30,20 @@ function parseRegisterSheet(sheet) {
   return null;
 }
 
+async function loadWorkbook(file) {
+  const workbook = new ExcelJS.Workbook();
+  try { await workbook.xlsx.readFile(file); }
+  catch (error) {
+    if (['EACCES', 'EPERM', 'EBUSY'].includes(error.code)) throw Error('Could not read the Excel file. Close it in Excel and check your file permissions.');
+    if (error.code === 'ENOENT') throw Error('The selected Excel file could not be found. Select it again.');
+    throw Error('This file could not be read as an Excel .xlsx workbook. It may be damaged, password-protected, or saved in an unsupported format.');
+  }
+  return workbook;
+}
+
 async function readWorkbook(file) {
   if (typeof file !== 'string' || !path.isAbsolute(file) || path.extname(file).toLowerCase() !== '.xlsx') throw Error('Choose a valid .xlsx workbook.');
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.readFile(file);
+  const workbook = await loadWorkbook(file);
   const sheets = [], sourceMap = {};
   for (const worksheet of workbook.worksheets) {
     const rows = parseRegisterSheet(worksheet);
@@ -42,7 +52,7 @@ async function readWorkbook(file) {
     sheets.push({ id, name: worksheet.name, rows: rows.map(row => ({ ...row, id: `row-${randomUUID()}` })) });
     sourceMap[id] = worksheet.name;
   }
-  if (!sheets.length) throw Error('No translation register sheets were found in this workbook.');
+  if (!sheets.length) throw Error('No translation register sheets were found. Check that the workbook contains all 9 required Translation columns.');
   return { file, sheets, sourceMap };
 }
 
@@ -93,8 +103,7 @@ async function createWorkbook(file, sheets, language) {
 async function saveWorkbook(file, sheets, sourceMap = {}, language) {
   translation.validateSheets(sheets);
   if (typeof file !== 'string' || !path.isAbsolute(file) || path.extname(file).toLowerCase() !== '.xlsx' || !fs.statSync(file).isFile()) throw Error('The imported workbook is no longer available.');
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.readFile(file);
+  const workbook = await loadWorkbook(file);
   const originalNames = new Set(Object.values(sourceMap));
   const protectedNames = new Set(workbook.worksheets.filter(sheet => !originalNames.has(sheet.name)).map(sheet => sheet.name.toLocaleLowerCase()));
   if (sheets.some(sheet => protectedNames.has(sheet.name.toLocaleLowerCase()))) throw Error('A sheet name conflicts with an unrelated sheet in the workbook. Rename the translation sheet and try again.');

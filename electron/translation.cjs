@@ -19,7 +19,8 @@ function fromRows(rows) {
     const expected = [headers.EN[i], headers.VI[i], field, ...shortPersonHeaders].map(normalizeHeader);
     return [field, h.findIndex(value => {
       const actual = normalizeHeader(value);
-      return expected.some(header => actual === header || (Math.min(actual.length, header.length) >= 32 && (actual.startsWith(header) || header.startsWith(actual))));
+      const matches = expected.some(header => actual === header || (Math.min(actual.length, header.length) >= 32 && (actual.startsWith(header) || header.startsWith(actual))));
+      return matches || (field === 'person' && ['ho ten', 'can cuoc', 'ho chieu'].every(part => actual.includes(part)));
     })];
   });
   if (indexes.some(([, index]) => index < 0)) throw Error('Import file must contain all 9 translation register columns.');

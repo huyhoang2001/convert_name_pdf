@@ -15,5 +15,12 @@ contextBridge.exposeInMainWorld('pdfApp', {
   refreshSignatureWorkbook: file => ipcRenderer.invoke('signature-refresh-workbook', file),
   saveSignatureWorkbook: input => ipcRenderer.invoke('signature-save-workbook', input),
   newSignatureWorkbook: sheets => ipcRenderer.invoke('signature-new-workbook', sheets),
+  clearSignatureCache: () => ipcRenderer.invoke('signature-clear-cache'),
+  importCopiesWorkbook: () => ipcRenderer.invoke('copies-import-workbook'),
+  refreshCopiesWorkbook: file => ipcRenderer.invoke('copies-refresh-workbook', file),
+  saveCopiesWorkbook: input => ipcRenderer.invoke('copies-save-workbook', input),
+  newCopiesWorkbook: sheets => ipcRenderer.invoke('copies-new-workbook', sheets),
+  exportCopiesWorkbook: sheets => ipcRenderer.invoke('copies-export-workbook', sheets),
+  clearCopiesCache: () => ipcRenderer.invoke('copies-clear-cache'),
   openPath: value => ipcRenderer.invoke('open-path', value), readReport: value => ipcRenderer.invoke('read-report', value)
 });

@@ -253,6 +253,7 @@
   "translationNewWorkbook": "Tạo tệp Excel mới",
   "translationNewWorkbookCreated": "Đã tạo sổ Excel mới. Nhấn Lưu để cập nhật tệp.",
   "translationRefresh": "Làm mới",
+  "undo": "Hoàn tác",
   "translationRefreshed": "Đã làm mới sổ bản dịch từ tệp Excel.",
   "translationRefreshConfirm": "Bỏ các thay đổi chưa lưu và tải lại dữ liệu mới nhất từ sổ Excel?",
   "translationRefreshNeedsWorkbook": "Hãy nhập hoặc tạo sổ Excel trước khi làm mới.",

@@ -253,6 +253,7 @@
   "translationNewWorkbook": "New Excel file",
   "translationNewWorkbookCreated": "New Excel workbook created. Use Save to update it.",
   "translationRefresh": "Refresh",
+  "undo": "Undo",
   "translationRefreshed": "Translation workbook refreshed from the Excel file.",
   "translationRefreshConfirm": "Discard unsaved changes and reload the latest data from the Excel workbook?",
   "translationRefreshNeedsWorkbook": "Import or create an Excel workbook before refreshing.",

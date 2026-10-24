@@ -1,6 +1,6 @@
 {
   "name": "safe-pdf-rename",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Safe Windows PDF renaming utility",
   "author": "Local",
   "private": true,

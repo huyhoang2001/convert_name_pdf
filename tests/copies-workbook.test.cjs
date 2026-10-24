@@ -36,8 +36,8 @@ test('Copies import reads the supplied register layout and ignores footer rows',
     assert.equal(imported.sheets[0].rows[0].totalAmount, '30000');
     assert.equal(imported.sheets[0].rows[0].manualTotal, false);
     assert.equal(imported.sheets[0].rows[1].unitPrice, '1000');
-    assert.equal(imported.sheets[0].rows[1].totalAmount, '25000000');
-    assert.equal(imported.sheets[0].rows[1].manualTotal, false);
+    assert.equal(imported.sheets[0].rows[1].totalAmount, '5000');
+    assert.equal(imported.sheets[0].rows[1].manualTotal, true);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

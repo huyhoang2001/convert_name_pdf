@@ -10,6 +10,7 @@ const translationWorkbook = require('./translation-workbook.cjs');
 const signatureWorkbook = require('./signature-workbook.cjs');
 const copies = require('./copies.cjs');
 const copiesWorkbook = require('./copies-workbook.cjs');
+const selectorSettings = require('./selector-settings.cjs');
 const { isNewerVersion, isPortableReleaseAsset, isWindowsExecutable, portableUpdateScript } = require('./update.cjs');
 const fs = require('node:fs');
 const releasesApi = 'https://api.github.com/repos/huyhoang2001/convert_name_pdf/releases/latest';
@@ -20,12 +21,12 @@ const completedCountReportPaths = new Set();
 const importedTranslationWorkbooks = new Map();
 const importedSignatureWorkbooks = new Map();
 const importedCopiesWorkbooks = new Map();
-app.setPath('userData', path.join(app.getPath('appData'), app.getName()));
+app.setPath('userData', path.join(app.getPath('appData'), 'SAFE PDF RENAME'));
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 let mainWindow;
 const updateText = (en, vi) => getLanguage() === 'VI' ? vi : en;
 function defaultDestinations() {
-  const base = path.join(app.getPath('documents'), 'SAFE PDF RENAME');
+  const base = path.join(app.getPath('documents'), 'B6H');
   return { backup: path.join(base, 'Backup'), output: path.join(base, 'Output') };
 }
 function getSettings() { try { return JSON.parse(fs.readFileSync(settingsFile(), 'utf8')); } catch { return {}; } }
@@ -62,12 +63,12 @@ function setApplicationMenu() {
       { label: text('Check for updates...', 'Kiểm tra bản cập nhật...'), click: () => void checkForUpdates() },
       { label: text('Install update from file...', 'Cài đặt bản cập nhật từ tệp...'), click: () => void importUpdate() }
     ] },
-    { label: text('Help', 'Trợ giúp'), submenu: [{ label: text('About SAFE PDF RENAME', 'Giới thiệu SAFE PDF RENAME'), click: () => void dialog.showMessageBox(mainWindow, { type: 'info', title: 'SAFE PDF RENAME', message: `SAFE PDF RENAME ${app.getVersion()}` }) }] }
+    { label: text('Help', 'Trợ giúp'), submenu: [{ label: text('About B6H', 'Giới thiệu B6H'), click: () => void dialog.showMessageBox(mainWindow, { type: 'info', title: 'B6H', message: `B6H ${app.getVersion()}` }) }] }
   ]));
 }
 
 function showUpdateMessage(en, vi, type = 'info') {
-  return dialog.showMessageBox(mainWindow, { type, title: updateText('SAFE PDF RENAME updates', 'Cập nhật SAFE PDF RENAME'), message: updateText(en, vi), buttons: [updateText('OK', 'Đóng')] });
+  return dialog.showMessageBox(mainWindow, { type, title: updateText('B6H updates', 'Cập nhật B6H'), message: updateText(en, vi), buttons: [updateText('OK', 'Đóng')] });
 }
 
 async function getLatestRelease() {
@@ -97,7 +98,7 @@ async function installPortableUpdate(filePath, confirmed = false) {
 
   const updatesDir = path.join(app.getPath('userData'), 'updates');
   fs.mkdirSync(updatesDir, { recursive: true });
-  const staged = path.join(updatesDir, 'SAFE PDF RENAME update.exe');
+  const staged = path.join(updatesDir, 'B6H update.exe');
   const helper = path.join(updatesDir, 'install-update.vbs');
   const pending = path.join(updatesDir, 'pending.json');
   if (fs.existsSync(`${target}.previous`)) throw Error('A previous version backup already exists. Restore or remove it before updating.');
@@ -105,7 +106,7 @@ async function installPortableUpdate(filePath, confirmed = false) {
     fs.copyFileSync(filePath, staged);
     fs.writeFileSync(helper, portableUpdateScript, 'utf8');
     fs.writeFileSync(pending, JSON.stringify({ target }), 'utf8');
-    if (path.dirname(filePath) === updatesDir && path.basename(filePath).startsWith('SAFE PDF RENAME downloaded update ')) fs.rmSync(filePath, { force: true });
+    if (path.dirname(filePath) === updatesDir && /^(?:SAFE PDF RENAME|B6H) downloaded update /.test(path.basename(filePath))) fs.rmSync(filePath, { force: true });
     await new Promise((resolve, reject) => {
       const child = spawn('wscript.exe', ['//B', '//NoLogo', helper, target, staged, String(process.ppid)], { detached: true, windowsHide: true, stdio: 'ignore' });
       child.once('error', reject);
@@ -123,7 +124,7 @@ async function installPortableUpdate(filePath, confirmed = false) {
 async function importUpdate() {
   try {
     portableExecutablePath();
-    const result = await dialog.showOpenDialog(mainWindow, { title: updateText('Select the new portable app', 'Chọn ứng dụng di động mới'), filters: [{ name: 'SAFE PDF RENAME portable app', extensions: ['exe'] }], properties: ['openFile'] });
+    const result = await dialog.showOpenDialog(mainWindow, { title: updateText('Select the new portable app', 'Chọn ứng dụng di động mới'), filters: [{ name: 'B6H portable app', extensions: ['exe'] }], properties: ['openFile'] });
     if (!result.canceled && result.filePaths[0]) await installPortableUpdate(result.filePaths[0]);
   } catch (error) {
     await showUpdateMessage(`Could not install the update: ${error.message}`, `Không thể cài đặt bản cập nhật: ${error.message}`, 'error');
@@ -149,7 +150,7 @@ async function checkForUpdates() {
     if (!response.ok || !response.body) throw Error(`Update download failed (HTTP ${response.status}).`);
     const updatesDir = path.join(app.getPath('userData'), 'updates');
     fs.mkdirSync(updatesDir, { recursive: true });
-    downloaded = path.join(updatesDir, `SAFE PDF RENAME downloaded update ${Date.now()}.exe`);
+    downloaded = path.join(updatesDir, `B6H downloaded update ${Date.now()}.exe`);
     await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(downloaded, { flags: 'wx' }));
     if (fs.statSync(downloaded).size !== asset.size || !isWindowsExecutable(downloaded)) throw Error('The downloaded update did not pass file verification.');
     await installPortableUpdate(downloaded, true);
@@ -160,7 +161,7 @@ async function checkForUpdates() {
 }
 
 function window() {
-  mainWindow = new BrowserWindow({ width: 1200, height: 800, minWidth: 800, minHeight: 600, title: 'SAFE PDF RENAME', icon: path.join(__dirname, '../dist/logo.ico'), webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false } });
+  mainWindow = new BrowserWindow({ width: 1200, height: 800, minWidth: 800, minHeight: 600, title: 'B6H', icon: path.join(__dirname, '../dist/logo.ico'), webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false } });
   const portablePath = process.env.PORTABLE_EXECUTABLE_FILE;
   if (portablePath) {
     const pending = path.join(app.getPath('userData'), 'updates', 'pending.json');
@@ -182,6 +183,33 @@ ipcMain.handle('get-language', () => getLanguage());
 ipcMain.handle('save-language', (_, language) => saveLanguage(language));
 ipcMain.handle('get-theme', () => getTheme());
 ipcMain.handle('save-theme', (_, theme) => saveTheme(theme));
+const signatureSettingKeys = new Set(['field:number','field:date','field:person','field:document','field:certifier','field:copies','field:fee','field:notes','header:signatureHeaderNumber','header:signatureHeaderDate','header:signatureHeaderPerson','header:signatureHeaderDocument','header:signatureHeaderSigner','header:signatureHeaderCount','header:signatureHeaderFee','header:signatureHeaderNotes']);
+const signatureSettingsFile = () => path.join(app.getPath('userData'), 'signature-settings.json');
+function validateSignatureSettings(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length > 200) throw Error('Invalid Signature Authentication settings.');
+  const labels = {};
+  for (const [key, label] of Object.entries(value)) {
+    if ((!signatureSettingKeys.has(key) && !/^custom:[a-f0-9-]{36}:(?:label|header)$/.test(key)) || typeof label !== 'string') throw Error('Invalid Signature Authentication settings.');
+    if (label.length > 1000) throw Error('Signature Authentication labels must be 1,000 characters or fewer.');
+    labels[key] = label;
+  }
+  const customIds = new Set(Object.keys(labels).map(key => key.match(/^custom:([a-f0-9-]{36}):label$/)?.[1]).filter(Boolean));
+  for (const id of customIds) if (!labels[`custom:${id}:label`]?.trim() || !labels[`custom:${id}:header`]?.trim()) throw Error('Custom field labels and Excel headers cannot be empty.');
+  for (const key of Object.keys(labels)) { const id = key.match(/^custom:([a-f0-9-]{36}):header$/)?.[1]; if (id && !customIds.has(id)) throw Error('Invalid Signature Authentication settings.'); }
+  return labels;
+}
+function readSignatureSettings() { try { return validateSignatureSettings(JSON.parse(fs.readFileSync(signatureSettingsFile(), 'utf8'))); } catch (error) { if (error.code === 'ENOENT') return {}; throw error; } }
+ipcMain.handle('signature-settings-load', () => {
+  return readSignatureSettings();
+});
+ipcMain.handle('signature-settings-save', (_, value) => {
+  const labels = validateSignatureSettings(value);
+  fs.mkdirSync(app.getPath('userData'), { recursive: true });
+  fs.writeFileSync(signatureSettingsFile(), JSON.stringify(labels, null, 2), 'utf8');
+  return labels;
+});
+ipcMain.handle('selector-settings-load', (_, selector) => selectorSettings.load(app.getPath('userData'), selector));
+ipcMain.handle('selector-settings-save', (_, selector, value) => selectorSettings.save(app.getPath('userData'), selector, value));
 ipcMain.handle('pick-destination', async (_, currentPath) => {
   if (typeof currentPath !== 'string' || !path.isAbsolute(currentPath)) throw Error('Invalid destination path');
   const result = await dialog.showOpenDialog({ defaultPath: fs.existsSync(currentPath) ? currentPath : app.getPath('documents'), properties: ['openDirectory', 'createDirectory'] });
@@ -215,19 +243,19 @@ function clearTranslationData() {
 ipcMain.handle('translation-load', () => clearTranslationData());
 ipcMain.handle('translation-clear-cache', async () => { clearTranslationData(); await Promise.all([session.defaultSession.clearCache(), session.defaultSession.clearStorageData({ storages: ['cookies', 'shadercache', 'serviceworkers', 'cachestorage'] })]); return true; });
 ipcMain.handle('translation-save', (_, sheets) => { translation.validateSheets(sheets); fs.mkdirSync(app.getPath('userData'), { recursive: true }); fs.writeFileSync(path.join(app.getPath('userData'), 'translations.json'), JSON.stringify(sheets, null, 2), 'utf8'); return sheets.length; });
-ipcMain.handle('translation-parse-rows', (_, rows) => translation.fromRowsIfRegister(rows));
+ipcMain.handle('translation-parse-rows', (_, rows) => translation.fromRowsIfRegister(rows, selectorSettings.load(app.getPath('userData'), 'translation')));
 ipcMain.handle('translation-import-workbook', async () => {
   const result = await dialog.showOpenDialog(mainWindow, { title: 'Import translation workbook', properties: ['openFile'], filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] });
   if (result.canceled) return null;
   const file = fs.realpathSync(result.filePaths[0]);
-  const imported = await translationWorkbook.readWorkbook(file);
+  const imported = await translationWorkbook.readWorkbook(file, selectorSettings.load(app.getPath('userData'), 'translation'));
   importedTranslationWorkbooks.set(file, imported.sourceMap);
   return imported;
 });
 ipcMain.handle('translation-refresh-workbook', async (_, value) => {
   const file = typeof value === 'string' ? path.resolve(value) : '';
   if (!importedTranslationWorkbooks.has(file)) throw Error('Import or create this workbook in the current session before refreshing it.');
-  const refreshed = await translationWorkbook.readWorkbook(file);
+  const refreshed = await translationWorkbook.readWorkbook(file, selectorSettings.load(app.getPath('userData'), 'translation'));
   importedTranslationWorkbooks.set(file, refreshed.sourceMap);
   return refreshed;
 });
@@ -235,7 +263,7 @@ ipcMain.handle('translation-save-workbook', async (_, input) => {
   const file = typeof input?.file === 'string' ? path.resolve(input.file) : '';
   const sourceMap = importedTranslationWorkbooks.get(file);
   if (!sourceMap || JSON.stringify(Object.entries(sourceMap).sort()) !== JSON.stringify(Object.entries(input.sourceMap || {}).sort())) throw Error('Import this workbook in the current session before saving it.');
-  const result = await translationWorkbook.saveWorkbook(file, input.sheets, sourceMap, 'VI');
+  const result = await translationWorkbook.saveWorkbook(file, input.sheets, sourceMap, 'VI', selectorSettings.load(app.getPath('userData'), 'translation'));
   importedTranslationWorkbooks.set(file, Object.fromEntries(input.sheets.map(sheet => [sheet.id, sheet.name])));
   return result;
 });
@@ -244,7 +272,7 @@ ipcMain.handle('translation-new-workbook', async (_, sheets) => {
   const result = await dialog.showSaveDialog(mainWindow, { title: 'Create translation workbook', defaultPath: path.join(app.getPath('documents'), 'dich-thuat.xlsx'), filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] });
   if (result.canceled || !result.filePath) return null;
   const file = path.resolve(path.extname(result.filePath) ? result.filePath : `${result.filePath}.xlsx`);
-  await translationWorkbook.createWorkbook(file, sheets, 'VI');
+  await translationWorkbook.createWorkbook(file, sheets, 'VI', selectorSettings.load(app.getPath('userData'), 'translation'));
   const sourceMap = Object.fromEntries(sheets.map(sheet => [sheet.id, sheet.name]));
   importedTranslationWorkbooks.set(file, sourceMap);
   return { file, sourceMap };
@@ -253,7 +281,7 @@ ipcMain.handle('signature-import-workbook', async () => {
   const result = await dialog.showOpenDialog(mainWindow, { title: 'Import signature authentication workbook', properties: ['openFile'], filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] });
   if (result.canceled) return null;
   const file = fs.realpathSync(result.filePaths[0]);
-  const imported = await signatureWorkbook.readWorkbook(file);
+  const imported = await signatureWorkbook.readWorkbook(file, readSignatureSettings(), getLanguage());
   importedSignatureWorkbooks.set(file, imported.sourceMap);
   return imported;
 });
@@ -261,7 +289,7 @@ ipcMain.handle('signature-clear-cache', async () => { importedSignatureWorkbooks
 ipcMain.handle('signature-refresh-workbook', async (_, value) => {
   const file = typeof value === 'string' ? path.resolve(value) : '';
   if (!importedSignatureWorkbooks.has(file)) throw Error('Import or create this signature workbook in the current session before refreshing it.');
-  const refreshed = await signatureWorkbook.readWorkbook(file);
+  const refreshed = await signatureWorkbook.readWorkbook(file, readSignatureSettings(), getLanguage());
   importedSignatureWorkbooks.set(file, refreshed.sourceMap);
   return refreshed;
 });
@@ -269,7 +297,7 @@ ipcMain.handle('signature-save-workbook', async (_, input) => {
   const file = typeof input?.file === 'string' ? path.resolve(input.file) : '';
   const sourceMap = importedSignatureWorkbooks.get(file);
   if (!sourceMap || JSON.stringify(Object.entries(sourceMap).sort()) !== JSON.stringify(Object.entries(input.sourceMap || {}).sort())) throw Error('Import or create this signature workbook in the current session before saving it.');
-  await signatureWorkbook.saveWorkbook(file, input.sheets, sourceMap);
+  await signatureWorkbook.saveWorkbook(file, input.sheets, sourceMap, readSignatureSettings(), getLanguage());
   importedSignatureWorkbooks.set(file, Object.fromEntries(input.sheets.map(sheet => [sheet.id, sheet.name])));
   return input.sheets.length;
 });
@@ -277,7 +305,7 @@ ipcMain.handle('signature-new-workbook', async (_, sheets) => {
   const result = await dialog.showSaveDialog(mainWindow, { title: 'Create signature authentication workbook', defaultPath: path.join(app.getPath('documents'), 'so-chung-thuc-chu-ky.xlsx'), filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] });
   if (result.canceled || !result.filePath) return null;
   const file = path.resolve(path.extname(result.filePath) ? result.filePath : `${result.filePath}.xlsx`);
-  await signatureWorkbook.createWorkbook(file, sheets);
+  await signatureWorkbook.createWorkbook(file, sheets, readSignatureSettings(), getLanguage());
   const sourceMap = Object.fromEntries(sheets.map(sheet => [sheet.id, sheet.name]));
   importedSignatureWorkbooks.set(file, sourceMap);
   return { file, sourceMap };
@@ -286,7 +314,7 @@ ipcMain.handle('copies-import-workbook', async () => {
   const result = await dialog.showOpenDialog(mainWindow, { title: 'Import copies workbook', properties: ['openFile'], filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] });
   if (result.canceled) return null;
   const file = fs.realpathSync(result.filePaths[0]);
-  const imported = await copiesWorkbook.readWorkbook(file);
+  const imported = await copiesWorkbook.readWorkbook(file, selectorSettings.load(app.getPath('userData'), 'copies'));
   importedCopiesWorkbooks.set(file, imported.sourceMap);
   return imported;
 });
@@ -294,7 +322,7 @@ ipcMain.handle('copies-clear-cache', async () => { importedCopiesWorkbooks.clear
 ipcMain.handle('copies-refresh-workbook', async (_, value) => {
   const file = typeof value === 'string' ? path.resolve(value) : '';
   if (!importedCopiesWorkbooks.has(file)) throw Error('Import or create this copies workbook in the current session before refreshing it.');
-  const refreshed = await copiesWorkbook.readWorkbook(file);
+  const refreshed = await copiesWorkbook.readWorkbook(file, selectorSettings.load(app.getPath('userData'), 'copies'));
   importedCopiesWorkbooks.set(file, refreshed.sourceMap);
   return refreshed;
 });
@@ -302,7 +330,7 @@ ipcMain.handle('copies-save-workbook', async (_, input) => {
   const file = typeof input?.file === 'string' ? path.resolve(input.file) : '';
   const sourceMap = importedCopiesWorkbooks.get(file);
   if (!sourceMap || JSON.stringify(Object.entries(sourceMap).sort()) !== JSON.stringify(Object.entries(input.sourceMap || {}).sort())) throw Error('Import or create this copies workbook in the current session before saving it.');
-  const result = await copiesWorkbook.saveWorkbook(file, input.sheets, sourceMap);
+  const result = await copiesWorkbook.saveWorkbook(file, input.sheets, sourceMap, selectorSettings.load(app.getPath('userData'), 'copies'));
   importedCopiesWorkbooks.set(file, Object.fromEntries(input.sheets.map(sheet => [sheet.id, sheet.name])));
   return result;
 });
@@ -311,7 +339,7 @@ ipcMain.handle('copies-new-workbook', async (_, sheets) => {
   const result = await dialog.showSaveDialog(mainWindow, { title: 'Create copies workbook', defaultPath: path.join(app.getPath('documents'), 'copies.xlsx'), filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] });
   if (result.canceled || !result.filePath) return null;
   const file = path.resolve(path.extname(result.filePath) ? result.filePath : `${result.filePath}.xlsx`);
-  await copiesWorkbook.createWorkbook(file, sheets);
+  await copiesWorkbook.createWorkbook(file, sheets, selectorSettings.load(app.getPath('userData'), 'copies'));
   const sourceMap = Object.fromEntries(sheets.map(sheet => [sheet.id, sheet.name]));
   importedCopiesWorkbooks.set(file, sourceMap);
   return { file, sourceMap };
@@ -321,7 +349,7 @@ ipcMain.handle('copies-export-workbook', async (_, sheets) => {
   const result = await dialog.showSaveDialog(mainWindow, { title: 'Export copies workbook', defaultPath: path.join(app.getPath('documents'), 'copies.xlsx'), filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] });
   if (result.canceled || !result.filePath) return null;
   const file = path.resolve(path.extname(result.filePath) ? result.filePath : `${result.filePath}.xlsx`);
-  return copiesWorkbook.writeWorkbook(file, sheets);
+  return copiesWorkbook.writeWorkbook(file, sheets, selectorSettings.load(app.getPath('userData'), 'copies'));
 });
 ipcMain.handle('preview', (_, input) => pdf.preview({ ...input, destinations: getDestinations() }));
 ipcMain.handle('run', async (_, input) => { if(!input || typeof input.token !== 'string') throw Error('Invalid run request'); const result=pdf.run(input); for(const key of ['backupPath','outputPath','reportPath']) completedPaths.add(path.resolve(result[key])); completedReportPaths.add(path.resolve(result.reportPath)); return result; });

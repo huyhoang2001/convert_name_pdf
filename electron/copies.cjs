@@ -1,5 +1,5 @@
 const fields = ['refNo', 'customer', 'description', 'quantity', 'unitPrice'];
-const headers = ['STT', 'SCT', 'Tên khách hàng', 'Nội dung', 'SL', 'Đơn', 'Thành tiền'];
+const headers = ['STT', 'SCT', 'Tên khách hàng', 'Nội dung', 'SL', 'Số bản sao', 'Thành tiền'];
 const title = 'BẢNG KÊ CHỨNG THỰC BẢN SAO TỪ BẢN CHÍNH - KHÁCH LẺ';
 const address = 'Số 105, Đường Hưng Đạo Vương, Kp. Nam Hà, Phường Trấn Biên, Tp. Đồng Nai';
 const inWords = 'Bằng chữ: Tám mươi ngàn đồng';
@@ -16,7 +16,7 @@ function toInteger(value, field) {
   if (!Number.isSafeInteger(number)) throw Error(`${field} must be a whole number.`);
   return String(number);
 }
-function total(row) { return row.manualTotal ? Number(row.totalAmount || 0) : Math.ceil(Number(row.quantity || 0) / 2) * Number(row.unitPrice || 0); }
+function total(row) { return row.manualTotal ? Number(row.totalAmount || 0) : Math.ceil(Number(row.quantity || 0) * Number(row.unitPrice || 0) / 2) * 10000; }
 function validateSheets(sheets) {
   if (!Array.isArray(sheets) || !sheets.length || sheets.length > 255) throw Error('Invalid copies register sheets.');
   const names = new Set(), ids = new Set();
@@ -32,14 +32,15 @@ function validateSheets(sheets) {
       if (!row || typeof row.id !== 'string' || !row.id || rowIds.has(row.id)) throw Error('Invalid copies register data.');
       rowIds.add(row.id);
       for (const field of fields) if (typeof row[field] !== 'string' || row[field].length > 20000) throw Error('Invalid copies register data.');
+      for (const [field, value] of Object.entries(row)) if (field.startsWith('custom:') && (!/^custom:[a-f0-9-]{36}$/.test(field) || typeof value !== 'string' || value.length > 20000)) throw Error('Invalid copies register data.');
       if (row.refNo && !/^\d+$/.test(row.refNo)) throw Error('Reference numbers must be whole numbers.');
       if (row.manualRefNo != null && typeof row.manualRefNo !== 'boolean') throw Error('Invalid reference number mode.');
       if (row.quantity && (!/^\d+$/.test(row.quantity) || !Number.isSafeInteger(Number(row.quantity)))) throw Error('Quantity must be a whole number.');
-      if (row.unitPrice && (!/^\d+$/.test(row.unitPrice) || !Number.isSafeInteger(Number(row.unitPrice)))) throw Error('Unit price must be a whole number.');
+      if (row.unitPrice && (!/^\d+$/.test(row.unitPrice) || !Number.isSafeInteger(Number(row.unitPrice)))) throw Error('Number of copies must be a whole number.');
       if (row.manualTotal != null && typeof row.manualTotal !== 'boolean') throw Error('Invalid total amount mode.');
       if (row.totalAmount != null && (typeof row.totalAmount !== 'string' || (row.totalAmount && (!/^\d+$/.test(row.totalAmount) || !Number.isSafeInteger(Number(row.totalAmount)))))) throw Error('Total amount must be a whole number.');
       if (row.manualTotal && !row.totalAmount) throw Error('Enter a manual total amount.');
-      if (row.quantity && row.unitPrice && !Number.isSafeInteger(Math.ceil(Number(row.quantity) / 2) * Number(row.unitPrice))) throw Error('Total amount is outside the supported number range.');
+      if (row.quantity && row.unitPrice && !Number.isSafeInteger(Math.ceil(Number(row.quantity) * Number(row.unitPrice) / 2) * 10000)) throw Error('Total amount is outside the supported number range.');
     }
   }
   return sheets;

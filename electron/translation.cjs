@@ -12,11 +12,11 @@ function toInteger(value, field) {
   if (!/^\d+$/.test(text) || !Number.isSafeInteger(Number(text))) throw Error(`${field} must be a whole number.`);
   return Number(text);
 }
-function fromRows(rows) {
+function fromRows(rows, settings = {}) {
   const h = rows[0] || [];
   const indexes = fields.map((field, i) => {
     const shortPersonHeaders = field === 'person' ? ['Enter information', 'Nhập thông tin'] : [];
-    const expected = [headers.EN[i], headers.VI[i], field, ...shortPersonHeaders].map(normalizeHeader);
+    const expected = [settings[`header:${field}`], headers.EN[i], headers.VI[i], field, ...shortPersonHeaders].filter(Boolean).map(normalizeHeader);
     return [field, h.findIndex(value => {
       const actual = normalizeHeader(value);
       const matches = expected.some(header => actual === header || (Math.min(actual.length, header.length) >= 32 && (actual.startsWith(header) || header.startsWith(actual))));
@@ -24,17 +24,19 @@ function fromRows(rows) {
     })];
   });
   if (indexes.some(([, index]) => index < 0)) throw Error('Import file must contain all 9 translation register columns.');
-  return rows.slice(1).filter(row => indexes.some(([field, index]) => field !== 'number' && String(row[index] ?? '').trim())).map((row, i) => Object.fromEntries([['id', `import-${Date.now()}-${i}`], ...indexes.map(([field, index]) => [field, String(row[index] ?? '')])]));
+  const custom = [...new Set(Object.keys(settings).map(key => key.match(/^custom:([a-f0-9-]{36}):label$/)?.[1]).filter(Boolean))].map(id => ({ id, header: normalizeHeader(settings[`custom:${id}:header`]), index: h.findIndex(value => normalizeHeader(value) === normalizeHeader(settings[`custom:${id}:header`])) }));
+
+  return rows.slice(1).filter(row => indexes.some(([field, index]) => field !== 'number' && String(row[index] ?? '').trim()) || custom.some(field => String(row[field.index] ?? '').trim())).map((row, i) => Object.fromEntries([['id', `import-${Date.now()}-${i}`], ...indexes.map(([field, index]) => [field, String(row[index] ?? '')]), ...custom.map(field => [`custom:${field.id}`, String(row[field.index] ?? '')])]));
 }
-function fromRowsIfRegister(rows) {
-  try { return fromRows(rows); }
+function fromRowsIfRegister(rows, settings) {
+  try { return fromRows(rows, settings); }
   catch (error) { if (error.message === 'Import file must contain all 9 translation register columns.') return null; throw error; }
 }
 function validate(records) {
   if (!Array.isArray(records) || records.length > 100000) throw Error('Invalid translation register data.');
   const ids = new Set();
   for (const record of records) {
-    if (!record || typeof record.id !== 'string' || !record.id || ids.has(record.id) || fields.some(field => typeof record[field] !== 'string' || record[field].length > 20000)) throw Error('Invalid translation register data.');
+    if (!record || typeof record.id !== 'string' || !record.id || ids.has(record.id) || fields.some(field => typeof record[field] !== 'string' || record[field].length > 20000) || Object.entries(record).some(([key, value]) => key.startsWith('custom:') && (!/^custom:[a-f0-9-]{36}$/.test(key) || typeof value !== 'string' || value.length > 20000))) throw Error('Invalid translation register data.');
     ids.add(record.id);
   }
   return records;

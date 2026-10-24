@@ -1,5 +1,5 @@
 appId: com.safe-pdf-rename.desktop
-productName: SAFE PDF RENAME
+productName: B6H
 electronDist: node_modules/electron/dist
 electronLanguages:
   - en-US
@@ -14,4 +14,4 @@ files:
 win:
   target: portable
   icon: assets/logo.ico
-  artifactName: SAFE-PDF-RENAME-${version}.${ext}
+  artifactName: B6H-${version}.${ext}

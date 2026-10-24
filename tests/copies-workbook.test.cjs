@@ -7,9 +7,10 @@ const ExcelJS = require('exceljs');
 const { readWorkbook, createWorkbook, saveWorkbook, writeWorkbook } = require('../electron/copies-workbook.cjs');
 const { headers, title, address, inWords, invoice, supplier, signature, total } = require('../electron/copies.cjs');
 
-test('Copies pricing charges 10,000 per pair of units and allows manual discounted totals', () => {
-  const priced = quantity => total({ quantity: String(quantity), unitPrice: '10000' });
-  assert.deepEqual([1, 2, 3, 4].map(priced), [10000, 10000, 20000, 20000]);
+test('Copies amount charges 10,000 VND per two copies times the copy multiplier', () => {
+  assert.deepEqual([1, 2, 3, 4, 5].map(quantity => total({ quantity: String(quantity), unitPrice: '1' })), [10000, 10000, 20000, 20000, 30000]);
+  assert.equal(total({ quantity: '10', unitPrice: '2' }), 100000);
+  assert.equal(require('../electron/copies.cjs').toInteger('1,000', 'Number of copies'), '1000');
   assert.equal(total({ quantity: '4', unitPrice: '10000', manualTotal: true, totalAmount: '15000' }), 15000);
 });
 
@@ -22,8 +23,8 @@ test('Copies import reads the supplied register layout and ignores footer rows',
     const sheet = workbook.addWorksheet('kê 15-08');
     sheet.getCell('A1').value = title; sheet.getCell('A2').value = 'Ngày 15 tháng 08 năm 2026'; sheet.getCell('A4').value = `Địa chỉ: ${address}`;
     sheet.addRow([]); sheet.addRow([]); sheet.addRow([]); sheet.addRow(['STT', 'SCT', 'Tên khách hàng', 'Nội dung', 'SL', 'Đơn', 'Thành tiền']);
-    sheet.addRow([1, 3487, 'Customer A', 'Certified copy', 5, 16000, { formula: 'E8*F8', result: 80000 }]);
-    sheet.addRow([2, 3488, 'Customer B', 'Passport', 1, 10000, 10000]);
+    sheet.addRow([1, 3487, 'Customer A', 'Certified copy', 5, 1, { formula: 'E8*F8', result: 30000 }]);
+    sheet.addRow([2, 3488, 'Customer B', 'Passport', 5, '1,000', '5,000']);
     sheet.addRow(['Total for Certified Copies']);
     sheet.addRow(['In words: Eighty thousand VND']);
     await workbook.xlsx.writeFile(file);
@@ -32,8 +33,11 @@ test('Copies import reads the supplied register layout and ignores footer rows',
     assert.equal(imported.sheets[0].date, '2026-08-15');
     assert.equal(imported.sheets[0].rows.length, 2);
     assert.equal(imported.sheets[0].rows[0].refNo, '3487');
-    assert.equal(imported.sheets[0].rows[0].totalAmount, '80000');
-    assert.equal(imported.sheets[0].rows[0].manualTotal, true);
+    assert.equal(imported.sheets[0].rows[0].totalAmount, '30000');
+    assert.equal(imported.sheets[0].rows[0].manualTotal, false);
+    assert.equal(imported.sheets[0].rows[1].unitPrice, '1000');
+    assert.equal(imported.sheets[0].rows[1].totalAmount, '25000000');
+    assert.equal(imported.sheets[0].rows[1].manualTotal, false);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -42,7 +46,7 @@ test('Copies create and save write the requested header, automatic numbers, tota
   const file = path.join(dir, 'copies.xlsx');
   try {
     const workbook = new ExcelJS.Workbook(); workbook.addWorksheet('Cover').getCell('A1').value = 'Preserved'; await workbook.xlsx.writeFile(file);
-    const sheet = { id: 'one', name: 'August', title, address, date: '2026-08-15', rows: [{ id: 'row-1', refNo: '3487', customer: 'Customer A', description: 'Certified copy', quantity: '5', unitPrice: '16000' }] };
+    const sheet = { id: 'one', name: 'August', title, address, date: '2026-08-15', rows: [{ id: 'row-1', refNo: '3487', customer: 'Customer A', description: 'Certified copy', quantity: '5', unitPrice: '1' }] };
     await saveWorkbook(file, [sheet], {});
     const output = new ExcelJS.Workbook(); await output.xlsx.readFile(file);
     const saved = output.getWorksheet('August');
@@ -55,10 +59,10 @@ test('Copies create and save write the requested header, automatic numbers, tota
     assert.equal(saved.getCell('A5').value, headers[0]);
     assert.equal(saved.getCell('A6').value, 1);
     assert.equal(saved.getCell('B6').value, 3487);
-    assert.equal(saved.getCell('G6').value, 48000);
+    assert.equal(saved.getCell('G6').value, 30000);
     assert.equal(saved.getCell('A7').value, 'Tổng cộng chứng thực bản sao');
     assert.equal(saved.getCell('A7').alignment.horizontal, 'left');
-    assert.equal(saved.getCell('G7').result, 48000);
+    assert.equal(saved.getCell('G7').result, 30000);
     assert.equal(saved.getCell('A8').value, inWords);
     assert.equal(saved.getCell('A9').value, invoice);
     assert.equal(saved.getCell('D9').value, supplier);

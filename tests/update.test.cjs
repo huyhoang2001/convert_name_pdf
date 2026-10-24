@@ -15,6 +15,7 @@ test('compares release versions and skips intermediate releases', () => {
 test('recognizes portable release asset names after GitHub normalizes spaces', () => {
   assert.equal(isPortableReleaseAsset('SAFE.PDF.RENAME.1.0.1.exe'), true);
   assert.equal(isPortableReleaseAsset('SAFE-PDF-RENAME-1.0.2.exe'), true);
+  assert.equal(isPortableReleaseAsset('B6H-1.0.8.exe'), true);
   assert.equal(isPortableReleaseAsset('unrelated.exe'), false);
 });
 

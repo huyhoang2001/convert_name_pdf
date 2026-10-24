@@ -13,7 +13,7 @@ function isNewerVersion(current, latest) {
   return false;
 }
 
-function isPortableReleaseAsset(name) { return /^SAFE[ ._-]PDF[ ._-]RENAME[ ._-]\d.*\.exe$/i.test(String(name)); }
+function isPortableReleaseAsset(name) { return /^(?:SAFE[ ._-]PDF[ ._-]RENAME|B6H)[ ._-]\d.*\.exe$/i.test(String(name)); }
 
 function isWindowsExecutable(filePath) {
   try {

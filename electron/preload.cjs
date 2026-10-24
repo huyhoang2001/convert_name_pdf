@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld('pdfApp', {
   getDestinations: () => ipcRenderer.invoke('get-destinations'), saveDestination: (kind, value) => ipcRenderer.invoke('save-destinations', { kind, value }), scan: root => ipcRenderer.invoke('scan', root),
   getLanguage: () => ipcRenderer.invoke('get-language'), saveLanguage: language => ipcRenderer.invoke('save-language', language),
   getTheme: () => ipcRenderer.invoke('get-theme'), saveTheme: theme => ipcRenderer.invoke('save-theme', theme),
+  getSignatureSettings: () => ipcRenderer.invoke('signature-settings-load'), saveSignatureSettings: labels => ipcRenderer.invoke('signature-settings-save', labels),
+  getSelectorSettings: selector => ipcRenderer.invoke('selector-settings-load', selector), saveSelectorSettings: (selector, labels) => ipcRenderer.invoke('selector-settings-save', selector, labels),
   preview: input => ipcRenderer.invoke('preview', input), run: input => ipcRenderer.invoke('run', input),
   countScan: root => ipcRenderer.invoke('count-scan', root), getExistingCountReport: root => ipcRenderer.invoke('count-existing-report', root), saveCountReport: (root, language) => ipcRenderer.invoke('count-save-report', { root, language }),
   getTranslations: () => ipcRenderer.invoke('translation-load'), saveTranslations: rows => ipcRenderer.invoke('translation-save', rows), parseTranslationRows: rows => ipcRenderer.invoke('translation-parse-rows', rows),

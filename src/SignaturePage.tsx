@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import ExcelJS from 'exceljs';
 import { canEnterSignatureFee } from './signature-fee';
 import { useUndoHistory } from './undoHistory';
@@ -19,7 +20,7 @@ const emptyRow = (): SignatureRow => ({ id: '', number: '', date: today(), perso
 const reindex = (rows: SignatureRow[]) => rows.map((row, index) => ({ ...row, number: String(index + 1) }));
 const money = (value: string) => { const digits = value.trim(); return /^(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(digits) && Number.isSafeInteger(Number(digits.replaceAll(',', ''))) ? Number(digits.replaceAll(',', '')).toLocaleString('en-US') : value; };
 
-export default function SignaturePage({ api, t, labels = {} }: { api: SignatureApi; t: (key: string) => string; labels?: Record<string, string> }) {
+function SignaturePage({ api, t, labels = {}, isVisible }: { api: SignatureApi; t: (key: string) => string; labels?: Record<string, string>; isVisible: boolean }) {
   const [sheets, setSheets] = useState<SignatureSheet[]>([]), [activeId, setActiveId] = useState(''), [form, setForm] = useState<SignatureRow>(emptyRow());
   const undo = useUndoHistory<{ sheets: SignatureSheet[]; activeId: string }>();
   const [feeFocused, setFeeFocused] = useState(false);
@@ -27,10 +28,16 @@ export default function SignaturePage({ api, t, labels = {} }: { api: SignatureA
   const [file, setFile] = useState(''), [sourceMap, setSourceMap] = useState<Record<string, string>>({}), [dirty, setDirty] = useState(false), [query, setQuery] = useState(''), [message, setMessage] = useState(''), [error, setError] = useState('');
   const active = sheets.find(sheet => sheet.id === activeId), rows = active?.rows ?? [];
   const visibleRows = useMemo(() => rows.filter(row => Object.values(row).join(' ').toLocaleLowerCase().includes(query.toLocaleLowerCase())), [rows, query]);
+  const tableWrapRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({ count: visibleRows.length, getScrollElement: () => tableWrapRef.current, estimateSize: () => 58, overscan: 8, getItemKey: index => visibleRows[index].id, enabled: isVisible });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const topPadding = virtualRows[0]?.start ?? 0;
+  const bottomPadding = Math.max(0, rowVirtualizer.getTotalSize() - (virtualRows.at(-1)?.end ?? 0));
   const label = (key: string, fallback = key) => labels[key]?.trim() || t(fallback);
   const tableHeaders = headerKeys.map(key => label('header:' + key, key));
   const customFields = [...new Set(Object.keys(labels).map(key => key.match(/^custom:([a-f0-9-]{36}):label$/)?.[1]).filter((id): id is string => Boolean(id)))].map(id => ({ key: `custom:${id}`, label: label(`custom:${id}:label`), header: label(`custom:${id}:header`, `custom:${id}:label`) }));
   const registerColumns = [...keys.map((key, index) => ({ key, header: tableHeaders[index] })), ...customFields.map(field => ({ key: field.key, header: field.header }))];
+  const tableColumnCount = registerColumns.length + 1;
   const validHeaders = new Set(registerColumns.map(column => column.header.trim().toLocaleLowerCase())).size === registerColumns.length;
   const remember = () => undo.push({ sheets, activeId });
   const undoChange = () => { const previous = undo.pop(); if (!previous) return; setSheets(previous.sheets); setActiveId(previous.activeId); setForm(emptyRow()); setDirty(true); setMessage(''); setError(''); };
@@ -85,12 +92,18 @@ export default function SignaturePage({ api, t, labels = {} }: { api: SignatureA
         <button type="button" className="page-button" onClick={() => void clearCache()}>{t('signatureClearCache')}</button>
         <span>{visibleRows.length} / {rows.length}</span>{message && <span role="status">{message}</span>}
       </div>
-      {sheets.length ? <div className="translation-table-wrap"><table className="translation-table signature-table">
+      {sheets.length ? <div ref={tableWrapRef} className="translation-table-wrap"><table className="translation-table signature-table">
         <thead><tr>{registerColumns.map(({ header }, index) => <th key={`${index}-${header}`}>{header}</th>)}<th>{t('translationActions')}</th></tr></thead>
-        <tbody>{visibleRows.map(row => <tr key={row.id}><td>{row.number}</td><td>{row.date}</td><td>{row.person}</td><td>{row.document}</td><td>{row.certifier}</td><td>{row.copies}</td><td>{money(row.fee)}</td><td>{row.notes}</td>{customFields.map(field => <td key={field.key}>{row[field.key] ?? ''}</td>)}<td><button className="edit-location row-action-edit" type="button" onClick={() => setForm({ ...row, fee: money(row.fee) })}>{t('edit')}</button><button className="edit-location row-action-delete" type="button" onClick={() => { if (window.confirm(t('translationDeleteConfirm'))) updateRows(current => current.filter(item => item.id !== row.id)); }}>{t('translationDelete')}</button></td></tr>)}</tbody>
+        <tbody>
+          {topPadding > 0 && <tr className="virtual-table-spacer" aria-hidden="true"><td colSpan={tableColumnCount} style={{ height: topPadding }} /></tr>}
+          {virtualRows.map(virtualRow => { const row = visibleRows[virtualRow.index]; return <tr key={virtualRow.key} data-index={virtualRow.index} ref={rowVirtualizer.measureElement}><td>{row.number}</td><td>{row.date}</td><td>{row.person}</td><td>{row.document}</td><td>{row.certifier}</td><td>{row.copies}</td><td>{money(row.fee)}</td><td>{row.notes}</td>{customFields.map(field => <td key={field.key}>{row[field.key] ?? ''}</td>)}<td><button className="edit-location row-action-edit" type="button" onClick={() => setForm({ ...row, fee: money(row.fee) })}>{t('edit')}</button><button className="edit-location row-action-delete" type="button" onClick={() => { if (window.confirm(t('translationDeleteConfirm'))) updateRows(current => current.filter(item => item.id !== row.id)); }}>{t('translationDelete')}</button></td></tr>; })}
+          {bottomPadding > 0 && <tr className="virtual-table-spacer" aria-hidden="true"><td colSpan={tableColumnCount} style={{ height: bottomPadding }} /></tr>}
+        </tbody>
       </table></div> : <p className="signature-empty">{t('signatureEmpty')}</p>}
     </section>
     {sheetDialog && <div className="report-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setSheetDialog(null); }}><section className="report-dialog sheet-dialog" role={sheetDialog.action === 'delete' ? 'alertdialog' : 'dialog'} aria-modal="true" aria-labelledby="signature-sheet-dialog-title"><header><div><h2 id="signature-sheet-dialog-title">{t(sheetDialog.action === 'add' ? 'sheetAdd' : sheetDialog.action === 'rename' ? 'sheetRename' : 'sheetDelete')}</h2><p>{sheetDialog.action === 'delete' ? t('sheetDeleteConfirm') : t('sheetNamePrompt')}</p></div><button className="report-close-icon" type="button" aria-label={t('close')} onClick={() => setSheetDialog(null)}>&#10005;</button></header><form onSubmit={submitSheetDialog}>{sheetDialog.action !== 'delete' && <label className="sheet-name-field"><span>{t('sheetNamePrompt')}</span><input autoFocus maxLength={31} value={sheetDialog.name} onChange={event => setSheetDialog({ ...sheetDialog, name: event.target.value })} /></label>}<footer><button className="page-button" type="button" onClick={() => setSheetDialog(null)}>{t('close')}</button><button className="primary-button" type="submit">{t(sheetDialog.action === 'add' ? 'sheetAdd' : sheetDialog.action === 'rename' ? 'sheetRename' : 'sheetDelete')}</button></footer></form></section></div>}
     {error && <p className="error">{error}</p>}
   </>;
 }
+
+export default memo(SignaturePage);

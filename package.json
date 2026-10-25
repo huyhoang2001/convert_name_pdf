@@ -1,6 +1,6 @@
 {
   "name": "safe-pdf-rename",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "Safe Windows PDF renaming utility",
   "author": "Local",
   "private": true,
@@ -12,6 +12,7 @@
     "test": "node --test"
   },
   "dependencies": {
+    "@tanstack/react-virtual": "^3.14.22",
     "exceljs": "^4.4.0",
     "page-mascot": "^0.1.0",
     "react": "latest",

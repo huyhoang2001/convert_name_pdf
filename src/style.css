@@ -418,6 +418,7 @@ body{overflow:hidden}
 :is(.translation-panel,.signature-panel) .row-action-edit:hover{border-color:#d8b132;background:#f8dc72;color:#543d00;text-decoration:none}
 :is(.translation-panel,.signature-panel) .row-action-delete{border-color:#c83c3c;background:#d94b4b;color:#fff}
 :is(.translation-panel,.signature-panel) .row-action-delete:hover{border-color:#ad2f2f;background:#c83c3c;color:#fff;text-decoration:none}
+.virtual-table-spacer td{padding:0!important;border:0!important;font-size:0;line-height:0}
 :root[data-theme="light"] table td .row-action-edit{color:#674d00!important}
 :root[data-theme="light"] table td .row-action-delete,:root[data-theme="dark"] table td .row-action-delete{color:#fff!important}
 :root[data-theme="dark"] table td .row-action-edit{color:#674d00!important}

@@ -432,3 +432,25 @@ body{overflow:hidden}
 @media(max-width:520px){.copies-panel .copies-fields{grid-template-columns:minmax(0,1fr)}.copies-panel .copies-fields .copies-description{grid-column:auto}}
 
 .brand-home{justify-content:center}.brand-mark{width:69px;height:69px}.sidebar-collapsed .brand-home{justify-content:center}.sidebar-collapsed .brand-mark{width:69px;height:69px}
+.run-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:4px}.run-spinner{display:inline-block;width:20px;height:20px;border:2px solid #9fc7e2;border-top-color:#287fbe;border-radius:50%;animation:run-spin .8s linear infinite}@keyframes run-spin{to{transform:rotate(360deg)}}@media(max-width:600px){.run-button{width:auto}}
+.update-dialog{width:min(560px,100%);padding:0;overflow:hidden}
+.update-card-header{align-items:center!important;padding:15px 20px!important;border-bottom:0!important;background:#f4f6ff}
+.update-card-header>div{font-size:14px;color:#26364d}
+.update-online-dot{display:inline-block;flex:none;width:8px;height:8px;margin-left:9px;border-radius:50%;background:#16865d}
+.update-card-header .report-close-icon{width:30px;height:30px;font-size:19px;background:transparent}
+.update-card-body{display:flex;flex-direction:column;align-items:center;padding:22px 28px 10px;text-align:center}
+.update-check-icon{display:grid;place-items:center;width:74px;height:74px;margin-bottom:12px;border-radius:50%;background:#e8f4ff;color:#006d9b}
+.update-check-icon svg{width:31px;height:31px;padding:6px;border-radius:50%;background:#006d9b;fill:none;stroke:white;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.update-card-body h2{font-size:19px!important;line-height:1.35;margin:0 0 8px!important}
+.update-build{margin:0;color:#758499;font-size:14px}.update-build strong{color:#0072a3}
+.update-last-checked{display:flex;align-items:center;gap:0;margin:18px 0 0;padding:8px 14px;border-radius:999px;background:#eef0ff;color:#596578;font-size:12px}.update-last-checked .update-online-dot{margin:0 8px 0 0}
+.update-checking{margin:8px 0 0;color:var(--muted);font-size:12px}
+.update-card-actions{justify-content:stretch!important;gap:10px;padding:18px 20px 20px!important;border:0!important}
+.update-card-actions button{flex:1;min-height:42px;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.update-card-actions .page-button{background:#eef0ff;border-color:#eef0ff;color:#42536c}
+:root[data-theme="dark"] .update-card-header{background:#253343}
+:root[data-theme="dark"] .update-card-header>div,:root[data-theme="dark"] .update-card-body h2{color:#e7edf5}
+:root[data-theme="dark"] .update-last-checked,:root[data-theme="dark"] .update-card-actions .page-button{background:#2d3d50;border-color:#2d3d50;color:#d5e0ed}
+:root[data-theme="dark"] .update-build,:root[data-theme="dark"] .update-checking{color:#a6b5c7}
+:root[data-theme="dark"] .update-build strong{color:#76c7eb}
+@media(max-width:600px){.update-card-body{padding:20px 18px 8px}.update-card-body h2{font-size:17px!important}.update-card-actions{padding:14px!important}}

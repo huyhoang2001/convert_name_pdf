@@ -309,5 +309,13 @@
   "sheetNamePrompt": "Sheet name (up to 31 characters)",
   "sheetNameInvalid": "Enter a unique sheet name up to 31 characters. Excel sheet names cannot contain \\ / ? * : [ ].",
   "sheetDeleteConfirm": "Delete this sheet and all its records?",
-  "sheetsImported": "sheets imported"
+  "sheetsImported": "sheets imported",
+  "updateTitle": "Updates",
+  "updateLatestStatus": "You are using the latest version",
+  "updateBuildLabel": "B6H Client",
+  "updateLastChecked": "Last checked",
+  "updateToday": "Today",
+  "updateChecking": "Checking for updates...",
+  "updateCheckAgain": "Check again",
+  "updateUnderstood": "Understood"
 }

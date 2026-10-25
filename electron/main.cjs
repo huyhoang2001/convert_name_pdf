@@ -24,6 +24,7 @@ const importedCopiesWorkbooks = new Map();
 app.setPath('userData', path.join(app.getPath('appData'), 'SAFE PDF RENAME'));
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 let mainWindow;
+let updateCheckInProgress = false;
 const updateText = (en, vi) => getLanguage() === 'VI' ? vi : en;
 function defaultDestinations() {
   const base = path.join(app.getPath('documents'), 'B6H');
@@ -132,19 +133,25 @@ async function importUpdate() {
 }
 
 async function checkForUpdates() {
+  if (updateCheckInProgress) return false;
+  updateCheckInProgress = true;
   let downloaded;
   try {
     const release = await getLatestRelease();
-    if (!release) return void await showUpdateMessage('No published releases were found.', 'Chưa tìm thấy bản phát hành nào.');
-    if (!isNewerVersion(app.getVersion(), release.tag_name)) return void await showUpdateMessage(`You are using the latest version (${app.getVersion()}).`, `Bạn đang sử dụng phiên bản mới nhất (${app.getVersion()}).`);
+    if (!release) { mainWindow?.webContents.send('update-status', { kind: 'dismiss' }); await showUpdateMessage('No published releases were found.', 'Chưa tìm thấy bản phát hành nào.'); return false; }
+    if (!isNewerVersion(app.getVersion(), release.tag_name)) {
+      mainWindow?.webContents.send('update-status', { kind: 'latest', version: app.getVersion(), checkedAt: new Date().toISOString() });
+      return true;
+    }
+    mainWindow?.webContents.send('update-status', { kind: 'dismiss' });
     const asset = release.assets?.find(item => isPortableReleaseAsset(item.name));
     if (!asset) {
       const result = await dialog.showMessageBox(mainWindow, { type: 'info', title: updateText('Update available', 'Có bản cập nhật'), message: updateText(`Version ${release.tag_name} is available. Open its release page to download the portable app.`, `Đã có phiên bản ${release.tag_name}. Mở trang phát hành để tải ứng dụng di động.`), buttons: [updateText('Open release page', 'Mở trang phát hành'), updateText('Later', 'Để sau')] });
       if (result.response === 0) await shell.openExternal(releasesPage);
-      return;
+      return false;
     }
     const result = await dialog.showMessageBox(mainWindow, { type: 'info', title: updateText('Update available', 'Có bản cập nhật'), message: updateText(`Version ${release.tag_name} is available. Download and install it now?`, `Đã có phiên bản ${release.tag_name}. Tải và cài đặt ngay?`), buttons: [updateText('Download and install', 'Tải và cài đặt'), updateText('Later', 'Để sau')] });
-    if (result.response !== 0) return;
+    if (result.response !== 0) return false;
     if (!asset.browser_download_url.startsWith('https://github.com/huyhoang2001/convert_name_pdf/releases/download/') || !Number.isSafeInteger(asset.size) || asset.size < 2 || asset.size > 500 * 1024 * 1024) throw Error('The published portable app download is invalid.');
     const response = await fetch(asset.browser_download_url, { signal: AbortSignal.timeout(120000) });
     if (!response.ok || !response.body) throw Error(`Update download failed (HTTP ${response.status}).`);
@@ -154,10 +161,13 @@ async function checkForUpdates() {
     await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(downloaded, { flags: 'wx' }));
     if (fs.statSync(downloaded).size !== asset.size || !isWindowsExecutable(downloaded)) throw Error('The downloaded update did not pass file verification.');
     await installPortableUpdate(downloaded, true);
+    return false;
   } catch (error) {
     if (downloaded) try { fs.rmSync(downloaded, { force: true }); } catch {}
+    mainWindow?.webContents.send('update-status', { kind: 'dismiss' });
     await showUpdateMessage(`Could not check for updates: ${error.message}`, `Không thể kiểm tra bản cập nhật: ${error.message}`, 'error');
-  }
+    return false;
+  } finally { updateCheckInProgress = false; }
 }
 
 function window() {
@@ -183,6 +193,7 @@ ipcMain.handle('get-language', () => getLanguage());
 ipcMain.handle('save-language', (_, language) => saveLanguage(language));
 ipcMain.handle('get-theme', () => getTheme());
 ipcMain.handle('save-theme', (_, theme) => saveTheme(theme));
+ipcMain.handle('check-for-updates', () => checkForUpdates());
 const signatureSettingKeys = new Set(['field:number','field:date','field:person','field:document','field:certifier','field:copies','field:fee','field:notes','header:signatureHeaderNumber','header:signatureHeaderDate','header:signatureHeaderPerson','header:signatureHeaderDocument','header:signatureHeaderSigner','header:signatureHeaderCount','header:signatureHeaderFee','header:signatureHeaderNotes']);
 const signatureSettingsFile = () => path.join(app.getPath('userData'), 'signature-settings.json');
 function validateSignatureSettings(value) {
@@ -352,6 +363,6 @@ ipcMain.handle('copies-export-workbook', async (_, sheets) => {
   return copiesWorkbook.writeWorkbook(file, sheets, selectorSettings.load(app.getPath('userData'), 'copies'));
 });
 ipcMain.handle('preview', (_, input) => pdf.preview({ ...input, destinations: getDestinations() }));
-ipcMain.handle('run', async (_, input) => { if(!input || typeof input.token !== 'string') throw Error('Invalid run request'); const result=pdf.run(input); for(const key of ['backupPath','outputPath','reportPath']) completedPaths.add(path.resolve(result[key])); completedReportPaths.add(path.resolve(result.reportPath)); return result; });
+ipcMain.handle('run', async (_, input) => { if(!input || typeof input.token !== 'string') throw Error('Invalid run request'); const result=await pdf.run(input); for(const key of ['backupPath','outputPath','reportPath']) completedPaths.add(path.resolve(result[key])); completedReportPaths.add(path.resolve(result.reportPath)); return result; });
 ipcMain.handle('read-report', (_, value) => { if(typeof value !== 'string' || (!completedReportPaths.has(path.resolve(value)) && !completedCountReportPaths.has(path.resolve(value))) || !fs.existsSync(value)) throw Error('Invalid report'); return fs.readFileSync(path.resolve(value), 'utf8'); });
 ipcMain.handle('open-path', async (_, value) => { if(typeof value !== 'string' || !completedPaths.has(path.resolve(value)) || !fs.existsSync(value)) throw Error('Chỉ có thể mở thư mục hoặc báo cáo của lần chạy hoàn tất.'); return shell.openPath(path.resolve(value)); });

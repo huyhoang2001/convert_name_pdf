@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld('pdfApp', {
   getDestinations: () => ipcRenderer.invoke('get-destinations'), saveDestination: (kind, value) => ipcRenderer.invoke('save-destinations', { kind, value }), scan: root => ipcRenderer.invoke('scan', root),
   getLanguage: () => ipcRenderer.invoke('get-language'), saveLanguage: language => ipcRenderer.invoke('save-language', language),
   getTheme: () => ipcRenderer.invoke('get-theme'), saveTheme: theme => ipcRenderer.invoke('save-theme', theme),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  onUpdateStatus: callback => { const listener = (_, status) => callback(status); ipcRenderer.on('update-status', listener); return () => ipcRenderer.removeListener('update-status', listener); },
   getSignatureSettings: () => ipcRenderer.invoke('signature-settings-load'), saveSignatureSettings: labels => ipcRenderer.invoke('signature-settings-save', labels),
   getSelectorSettings: selector => ipcRenderer.invoke('selector-settings-load', selector), saveSelectorSettings: (selector, labels) => ipcRenderer.invoke('selector-settings-save', selector, labels),
   preview: input => ipcRenderer.invoke('preview', input), run: input => ipcRenderer.invoke('run', input),

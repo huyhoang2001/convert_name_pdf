@@ -309,5 +309,13 @@
   "sheetNamePrompt": "Tên trang tính (tối đa 31 ký tự)",
   "sheetNameInvalid": "Tên trang tính phải là duy nhất, tối đa 31 ký tự và không chứa \\ / ? * : [ ].",
   "sheetDeleteConfirm": "Xóa trang tính này cùng toàn bộ bản ghi?",
-  "sheetsImported": "trang tính đã nhập"
+  "sheetsImported": "trang tính đã nhập",
+  "updateTitle": "Cập nhật",
+  "updateLatestStatus": "Bạn đang sử dụng phiên bản mới nhất",
+  "updateBuildLabel": "B6H Client",
+  "updateLastChecked": "Kiểm tra gần nhất",
+  "updateToday": "Hôm nay",
+  "updateChecking": "Đang kiểm tra cập nhật...",
+  "updateCheckAgain": "Kiểm tra lại",
+  "updateUnderstood": "Đã hiểu"
 }

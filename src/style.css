@@ -432,7 +432,7 @@ body{overflow:hidden}
 @media(max-width:520px){.copies-panel .copies-fields{grid-template-columns:minmax(0,1fr)}.copies-panel .copies-fields .copies-description{grid-column:auto}}
 
 .brand-home{justify-content:center}.brand-mark{width:69px;height:69px}.sidebar-collapsed .brand-home{justify-content:center}.sidebar-collapsed .brand-mark{width:69px;height:69px}
-.run-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:4px}.run-spinner{display:inline-block;width:20px;height:20px;border:2px solid #9fc7e2;border-top-color:#287fbe;border-radius:50%;animation:run-spin .8s linear infinite}@keyframes run-spin{to{transform:rotate(360deg)}}@media(max-width:600px){.run-button{width:auto}}
+.run-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:4px}@media(max-width:600px){.run-button{width:auto}}
 .update-dialog{width:min(560px,100%);padding:0;overflow:hidden}
 .update-card-header{align-items:center!important;padding:15px 20px!important;border-bottom:0!important;background:#f4f6ff}
 .update-card-header>div{font-size:14px;color:#26364d}

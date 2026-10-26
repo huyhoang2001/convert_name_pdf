@@ -1,0 +1,251 @@
+{
+  "meta": {
+    "version": "1.0",
+    "description": "Dữ liệu tối ưu để AI Agent / form random tạo Customer Name (viết HOA) và Description. Hỗ trợ random nhiều lần không lỗi, cấu trúc sạch.",
+    "usage": "Random Customer Name bằng cách kết hợp: Họ + (Tên đệm 0-2) + Tên chính. Có thể chọn gender để phù hợp. Description random từ danh sách documentTypes hoặc template.",
+    "nameFormat": "UPPERCASE, 3-4 từ phổ biến (đôi khi 2 hoặc 5)",
+    "optimizeTips": [
+      "Dùng mảng riêng biệt để tránh trùng lặp và dễ mở rộng",
+      "Tách gender để giảm lỗi logic tên nam/nữ",
+      "Description đơn giản là string random hoặc template có placeholder",
+      "Luôn uppercase toàn bộ Customer Name",
+      "Tránh random quá sâu (không nest quá nhiều) để agent ổn định"
+    ]
+  },
+  "surnames": [
+    "NGUYỄN",
+    "TRẦN",
+    "LÊ",
+    "PHẠM",
+    "HOÀNG",
+    "HUỲNH",
+    "PHAN",
+    "VŨ",
+    "VÕ",
+    "ĐẶNG"
+  ],
+  "middleNames": {
+    "male": [
+      "VĂN",
+      "MINH",
+      "HOÀNG",
+      "GIA",
+      "QUỐC",
+      "THANH",
+      "THÀNH",
+      "ĐỨC",
+      "HỮU",
+      "QUANG",
+      "TUẤN",
+      "ĐÌNH",
+      "XUÂN",
+      "TIẾN",
+      "ANH",
+      "BẢO",
+      "NGỌC",
+      "DUY",
+      "NHẬT",
+      "TRUNG",
+      "HẢI",
+      "PHÚC",
+      "KHÁNH",
+      "THIÊN",
+      "TẤN"
+    ],
+    "female": [
+      "THỊ",
+      "NGỌC",
+      "THANH",
+      "PHƯƠNG",
+      "MINH",
+      "BẢO",
+      "KIM",
+      "QUỲNH",
+      "KHÁNH",
+      "NHƯ",
+      "THẢO",
+      "ANH",
+      "YẾN",
+      "HỒNG",
+      "THÙY",
+      "MỸ",
+      "THIÊN",
+      "HOÀNG",
+      "THU",
+      "MAI",
+      "XUÂN",
+      "TRÚC",
+      "HÀ",
+      "ÁNH",
+      "LAN"
+    ],
+    "neutral": [
+      "NGỌC",
+      "MINH",
+      "THANH",
+      "ANH",
+      "BẢO",
+      "KHÁNH",
+      "HOÀNG",
+      "THIÊN",
+      "GIA",
+      "XUÂN"
+    ]
+  },
+  "firstNames": {
+    "male": [
+      "ANH",
+      "TUẤN",
+      "MINH",
+      "HUY",
+      "ĐỨC",
+      "QUANG",
+      "HẢI",
+      "NAM",
+      "DŨNG",
+      "HÙNG",
+      "PHONG",
+      "KIÊN",
+      "LONG",
+      "SƠN",
+      "THẮNG",
+      "VIỆT",
+      "CƯỜNG",
+      "TÀI",
+      "BÌNH",
+      "HOÀ",
+      "KHANG",
+      "PHÚC",
+      "THÀNH",
+      "TRUNG",
+      "ĐẠT",
+      "HƯNG",
+      "KHOA",
+      "LÂM",
+      "NHÂN",
+      "QUÂN"
+    ],
+    "female": [
+      "ANH",
+      "VY",
+      "NGỌC",
+      "NHI",
+      "HÂN",
+      "THƯ",
+      "LINH",
+      "NHƯ",
+      "NGÂN",
+      "PHƯƠNG",
+      "THẢO",
+      "MY",
+      "TRÂN",
+      "QUỲNH",
+      "NGHI",
+      "TRANG",
+      "TRÂM",
+      "AN",
+      "THY",
+      "CHÂU",
+      "TRÚC",
+      "UYÊN",
+      "YẾN",
+      "MAI",
+      "HÀ",
+      "VÂN",
+      "HƯƠNG",
+      "CHI",
+      "GIANG",
+      "TÂM"
+    ],
+    "neutral": [
+      "ANH",
+      "MINH",
+      "NGỌC",
+      "THANH",
+      "BẢO",
+      "KHÁNH",
+      "LINH",
+      "AN",
+      "HÀ",
+      "UYÊN"
+    ]
+  },
+  "descriptionOptions": [
+    "CCCD",
+    "CĂN CƯỚC CÔNG DÂN",
+    "HỌC BẠ",
+    "BẰNG LÁI XE",
+    "BẰNG TỐT NGHIỆP",
+    "TOPIC",
+    "IELTS",
+    "HỌC BẠ THPT",
+    "GIẤY KHAI SINH",
+    "GIẤY KẾT HÔN"
+  ],
+  "descriptionTemplates": [
+    "{type}",
+    "{type} - {name}",
+    "Hồ sơ {type}",
+    "Giấy tờ {type}",
+    "{type} của khách hàng",
+    "Cập nhật {type}",
+    "Xác minh {type}"
+  ],
+  "sampleGenerated": [
+    {
+      "customerName": "NGUYỄN VĂN MINH",
+      "description": "CCCD"
+    },
+    {
+      "customerName": "TRẦN THỊ ANH",
+      "description": "HỌC BẠ THPT"
+    },
+    {
+      "customerName": "LÊ HOÀNG GIA BẢO",
+      "description": "BẰNG LÁI XE"
+    },
+    {
+      "customerName": "PHẠM NGỌC PHƯƠNG ANH",
+      "description": "GIẤY KHAI SINH"
+    },
+    {
+      "customerName": "HOÀNG MINH TUẤN",
+      "description": "IELTS"
+    },
+    {
+      "customerName": "HUỲNH THỊ THẢO",
+      "description": "CĂN CƯỚC CÔNG DÂN"
+    },
+    {
+      "customerName": "PHAN QUỐC HUY",
+      "description": "BẰNG TỐT NGHIỆP"
+    },
+    {
+      "customerName": "VŨ BẢO NGỌC",
+      "description": "GIẤY KẾT HÔN"
+    },
+    {
+      "customerName": "VÕ THỊ HÂN",
+      "description": "HỌC BẠ"
+    },
+    {
+      "customerName": "ĐẶNG GIA KHANG",
+      "description": "TOPIC"
+    }
+  ],
+  "generationRules": {
+    "nameStructure": [
+      "Họ + Tên chính (2 từ)",
+      "Họ + Tên đệm + Tên chính (3 từ) - phổ biến nhất",
+      "Họ + Tên đệm 1 + Tên đệm 2 + Tên chính (4 từ)"
+    ],
+    "probabilityHint": {
+      "2_words": 0.05,
+      "3_words": 0.55,
+      "4_words": 0.40
+    },
+    "genderHandling": "Chọn gender trước (male/female/random), sau đó lấy middle + first từ pool tương ứng. Neutral có thể dùng chung.",
+    "uppercase": true,
+    "avoidDuplicatesInOneName": true
+  }
+}

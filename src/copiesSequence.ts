@@ -1,5 +1,29 @@
 type ReferenceRow = { refNo: string; manualRefNo?: boolean };
 
+export function inspectReferenceNumbers(references: (string | number)[]) {
+  const valid = [...new Set(references.map(String).filter(value => /^\d+$/.test(value)).map(Number).filter(value => Number.isSafeInteger(value) && value > 0))].sort((a, b) => a - b);
+  const ranges: { start: number; end: number }[] = [];
+  let missingCount = 0;
+  for (let index = 1; index < valid.length; index++) {
+    const start = valid[index - 1] + 1, end = valid[index] - 1;
+    if (start <= end) { ranges.push({ start, end }); missingCount += end - start + 1; }
+  }
+  return { checked: valid.length, min: valid[0] ?? null, max: valid.at(-1) ?? null, ranges, missingCount };
+}
+
+export function inspectAdjacentReferenceNumbers(current: (string | number)[], next?: (string | number)[]) {
+  const validInRowOrder = (references: (string | number)[]) => references.map(String).filter(value => /^\d+$/.test(value)).map(Number).filter(value => Number.isSafeInteger(value) && value > 0);
+  const currentValid = validInRowOrder(current), nextValid = next === undefined ? undefined : validInRowOrder(next);
+  const currentLast = currentValid.at(-1) ?? null, nextFirst = nextValid?.[0] ?? null;
+  return {
+    ...inspectReferenceNumbers([...current, ...(next ?? [])]),
+    currentLast,
+    nextFirst,
+    hasNextSheet: next !== undefined,
+    boundarySequential: currentLast !== null && nextFirst !== null ? nextFirst === currentLast + 1 : null
+  };
+}
+
 export function nextReferenceNumber(rows: ReferenceRow[], previousLast = 0) {
   const highest = rows.reduce((max, row) => Math.max(max, Number(row.refNo) || 0), previousLast);
   return String(highest + 1);

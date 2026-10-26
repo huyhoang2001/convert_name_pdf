@@ -1,6 +1,8 @@
 import { memo, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { compactReferenceNumbers, compactSortedReferenceNumbers, distributeRows, insertReferenceNumber, nextReferenceNumber } from './copiesSequence';
+import customerNameDescriptionData from '../customer_name_description_data.json';
+import { compactReferenceNumbers, compactSortedReferenceNumbers, distributeRows, insertReferenceNumber, inspectAdjacentReferenceNumbers, nextReferenceNumber } from './copiesSequence';
+import { randomCopiesDetails } from './copiesRandom';
 import { useUndoHistory } from './undoHistory';
 
 export type CopiesRow = { id: string; refNo: string; customer: string; description: string; quantity: string; unitPrice: string; totalAmount?: string; manualTotal?: boolean; manualRefNo?: boolean; [key: string]: string | boolean | undefined };
@@ -31,10 +33,12 @@ function CopiesPage({ api, t, labels = {}, isVisible }: { api: CopiesApi; t: (ke
   const undo = useUndoHistory<{ sheets: CopiesSheet[]; activeId: string }>();
   const [activeId, setActiveId] = useState(sheets[0]?.id ?? '');
   const [form, setForm] = useState<CopiesRow>(blankRow());
+  const [refAudit, setRefAudit] = useState<(ReturnType<typeof inspectAdjacentReferenceNumbers> & { currentSheet: string; nextSheet?: string }) | null>(null);
   const [sheetDialog, setSheetDialog] = useState<{ action: 'add' | 'rename'; name: string } | null>(null);
   const [sheetDialogError, setSheetDialogError] = useState('');
   const [query, setQuery] = useState(''), [file, setFile] = useState(''), [sourceMap, setSourceMap] = useState<Record<string, string>>({}), [dirty, setDirty] = useState(false), [message, setMessage] = useState(''), [error, setError] = useState('');
   const active = sheets.find(sheet => sheet.id === activeId), rows = active?.rows ?? [];
+  const nextSheet = sheets[sheets.findIndex(sheet => sheet.id === activeId) + 1];
   const label = (key: string, fallback: string) => labels[key]?.trim() || t(fallback);
   const customFields = [...new Set(Object.keys(labels).map(key => key.match(/^custom:([a-f0-9-]{36}):label$/)?.[1]).filter((id): id is string => Boolean(id)))];
   const visibleRows = useMemo(() => rows.map((row, index) => ({ row, index })).filter(({ row }) => Object.values(row).join(' ').toLocaleLowerCase().includes(query.toLocaleLowerCase())), [rows, query]);
@@ -108,25 +112,33 @@ function CopiesPage({ api, t, labels = {}, isVisible }: { api: CopiesApi; t: (ke
         <button className="page-button" type="button" disabled={sheets.length < 2} onClick={deleteSheet}>{t('sheetDelete')}</button>
       </div>
       {active ? <form className="translation-form" onSubmit={submit}>
-        <h2>{form.id ? t('copiesEdit') : t('copiesAdd')}</h2>
-        <div className="translation-fields copies-fields">
+        {form.id && <h2>{t('copiesEdit')}</h2>}
+        <div className="copies-top-fields">
           <label className="copies-list-date"><span>{label('field:listDate','copiesHeaderDate')}</span><input type="date" value={active.date} onChange={event => setDate(event.target.value)} /></label>
           <label><span>{label('field:number','copiesNo')}</span><input value={form.id ? rows.findIndex(row => row.id === form.id) + 1 : rows.length + 1} readOnly /></label>
           <label className="copies-refno-field"><span>{label('field:refNo','copiesRefNo')}</span><input inputMode="numeric" value={form.manualRefNo ? form.refNo : form.id ? form.refNo : nextRefNo(rows, sheets, activeId)} readOnly={!form.manualRefNo} onChange={event => /^\d*$/.test(event.target.value) && setForm({ ...form, refNo: event.target.value })} /><span className="copies-total-toggle"><input type="checkbox" checked={Boolean(form.manualRefNo)} onChange={event => setForm({ ...form, manualRefNo: event.target.checked, refNo: event.target.checked ? (form.refNo || nextRefNo(rows, sheets, activeId)) : form.id ? nextRefNo(rows.filter(row => row.id !== form.id), sheets, activeId) : '' })} />{t('copiesCustomRefNo')}</span></label>
           <label><span>{label('field:customer','copiesCustomer')}</span><input required maxLength={20000} value={form.customer} onChange={event => setForm({ ...form, customer: event.target.value })} /></label>
-          <label className="copies-description"><span>{label('field:description','copiesDescription')}</span><textarea required rows={2} maxLength={20000} value={form.description} onChange={event => setForm({ ...form, description: event.target.value })} /></label>
-          <label className="copies-originals-field"><span>{label('field:quantity','copiesQuantity')}</span><span className="copies-number-control"><button type="button" aria-label="Decrease number of originals" onClick={() => setForm({ ...form, quantity: String(Math.max(1, Number(form.quantity || 1) - 1)) })}>−</button><input required type="text" inputMode="numeric" value={form.quantity} onChange={event => /^\d*$/.test(event.target.value) && setForm({ ...form, quantity: event.target.value })} /><button type="button" aria-label="Increase number of originals" onClick={() => setForm({ ...form, quantity: String(Number(form.quantity || 0) + 1) })}>+</button></span></label>
-          <label className="copies-certified-field"><span>{label('field:unitPrice','copiesUnitPrice')}</span><span className="copies-number-control"><button type="button" aria-label="Decrease certified copies" onClick={() => setForm({ ...form, unitPrice: String(Math.max(0, Number(form.unitPrice || 0) - 1)) })}>−</button><input required type="text" inputMode="numeric" value={form.unitPrice} onChange={event => /^\d*$/.test(event.target.value) && setForm({ ...form, unitPrice: event.target.value })} /><button type="button" aria-label="Increase certified copies" onClick={() => setForm({ ...form, unitPrice: String(Number(form.unitPrice || 0) + 1) })}>+</button></span></label>
-          <label className="copies-total-field"><span>{label('field:total','copiesTotal')}</span><input type={form.manualTotal ? 'number' : 'text'} min="0" step="1" inputMode="numeric" value={form.manualTotal ? form.totalAmount : amount(rowTotal(form))} readOnly={!form.manualTotal} onChange={event => setForm({ ...form, totalAmount: event.target.value })} /><span className="copies-total-toggle"><input type="checkbox" checked={Boolean(form.manualTotal)} onChange={event => setForm({ ...form, manualTotal: event.target.checked, totalAmount: event.target.checked ? String(rowTotal(form)) : '' })} />{t('copiesManualTotal')}</span></label>
-          {customFields.map(id => <label key={id}><span>{labels[`custom:${id}:label`]}</span><input maxLength={20000} value={String(form[`custom:${id}`] ?? '')} onChange={event => setForm({ ...form, [`custom:${id}`]: event.target.value })} /></label>)}
         </div>
-        <div className="translation-actions">
-          <button className="primary-button" type="submit" disabled={!active}>{form.id ? t('copiesUpdate') : t('copiesAdd')}</button>
-          <button type="button" className="page-button" onClick={() => setForm(blankRow())}>{t('translationClear')}</button>
-          <button type="button" className="page-button" disabled={!dirty || !active} onClick={() => void save()}>{t('translationSave')}</button>
-          <button type="button" className="page-button" disabled={!sheets.length} onClick={() => void exportFile()}>{t('translationExport')}</button>
-          <button type="button" className="page-button" onClick={() => void importFile()}>{t('translationImport')}</button>
-          <button type="button" className="page-button" disabled={!sheets.length} onClick={() => void createFile()}>{t('translationNewWorkbook')}</button>
+        <div className="copies-detail-grid">
+          <div className="copies-description-column">
+            <label className="copies-description"><span>{label('field:description','copiesDescription')}</span><textarea required rows={5} maxLength={20000} value={form.description} onChange={event => setForm({ ...form, description: event.target.value })} /></label>
+            <div className="translation-actions copies-actions">
+              <button className="primary-button" type="submit" disabled={!active}>{form.id ? t('copiesUpdate') : t('copiesAdd')}</button>
+              <button type="button" className="page-button" onClick={() => setForm(blankRow())}>{t('translationClear')}</button>
+              <button type="button" className="page-button" disabled={!dirty || !active} onClick={() => void save()}>{t('translationSave')}</button>
+              <button type="button" className="page-button" disabled={!sheets.length} onClick={() => void exportFile()}>{t('translationExport')}</button>
+              <button type="button" className="page-button" onClick={() => void importFile()}>{t('translationImport')}</button>
+              <button type="button" className="page-button" disabled={!sheets.length} onClick={() => void createFile()}>{t('translationNewWorkbook')}</button>
+              <button type="button" className="page-button" onClick={() => setForm(current => ({ ...current, ...randomCopiesDetails(customerNameDescriptionData) }))}>{t('copiesRandomFill')}</button>
+              <button type="button" className="page-button" disabled={!rows.length && !nextSheet?.rows.length} onClick={() => setRefAudit({ ...inspectAdjacentReferenceNumbers(rows.map(row => row.refNo), nextSheet ? nextSheet.rows.map(row => row.refNo) : undefined), currentSheet: active.name, ...(nextSheet && { nextSheet: nextSheet.name }) })}>{t('copiesCheckRefNumbers')}</button>
+            </div>
+          </div>
+          <div className="copies-number-fields">
+            <label className="copies-originals-field"><span>{label('field:quantity','copiesQuantity')}</span><span className="copies-number-control"><button type="button" aria-label="Decrease number of originals" onClick={() => setForm({ ...form, quantity: String(Math.max(1, Number(form.quantity || 1) - 1)) })}>&#8722;</button><input required type="text" inputMode="numeric" value={form.quantity} onChange={event => /^\d*$/.test(event.target.value) && setForm({ ...form, quantity: event.target.value })} /><button type="button" aria-label="Increase number of originals" onClick={() => setForm({ ...form, quantity: String(Number(form.quantity || 0) + 1) })}>+</button></span></label>
+            <label className="copies-certified-field"><span>{label('field:unitPrice','copiesUnitPrice')}</span><span className="copies-number-control"><button type="button" aria-label="Decrease certified copies" onClick={() => setForm({ ...form, unitPrice: String(Math.max(0, Number(form.unitPrice || 0) - 1)) })}>&#8722;</button><input required type="text" inputMode="numeric" value={form.unitPrice} onChange={event => /^\d*$/.test(event.target.value) && setForm({ ...form, unitPrice: event.target.value })} /><button type="button" aria-label="Increase certified copies" onClick={() => setForm({ ...form, unitPrice: String(Number(form.unitPrice || 0) + 1) })}>+</button></span></label>
+            <label className="copies-total-field"><span>{label('field:total','copiesTotal')}</span><input type={form.manualTotal ? 'number' : 'text'} min="0" step="1" inputMode="numeric" value={form.manualTotal ? form.totalAmount : amount(rowTotal(form))} readOnly={!form.manualTotal} onChange={event => setForm({ ...form, totalAmount: event.target.value })} /><span className="copies-total-toggle"><input type="checkbox" checked={Boolean(form.manualTotal)} onChange={event => setForm({ ...form, manualTotal: event.target.checked, totalAmount: event.target.checked ? String(rowTotal(form)) : '' })} />{t('copiesManualTotal')}</span></label>
+            {customFields.map(id => <label key={id}><span>{labels[`custom:${id}:label`]}</span><input maxLength={20000} value={String(form[`custom:${id}`] ?? '')} onChange={event => setForm({ ...form, [`custom:${id}`]: event.target.value })} /></label>)}
+          </div>
         </div>
       </form> : <div className="signature-empty"><p>{t('copiesEmpty')}</p><button className="page-button" type="button" onClick={() => void importFile()}>{t('translationImport')}</button></div>}
       <div className="translation-toolbar">
@@ -150,6 +162,28 @@ function CopiesPage({ api, t, labels = {}, isVisible }: { api: CopiesApi; t: (ke
     </section>
     {error && <p className="error">{error}</p>}
     {sheetDialog && <div className="report-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setSheetDialog(null); }}><section className="report-dialog sheet-dialog" role="dialog" aria-modal="true" aria-labelledby="copies-sheet-dialog-title"><header><div><h2 id="copies-sheet-dialog-title">{t(sheetDialog.action === 'add' ? 'sheetAdd' : 'sheetRename')}</h2><p>{t('copiesSheetNamePrompt')}</p></div><button className="report-close-icon" type="button" aria-label={t('close')} onClick={() => setSheetDialog(null)}>&#10005;</button></header><form onSubmit={submitSheetName}><label className="sheet-name-field"><span>{t('copiesSheetNamePrompt')}</span><input autoFocus maxLength={31} value={sheetDialog.name} onChange={event => setSheetDialog({ ...sheetDialog, name: event.target.value })} /></label>{sheetDialogError && <p className="error" role="alert">{sheetDialogError}</p>}<footer><button className="page-button" type="button" onClick={() => setSheetDialog(null)}>{t('close')}</button><button className="primary-button" type="submit">{t(sheetDialog.action === 'add' ? 'sheetAdd' : 'sheetRename')}</button></footer></form></section></div>}
+    {refAudit && (
+      <div className="report-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setRefAudit(null); }}>
+        <section className="report-dialog" role="dialog" aria-modal="true" aria-labelledby="copies-ref-audit-title">
+          <header>
+            <div><span className="report-success" aria-hidden="true">&#10003;</span><div><h2 id="copies-ref-audit-title">{t('copiesRefAuditTitle')}</h2><p>{active?.name}</p></div></div>
+            <button className="report-close-icon" type="button" aria-label={t('close')} onClick={() => setRefAudit(null)}>&#10005;</button>
+          </header>
+          <div className="copies-audit-content">
+            <dl className="report-table">
+            <div><dt>{t('copiesRefAuditSheet')}</dt><dd>{refAudit.currentSheet}</dd></div>
+            <div><dt>{t('copiesRefAuditNextSheet')}</dt><dd>{refAudit.nextSheet ?? t('copiesRefAuditNoNextSheet')}</dd></div>
+            <div><dt>{t('copiesRefAuditBoundary')}</dt><dd>{refAudit.boundarySequential === null ? t(refAudit.hasNextSheet ? 'copiesRefAuditBoundaryUnknown' : 'copiesRefAuditNoNextSheet') : <>{t(refAudit.boundarySequential ? 'copiesRefAuditBoundarySequential' : 'copiesRefAuditBoundaryGap')} ({refAudit.currentLast} → {refAudit.nextFirst})</>}</dd></div>
+              <div><dt>{t('copiesRefAuditChecked')}</dt><dd>{refAudit.checked}</dd></div>
+              {refAudit.min !== null && <div><dt>{t('copiesRefAuditRange')}</dt><dd>{refAudit.min} - {refAudit.max}</dd></div>}
+              <div><dt>{t('copiesRefAuditMissingCount')}</dt><dd>{refAudit.missingCount}</dd></div>
+            </dl>
+            {refAudit.checked === 0 ? <p className="copies-audit-result">{t('copiesRefAuditNoNumbers')}</p> : refAudit.missingCount === 0 ? <p className="copies-audit-result">{t('copiesRefAuditNoGaps')}</p> : <section className="report-section"><h3>{t('copiesRefAuditMissing')}</h3><div className="report-number-list">{refAudit.ranges.map(({ start, end }) => <span key={`${start}-${end}`}>{start === end ? start : `${start}-${end}`}</span>)}</div></section>}
+          </div>
+          <footer><button className="primary-button" type="button" onClick={() => setRefAudit(null)}>{t('close')}</button></footer>
+        </section>
+      </div>
+    )}
   </>;
 }
 

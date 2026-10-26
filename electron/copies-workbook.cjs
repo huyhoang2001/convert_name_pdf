@@ -72,7 +72,6 @@ function addSheets(workbook, sheets, settings = {}) {
   headers.push(...custom.map(id => settings[`custom:${id}:header`]));
   sheets.forEach((register, index) => {
     const sheet = workbook.addWorksheet(register.name);
-    sheet.columns = [...[8, 13, 30, 50, 13, 18, 20], ...custom.map(() => 28)].map(width => ({ width }));
     const lastCol = sheet.getColumn(headers.length).letter;
     sheet.mergeCells(`A1:${lastCol}1`); sheet.getCell('A1').value = register.title || copies.title;
     sheet.mergeCells(`A2:${lastCol}2`);
@@ -84,6 +83,10 @@ function addSheets(workbook, sheets, settings = {}) {
       copies.toInteger(row.quantity, 'Quantity') === '' ? null : Number(copies.toInteger(row.quantity, 'Quantity')),
       copies.toInteger(row.unitPrice, 'Number of copies') === '' ? null : Number(copies.toInteger(row.unitPrice, 'Number of copies')),
       row.quantity && row.unitPrice ? copies.total(row) : null, ...custom.map(id => row[`custom:${id}`] ?? '')]);
+    sheet.columns = headers.map((header, column) => {
+      const longest = Math.max(header.length, ...data.map(row => String(row[column] ?? '').split('\n').reduce((max, line) => Math.max(max, line.length), 0)));
+      return { width: Math.max(column < 2 || column === 4 ? 8 : 12, Math.min(column === 3 ? 60 : column === 2 ? 42 : column >= 7 ? 40 : 32, longest + 2)) };
+    });
     sheet.addTable({ name: `CopiesRegister${index + 1}_${Date.now()}`, ref: 'A5', headerRow: true, totalsRow: false, style: { theme: 'TableStyleLight15', showRowStripes: true }, columns: headers.map(name => ({ name })), rows: data });
     const totalRow = data.length + 6, wordsRow = totalRow + 1, invoiceRow = wordsRow + 1, signatureRow = invoiceRow + 1;
     sheet.mergeCells(`A${totalRow}:F${totalRow}`); sheet.getCell(`A${totalRow}`).value = 'Tổng cộng chứng thực bản sao';
@@ -96,9 +99,15 @@ function addSheets(workbook, sheets, settings = {}) {
       row.font = { name: 'Times New Roman', size: 12, bold: row.number === 1 || row.number === 5 || row.number >= totalRow };
       row.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
       if (row.number === 4) row.alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
-      if (row.number === totalRow) row.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+      if (row.number === totalRow || row.number === wordsRow) row.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
       row.eachCell({ includeEmpty: true }, cell => { cell.border = { top: { style: 'thin', color: { argb: 'FFD9E0E8' } }, left: { style: 'thin', color: { argb: 'FFD9E0E8' } }, bottom: { style: 'thin', color: { argb: 'FFD9E0E8' } }, right: { style: 'thin', color: { argb: 'FFD9E0E8' } } }; });
-      row.height = row.number === 1 ? 30 : row.number === 5 ? 36 : Math.max(24, Math.ceil(Math.max(...row.values.slice(1).map(value => String(value ?? '').length), 1) / 55) * 18);
+      const totalWidth = sheet.columns.reduce((sum, column) => sum + column.width, 0);
+      const lines = row.values.slice(1).reduce((max, value, column) => {
+        const width = row.number <= 4 || row.number === wordsRow ? totalWidth : row.number === totalRow && column === 0 ? sheet.columns.slice(0, 6).reduce((sum, item) => sum + item.width, 0) : row.number >= invoiceRow && column >= 3 ? sheet.columns.slice(3).reduce((sum, item) => sum + item.width, 0) : sheet.columns[column].width;
+        const wrapped = String(value ?? '').split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / (width * 1.15))), 0);
+        return Math.max(max, wrapped);
+      }, 1);
+      row.height = Math.min(240, Math.max(row.number === 1 ? 30 : row.number === 5 ? 36 : 24, lines * 16 + 8));
     });
     sheet.getColumn(2).numFmt = '0'; sheet.getColumn(5).numFmt = '0'; sheet.getColumn(6).numFmt = '#,##0'; sheet.getColumn(7).numFmt = '#,##0';
   });

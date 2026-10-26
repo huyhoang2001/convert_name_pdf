@@ -46,7 +46,7 @@ test('Copies create and save write the requested header, automatic numbers, tota
   const file = path.join(dir, 'copies.xlsx');
   try {
     const workbook = new ExcelJS.Workbook(); workbook.addWorksheet('Cover').getCell('A1').value = 'Preserved'; await workbook.xlsx.writeFile(file);
-    const sheet = { id: 'one', name: 'August', title, address, date: '2026-08-15', rows: [{ id: 'row-1', refNo: '3487', customer: 'Customer A', description: 'Certified copy', quantity: '5', unitPrice: '1' }] };
+    const sheet = { id: 'one', name: 'August', title, address, date: '2026-08-15', rows: [{ id: 'row-1', refNo: '3487', customer: 'A'.repeat(38), description: 'Line one\n'.repeat(8), quantity: '5', unitPrice: '1' }] };
     await saveWorkbook(file, [sheet], {});
     const output = new ExcelJS.Workbook(); await output.xlsx.readFile(file);
     const saved = output.getWorksheet('August');
@@ -64,6 +64,12 @@ test('Copies create and save write the requested header, automatic numbers, tota
     assert.equal(saved.getCell('A7').alignment.horizontal, 'left');
     assert.equal(saved.getCell('G7').result, 30000);
     assert.equal(saved.getCell('A8').value, inWords);
+    assert.equal(saved.getCell('A8').alignment.horizontal, 'left');
+    assert.equal(saved.getCell('A5').border.left.style, 'thin');
+    assert.equal(saved.getCell('B6').border.right.style, 'thin');
+    assert.equal(saved.getCell('A8').border.bottom.style, 'thin');
+    assert.ok(saved.getColumn(3).width >= 40);
+    assert.ok(saved.getRow(6).height > 100);
     assert.equal(saved.getCell('A9').value, invoice);
     assert.equal(saved.getCell('D9').value, supplier);
     assert.equal(saved.getCell('D10').value, signature);

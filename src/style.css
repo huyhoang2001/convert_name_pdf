@@ -423,13 +423,17 @@ body{overflow:hidden}
 :root[data-theme="light"] table td .row-action-delete,:root[data-theme="dark"] table td .row-action-delete{color:#fff!important}
 :root[data-theme="dark"] table td .row-action-edit{color:#674d00!important}
 :root[data-theme="dark"] .translation-table tbody tr:nth-child(even){background:#263444}:root[data-theme="dark"] .translation-table tbody tr:hover{background:#304256}
-.copies-panel .copies-fields{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-areas:"date no ref customer" "description description description originals" "description description description certified" "description description description total";align-items:stretch}
-.copies-panel .copies-fields>label:nth-child(1){grid-area:date}.copies-panel .copies-fields>label:nth-child(2){grid-area:no}.copies-panel .copies-fields>label:nth-child(3){grid-area:ref}.copies-panel .copies-fields>label:nth-child(4){grid-area:customer}.copies-panel .copies-fields .copies-description{grid-area:description;min-width:0}.copies-panel .copies-fields .copies-originals-field{grid-area:originals}.copies-panel .copies-fields .copies-certified-field{grid-area:certified}.copies-panel .copies-fields .copies-total-field{grid-area:total}
-.copies-panel .copies-list-date{display:grid;align-content:start;gap:5px;min-width:0;color:#64768b}
-.copies-panel .copies-list-date input{min-width:0;width:100%;padding:8px 9px;border:1px solid #dfe6ed;border-radius:7px;background:#fbfcfe;color:#35485f;font:inherit}
-.copies-panel .copies-description{align-content:stretch}.copies-panel .copies-description textarea{height:100%;min-height:220px}
-@media(max-width:850px){.copies-panel .copies-fields{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-areas:none}.copies-panel .copies-fields>label{grid-area:auto}.copies-panel .copies-fields .copies-description{grid-column:1/-1}.copies-panel .copies-description textarea{height:auto;min-height:100px}}
-@media(max-width:520px){.copies-panel .copies-fields{grid-template-columns:minmax(0,1fr)}.copies-panel .copies-fields .copies-description{grid-column:auto}}
+.copies-top-fields{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:8px}
+.copies-top-fields>label,.copies-number-fields>label{display:grid;align-content:start;gap:5px;min-width:0;color:#64768b}
+.copies-refno-field .copies-total-toggle{margin-top:0;white-space:nowrap;justify-self:start}
+.copies-top-fields input,.copies-number-fields>label>input,.copies-description textarea{min-width:0;width:100%;padding:8px 9px;border:1px solid #dfe6ed;border-radius:7px;background:#fbfcfe;color:#35485f;font:inherit}
+.copies-detail-grid{display:grid;grid-template-columns:minmax(0,3fr) minmax(230px,1fr);align-items:start;gap:16px}
+.copies-description-column{min-width:0}.copies-description{display:grid;align-content:start;gap:5px;color:#64768b}.copies-description textarea{height:165px;min-height:165px;resize:vertical}
+.copies-number-fields{display:grid;align-content:start;gap:12px;min-width:0}.copies-actions{margin-top:8px}.copies-audit-content{display:grid;gap:14px;overflow:auto;padding:16px 2px;min-height:0}.copies-audit-result{margin:0;padding:12px;border:1px solid #dceee5;border-radius:9px;background:#f6fbf8;color:#26714e;font-size:13px;font-weight:600}:root[data-theme="dark"] .copies-audit-result{border-color:#315644;background:#1d332b;color:#91d3b1}
+:root[data-theme="dark"] .copies-top-fields>label,:root[data-theme="dark"] .copies-number-fields>label,:root[data-theme="dark"] .copies-description{color:#e7edf5}
+:root[data-theme="dark"] .copies-top-fields input,:root[data-theme="dark"] .copies-number-fields>label>input,:root[data-theme="dark"] .copies-description textarea{background:#1a2633;border-color:#354354;color:#d5e0ed}
+@media(max-width:850px){.copies-top-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.copies-detail-grid{grid-template-columns:1fr}.copies-number-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.copies-description textarea{height:140px;min-height:140px}}
+@media(max-width:520px){.copies-top-fields,.copies-number-fields{grid-template-columns:minmax(0,1fr)}.copies-description textarea{height:120px;min-height:120px}}
 
 .brand-home{justify-content:center}.brand-mark{width:69px;height:69px}.sidebar-collapsed .brand-home{justify-content:center}.sidebar-collapsed .brand-mark{width:69px;height:69px}
 .run-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:4px}@media(max-width:600px){.run-button{width:auto}}

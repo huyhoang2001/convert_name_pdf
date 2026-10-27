@@ -4,6 +4,8 @@ import customerNameDescriptionData from '../customer_name_description_data.json'
 import { compactReferenceNumbers, compactSortedReferenceNumbers, distributeRows, insertReferenceNumber, inspectAdjacentReferenceNumbers, nextReferenceNumber } from './copiesSequence';
 import { randomCopiesDetails } from './copiesRandom';
 import { useUndoHistory } from './undoHistory';
+import { amountInWords } from '../electron/copies-words.mjs';
+import SheetPager from './SheetPager';
 
 export type CopiesRow = { id: string; refNo: string; customer: string; description: string; quantity: string; unitPrice: string; totalAmount?: string; manualTotal?: boolean; manualRefNo?: boolean; [key: string]: string | boolean | undefined };
 export type CopiesSheet = { id: string; name: string; title: string; address: string; date: string; rows: CopiesRow[] };
@@ -28,7 +30,7 @@ const nextRefNo = (rows: CopiesRow[], sheets: CopiesSheet[], activeId: string) =
   return nextReferenceNumber(rows, previousLast);
 };
 
-function CopiesPage({ api, t, labels = {}, isVisible }: { api: CopiesApi; t: (key: string) => string; labels?: Record<string, string>; isVisible: boolean }) {
+function CopiesPage({ api, t, labels = {}, isVisible, language }: { api: CopiesApi; t: (key: string) => string; labels?: Record<string, string>; isVisible: boolean; language: 'EN' | 'VI' }) {
   const [sheets, setSheets] = useState<CopiesSheet[]>([]);
   const undo = useUndoHistory<{ sheets: CopiesSheet[]; activeId: string }>();
   const [activeId, setActiveId] = useState(sheets[0]?.id ?? '');
@@ -38,6 +40,7 @@ function CopiesPage({ api, t, labels = {}, isVisible }: { api: CopiesApi; t: (ke
   const [sheetDialogError, setSheetDialogError] = useState('');
   const [query, setQuery] = useState(''), [file, setFile] = useState(''), [sourceMap, setSourceMap] = useState<Record<string, string>>({}), [dirty, setDirty] = useState(false), [message, setMessage] = useState(''), [error, setError] = useState('');
   const active = sheets.find(sheet => sheet.id === activeId), rows = active?.rows ?? [];
+  const sheetTotal = useMemo(() => rows.reduce((sum, row) => sum + BigInt(rowTotal(row)), 0n), [rows]);
   const nextSheet = sheets[sheets.findIndex(sheet => sheet.id === activeId) + 1];
   const label = (key: string, fallback: string) => labels[key]?.trim() || t(fallback);
   const customFields = [...new Set(Object.keys(labels).map(key => key.match(/^custom:([a-f0-9-]{36}):label$/)?.[1]).filter((id): id is string => Boolean(id)))];
@@ -155,10 +158,11 @@ function CopiesPage({ api, t, labels = {}, isVisible }: { api: CopiesApi; t: (ke
             {virtualRows.map(virtualRow => { const { row, index } = visibleRows[virtualRow.index]; return <tr key={virtualRow.key} data-index={virtualRow.index} ref={rowVirtualizer.measureElement}><td>{index + 1}</td><td>{row.refNo}</td><td>{row.customer}</td><td>{row.description}</td><td>{row.quantity}</td><td>{amount(row.unitPrice)}</td><td>{amount(rowTotal(row))}</td>{customFields.map(id=><td key={id}>{String(row[`custom:${id}`] ?? '')}</td>)}<td><button className="edit-location row-action-edit" type="button" onClick={() => setForm({ ...row, quantity: row.quantity, unitPrice: row.unitPrice })}>{t('edit')}</button><button className="edit-location row-action-delete" type="button" onClick={() => { if (window.confirm(t('translationDeleteConfirm'))) deleteRow(row); }}>{t('translationDelete')}</button></td></tr>; })}
             {bottomPadding > 0 && <tr className="virtual-table-spacer" aria-hidden="true"><td colSpan={tableColumnCount} style={{ height: bottomPadding }} /></tr>}
           </tbody>
-          <tfoot><tr><td colSpan={6}>{t('copiesFooterTotal')}</td><td>{amount(rows.reduce((sum, row) => sum + rowTotal(row), 0))}</td><td colSpan={customFields.length} /><td /></tr><tr><td colSpan={8 + customFields.length}>{t('copiesFooterWords')}</td></tr><tr><td colSpan={3}>{t('copiesFooterInvoice')}</td><td colSpan={5 + customFields.length}>{t('copiesFooterSupplier')}</td></tr><tr><td colSpan={3} /><td colSpan={5 + customFields.length}>{t('copiesFooterSignature')}</td></tr></tfoot>
+          <tfoot><tr><td colSpan={6}>{t('copiesFooterTotal')}</td><td>{sheetTotal.toLocaleString('en-US')}</td><td colSpan={customFields.length} /><td /></tr><tr><td colSpan={8 + customFields.length}>{t('copiesFooterWords')}: {amountInWords(sheetTotal, language)}</td></tr><tr><td colSpan={3}>{t('copiesFooterInvoice')}</td><td colSpan={5 + customFields.length}>{t('copiesFooterSupplier')}</td></tr><tr><td colSpan={3} /><td colSpan={5 + customFields.length}>{t('copiesFooterSignature')}</td></tr></tfoot>
         </table>
       </div>
       }
+      <SheetPager sheets={sheets} activeId={activeId} t={t} onSelect={id => { setActiveId(id); setForm(blankRow()); }} />
     </section>
     {error && <p className="error">{error}</p>}
     {sheetDialog && <div className="report-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setSheetDialog(null); }}><section className="report-dialog sheet-dialog" role="dialog" aria-modal="true" aria-labelledby="copies-sheet-dialog-title"><header><div><h2 id="copies-sheet-dialog-title">{t(sheetDialog.action === 'add' ? 'sheetAdd' : 'sheetRename')}</h2><p>{t('copiesSheetNamePrompt')}</p></div><button className="report-close-icon" type="button" aria-label={t('close')} onClick={() => setSheetDialog(null)}>&#10005;</button></header><form onSubmit={submitSheetName}><label className="sheet-name-field"><span>{t('copiesSheetNamePrompt')}</span><input autoFocus maxLength={31} value={sheetDialog.name} onChange={event => setSheetDialog({ ...sheetDialog, name: event.target.value })} /></label>{sheetDialogError && <p className="error" role="alert">{sheetDialogError}</p>}<footer><button className="page-button" type="button" onClick={() => setSheetDialog(null)}>{t('close')}</button><button className="primary-button" type="submit">{t(sheetDialog.action === 'add' ? 'sheetAdd' : 'sheetRename')}</button></footer></form></section></div>}

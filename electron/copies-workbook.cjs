@@ -3,6 +3,8 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const ExcelJS = require('exceljs');
 const copies = require('./copies.cjs');
+const { amountInWords } = require('./copies-words.mjs');
+const { longestLine, fitAndBorder } = require('./register-format.cjs');
 
 function cellText(value) {
   if (value instanceof Date) return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
@@ -82,16 +84,18 @@ function addSheets(workbook, sheets, settings = {}) {
     const data = register.rows.map((row, rowIndex) => [rowIndex + 1, Number(copies.toInteger(row.refNo, 'Reference number') || rowIndex + 1), row.customer, row.description,
       copies.toInteger(row.quantity, 'Quantity') === '' ? null : Number(copies.toInteger(row.quantity, 'Quantity')),
       copies.toInteger(row.unitPrice, 'Number of copies') === '' ? null : Number(copies.toInteger(row.unitPrice, 'Number of copies')),
-      row.quantity && row.unitPrice ? copies.total(row) : null, ...custom.map(id => row[`custom:${id}`] ?? '')]);
+      (row.manualTotal || (row.quantity && row.unitPrice)) ? copies.total(row) : null, ...custom.map(id => row[`custom:${id}`] ?? '')]);
     sheet.columns = headers.map((header, column) => {
-      const longest = Math.max(header.length, ...data.map(row => String(row[column] ?? '').split('\n').reduce((max, line) => Math.max(max, line.length), 0)));
-      return { width: Math.max(column < 2 || column === 4 ? 8 : 12, Math.min(column === 3 ? 60 : column === 2 ? 42 : column >= 7 ? 40 : 32, longest + 2)) };
+      const longest = data.reduce((max, row) => Math.max(max, longestLine(row[column])), longestLine(header));
+      return { width: Math.min(column === 3 ? 60 : column === 2 ? 42 : column >= 7 ? 40 : 32, Math.max(column < 2 || column === 4 ? 8 : 12, longest + 2)) };
     });
     sheet.addTable({ name: `CopiesRegister${index + 1}_${Date.now()}`, ref: 'A5', headerRow: true, totalsRow: false, style: { theme: 'TableStyleLight15', showRowStripes: true }, columns: headers.map(name => ({ name })), rows: data });
+    const totalAmount = data.reduce((sum, row) => sum + BigInt(row[6] || 0), 0n);
+    if (totalAmount > BigInt(Number.MAX_SAFE_INTEGER)) throw Error('Total amount is outside the supported number range.');
     const totalRow = data.length + 6, wordsRow = totalRow + 1, invoiceRow = wordsRow + 1, signatureRow = invoiceRow + 1;
     sheet.mergeCells(`A${totalRow}:F${totalRow}`); sheet.getCell(`A${totalRow}`).value = 'Tổng cộng chứng thực bản sao';
-    sheet.getCell(`G${totalRow}`).value = { formula: data.length ? `SUM(G6:G${data.length + 5})` : '0', result: data.reduce((sum, row) => sum + Number(row[6] || 0), 0) };
-    sheet.mergeCells(`A${wordsRow}:${lastCol}${wordsRow}`); sheet.getCell(`A${wordsRow}`).value = copies.inWords;
+    sheet.getCell(`G${totalRow}`).value = { formula: data.length ? `SUM(G6:G${data.length + 5})` : '0', result: Number(totalAmount) };
+    sheet.mergeCells(`A${wordsRow}:${lastCol}${wordsRow}`); sheet.getCell(`A${wordsRow}`).value = `Bằng chữ: ${amountInWords(totalAmount)}`;
     sheet.mergeCells(`A${invoiceRow}:C${invoiceRow}`); sheet.getCell(`A${invoiceRow}`).value = copies.invoice;
     sheet.mergeCells(`D${invoiceRow}:${lastCol}${invoiceRow}`); sheet.getCell(`D${invoiceRow}`).value = copies.supplier;
     sheet.mergeCells(`D${signatureRow}:${lastCol}${signatureRow}`); sheet.getCell(`D${signatureRow}`).value = copies.signature;
@@ -100,14 +104,15 @@ function addSheets(workbook, sheets, settings = {}) {
       row.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
       if (row.number === 4) row.alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
       if (row.number === totalRow || row.number === wordsRow) row.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
-      row.eachCell({ includeEmpty: true }, cell => { cell.border = { top: { style: 'thin', color: { argb: 'FFD9E0E8' } }, left: { style: 'thin', color: { argb: 'FFD9E0E8' } }, bottom: { style: 'thin', color: { argb: 'FFD9E0E8' } }, right: { style: 'thin', color: { argb: 'FFD9E0E8' } } }; });
-      const totalWidth = sheet.columns.reduce((sum, column) => sum + column.width, 0);
-      const lines = row.values.slice(1).reduce((max, value, column) => {
-        const width = row.number <= 4 || row.number === wordsRow ? totalWidth : row.number === totalRow && column === 0 ? sheet.columns.slice(0, 6).reduce((sum, item) => sum + item.width, 0) : row.number >= invoiceRow && column >= 3 ? sheet.columns.slice(3).reduce((sum, item) => sum + item.width, 0) : sheet.columns[column].width;
-        const wrapped = String(value ?? '').split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / (width * 1.15))), 0);
-        return Math.max(max, wrapped);
-      }, 1);
-      row.height = Math.min(240, Math.max(row.number === 1 ? 30 : row.number === 5 ? 36 : 24, lines * 16 + 8));
+    });
+    const spanWidth = (first, last) => sheet.columns.slice(first - 1, last).reduce((sum, column) => sum + column.width, 0);
+    fitAndBorder(sheet, signatureRow, headers.length, {
+      minHeight: row => row === 1 ? 30 : row === 5 ? 36 : 24,
+      widthForCell: (row, column) => row <= 4 || row === wordsRow ? spanWidth(1, headers.length)
+        : row === totalRow && column === 1 ? spanWidth(1, 6)
+          : row === invoiceRow && column === 1 ? spanWidth(1, 3)
+            : row >= invoiceRow && column === 4 ? spanWidth(4, headers.length)
+              : sheet.getColumn(column).width
     });
     sheet.getColumn(2).numFmt = '0'; sheet.getColumn(5).numFmt = '0'; sheet.getColumn(6).numFmt = '#,##0'; sheet.getColumn(7).numFmt = '#,##0';
   });

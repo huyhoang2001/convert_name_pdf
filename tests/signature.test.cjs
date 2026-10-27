@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const ExcelJS = require('exceljs');
 const signature = require('../electron/signature.cjs');
-const { readWorkbook, saveWorkbook } = require('../electron/signature-workbook.cjs');
+const { readWorkbook, createWorkbook, saveWorkbook } = require('../electron/signature-workbook.cjs');
 
 test('signature records accept integer counts and fees above 9,999', () => {
   const record = { id: 'row', date: '', person: '', document: '', certifier: '', copies: '2', fee: '10,000', notes: '' };
@@ -40,6 +40,7 @@ test('signature register reads template columns, ignores sequence-only rows, and
     assert.equal(imported.sheets[0].rows.length, 2);
     assert.equal(imported.sheets[0].rows[0].date, '2026-01-05');
     imported.sheets[0].rows.shift();
+    imported.sheets[0].rows[0].notes = 'Long note\n'.repeat(20);
     await saveWorkbook(file, imported.sheets, imported.sourceMap);
 
     const saved = new ExcelJS.Workbook();
@@ -51,5 +52,15 @@ test('signature register reads template columns, ignores sequence-only rows, and
     assert.equal(savedRegister.getCell('C2').value, 'Second person');
     assert.equal(Object.values(savedRegister.tables)[0].table.style.theme, 'TableStyleLight15');
     assert.equal(savedRegister.getCell('A2').font.name, 'Times New Roman');
+    assert.equal(savedRegister.getCell('H2').border.bottom.style, 'thin');
+    for (let row = 1; row <= 2; row++) for (let column = 1; column <= 8; column++) {
+      const cell = savedRegister.getRow(row).getCell(column);
+      for (const edge of ['top', 'left', 'bottom', 'right']) assert.equal(cell.border[edge].style, 'thin', `${cell.address} ${edge}`);
+    }
+    assert.ok(savedRegister.getRow(2).height > 240);
+    const newFile = path.join(dir, 'two-registers.xlsx');
+    await createWorkbook(newFile, [...imported.sheets, { ...imported.sheets[0], id: 'second', name: '2027', rows: imported.sheets[0].rows.map(row => ({ ...row, id: `${row.id}-second` })) }]);
+    const created = new ExcelJS.Workbook(); await created.xlsx.readFile(newFile);
+    assert.equal(created.getWorksheet('2027').getCell('H2').border.bottom.style, 'thin');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

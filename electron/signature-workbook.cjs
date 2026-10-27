@@ -3,6 +3,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const ExcelJS = require('exceljs');
 const signature = require('./signature.cjs');
+const { longestLine, fitAndBorder } = require('./register-format.cjs');
 
 function cellText(value) {
   if (value instanceof Date) return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
@@ -52,13 +53,12 @@ function addRegisterSheets(workbook, sheets, settings = {}, language = 'VI') {
       return value;
     }));
     worksheet.addTable({ name: `SignatureRegister${index + 1}_${Date.now()}`, ref: 'A1', headerRow: true, totalsRow: false, style: { theme: 'TableStyleLight15', showRowStripes: true }, columns: columns.map(({ header }) => ({ name: header })), rows });
-    worksheet.columns = columns.map(({ header, key }, column) => ({ width: Math.max(14, Math.min(key === 'person' ? 48 : key === 'document' ? 42 : 32, Math.max(header.length, ...rows.map(row => String(row[column] ?? '').length)) + 2)) }));
+    worksheet.columns = columns.map(({ header, key }, column) => ({ width: Math.min(key === 'person' ? 48 : key === 'document' ? 42 : 32, Math.max(14, rows.reduce((max, row) => Math.max(max, longestLine(row[column])), longestLine(header)) + 2)) }));
     worksheet.eachRow({ includeEmpty: false }, row => {
       row.font = { name: 'Times New Roman', size: 12, bold: row.number === 1 };
       row.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-      row.eachCell({ includeEmpty: true }, cell => { cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }; });
-      row.height = Math.min(240, Math.max(24, ...row.values.slice(1).map((value, column) => Math.ceil(String(value ?? '').length / (worksheet.columns[column].width * 1.15) * 16 + 8))));
     });
+    fitAndBorder(worksheet, rows.length + 1, columns.length);
     columns.forEach(({ key }, column) => { if (key === 'date') worksheet.getColumn(column + 1).numFmt = 'm/d/yyyy'; if (key === 'copies') worksheet.getColumn(column + 1).numFmt = '0'; if (key === 'fee') worksheet.getColumn(column + 1).numFmt = '#,##0'; });
   });
 }

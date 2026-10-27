@@ -5,7 +5,18 @@ const os = require('node:os');
 const path = require('node:path');
 const ExcelJS = require('exceljs');
 const { readWorkbook, createWorkbook, saveWorkbook, writeWorkbook } = require('../electron/copies-workbook.cjs');
-const { headers, title, address, inWords, invoice, supplier, signature, total } = require('../electron/copies.cjs');
+const { headers, title, address, invoice, supplier, signature, total } = require('../electron/copies.cjs');
+const { amountInWords } = require('../electron/copies-words.mjs');
+
+test('Copies totals are written in English and Vietnamese words', () => {
+  assert.equal(amountInWords(0, 'EN'), 'Zero VND');
+  assert.equal(amountInWords(15000, 'EN'), 'Fifteen thousand VND');
+  assert.equal(amountInWords(80000, 'EN'), 'Eighty thousand VND');
+  assert.equal(amountInWords(150000, 'EN'), 'One hundred fifty thousand VND');
+  assert.equal(amountInWords(80000), 'Tám mươi ngàn đồng');
+  assert.equal(amountInWords(15000), 'Mười lăm ngàn đồng');
+  assert.equal(amountInWords(1005), 'Một ngàn không trăm lẻ năm đồng');
+});
 
 test('Copies amount charges 10,000 VND per two copies times the copy multiplier', () => {
   assert.deepEqual([1, 2, 3, 4, 5].map(quantity => total({ quantity: String(quantity), unitPrice: '1' })), [10000, 10000, 20000, 20000, 30000]);
@@ -45,12 +56,13 @@ test('Copies create and save write the requested header, automatic numbers, tota
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'copies-export-'));
   const file = path.join(dir, 'copies.xlsx');
   try {
-    const workbook = new ExcelJS.Workbook(); workbook.addWorksheet('Cover').getCell('A1').value = 'Preserved'; await workbook.xlsx.writeFile(file);
-    const sheet = { id: 'one', name: 'August', title, address, date: '2026-08-15', rows: [{ id: 'row-1', refNo: '3487', customer: 'A'.repeat(38), description: 'Line one\n'.repeat(8), quantity: '5', unitPrice: '1' }] };
+    const workbook = new ExcelJS.Workbook(); workbook.addWorksheet('Cover').getCell('A1').value = 'Preserved'; workbook.getWorksheet('Cover').getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } }; await workbook.xlsx.writeFile(file);
+    const sheet = { id: 'one', name: 'August', title, address, date: '2026-08-15', rows: [{ id: 'row-1', refNo: '3487', customer: 'A'.repeat(38), description: 'Line one\n'.repeat(20), quantity: '5', unitPrice: '1' }] };
     await saveWorkbook(file, [sheet], {});
     const output = new ExcelJS.Workbook(); await output.xlsx.readFile(file);
     const saved = output.getWorksheet('August');
     assert.equal(output.getWorksheet('Cover').getCell('A1').value, 'Preserved');
+    assert.equal(output.getWorksheet('Cover').getCell('A1').fill.fgColor.argb, 'FFFF0000');
     assert.equal(saved.getCell('A1').value, title);
     assert.equal(saved.getCell('A2').value, 'Ngày 15 tháng 08 năm 2026');
     assert.equal(saved.getCell('A3').value, `Địa chỉ: ${address}`);
@@ -63,13 +75,19 @@ test('Copies create and save write the requested header, automatic numbers, tota
     assert.equal(saved.getCell('A7').value, 'Tổng cộng chứng thực bản sao');
     assert.equal(saved.getCell('A7').alignment.horizontal, 'left');
     assert.equal(saved.getCell('G7').result, 30000);
-    assert.equal(saved.getCell('A8').value, inWords);
+    assert.equal(saved.getCell('A8').value, 'Bằng chữ: Ba mươi ngàn đồng');
     assert.equal(saved.getCell('A8').alignment.horizontal, 'left');
     assert.equal(saved.getCell('A5').border.left.style, 'thin');
     assert.equal(saved.getCell('B6').border.right.style, 'thin');
     assert.equal(saved.getCell('A8').border.bottom.style, 'thin');
+    assert.equal(saved.getCell('B1').border.top.style, 'thin');
+    assert.equal(saved.getCell('A10').border.bottom.style, 'thin');
+    for (let row = 1; row <= 10; row++) for (let column = 1; column <= 7; column++) {
+      const cell = saved.getRow(row).getCell(column);
+      for (const edge of ['top', 'left', 'bottom', 'right']) assert.equal(cell.border[edge].style, 'thin', `${cell.address} ${edge}`);
+    }
     assert.ok(saved.getColumn(3).width >= 40);
-    assert.ok(saved.getRow(6).height > 100);
+    assert.ok(saved.getRow(6).height > 240);
     assert.equal(saved.getCell('A9').value, invoice);
     assert.equal(saved.getCell('D9').value, supplier);
     assert.equal(saved.getCell('D10').value, signature);
@@ -82,14 +100,21 @@ test('Copies create and save write the requested header, automatic numbers, tota
     const emptyFile = path.join(dir, 'empty.xlsx'); await createWorkbook(emptyFile, [{ ...sheet, id: 'empty', name: 'Empty', rows: [] }]);
     const empty = new ExcelJS.Workbook(); await empty.xlsx.readFile(emptyFile);
     assert.equal(empty.getWorksheet('Empty').getCell('A5').value, headers[0]);
+    assert.equal(empty.getWorksheet('Empty').getCell('A7').value, 'Bằng chữ: Không đồng');
     const exportedFile = path.join(dir, 'exported.xlsx');
-    assert.equal(await writeWorkbook(exportedFile, [{ ...sheet, id: 'exported', name: 'Exported' }]), exportedFile);
+    const customId = '123e4567-e89b-12d3-a456-426614174000';
+    const settings = { [`custom:${customId}:label`]: 'Extra', [`custom:${customId}:header`]: 'Extra header' };
+    assert.equal(await writeWorkbook(exportedFile, [{ ...sheet, id: 'exported', name: 'Exported' }, { ...sheet, id: 'second', name: 'Second' }], settings), exportedFile);
     const exported = new ExcelJS.Workbook(); await exported.xlsx.readFile(exportedFile);
-    assert.equal(exported.getWorksheet('Exported').getCell('A8').value, inWords);
+    assert.equal(exported.getWorksheet('Exported').getCell('A8').value, 'Bằng chữ: Ba mươi ngàn đồng');
+    assert.equal(exported.getWorksheet('Exported').getCell('H5').value, 'Extra header');
+    assert.equal(exported.getWorksheet('Exported').getCell('H6').border.right.style, 'thin');
+    assert.equal(exported.getWorksheet('Second').getCell('A10').border.bottom.style, 'thin');
     const discountedFile = path.join(dir, 'discounted.xlsx');
-    await writeWorkbook(discountedFile, [{ ...sheet, id: 'discounted', name: 'Discounted', rows: [{ ...sheet.rows[0], manualTotal: true, totalAmount: '15000' }] }]);
+    await writeWorkbook(discountedFile, [{ ...sheet, id: 'discounted', name: 'Discounted', rows: [{ ...sheet.rows[0], quantity: '', manualTotal: true, totalAmount: '15000' }] }]);
     const discounted = new ExcelJS.Workbook(); await discounted.xlsx.readFile(discountedFile);
     assert.equal(discounted.getWorksheet('Discounted').getCell('G6').value, 15000);
+    assert.equal(discounted.getWorksheet('Discounted').getCell('A8').value, 'Bằng chữ: Mười lăm ngàn đồng');
     const lockedFile = path.join(dir, 'locked.xlsx'); await fs.promises.writeFile(lockedFile, 'keep existing file');
     const originalRename = fs.renameSync;
     try {

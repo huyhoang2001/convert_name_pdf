@@ -2,7 +2,6 @@ const fields = ['refNo', 'customer', 'description', 'quantity', 'unitPrice'];
 const headers = ['STT', 'SCT', 'Tên khách hàng', 'Nội dung', 'SL', 'Số bản sao', 'Thành tiền'];
 const title = 'BẢNG KÊ CHỨNG THỰC BẢN SAO TỪ BẢN CHÍNH - KHÁCH LẺ';
 const address = 'Số 105, Đường Hưng Đạo Vương, Kp. Nam Hà, Phường Trấn Biên, Tp. Đồng Nai';
-const inWords = 'Bằng chữ: Tám mươi ngàn đồng';
 const invoice = 'HĐ:________';
 const supplier = 'Người cung cấp hàng hóa, dịch vụ';
 const signature = '(Ký, ghi rõ họ tên)';
@@ -45,4 +44,4 @@ function validateSheets(sheets) {
   }
   return sheets;
 }
-module.exports = { fields, headers, title, address, inWords, invoice, supplier, signature, today, normalize, toInteger, total, validateSheets };
+module.exports = { fields, headers, title, address, invoice, supplier, signature, today, normalize, toInteger, total, validateSheets };

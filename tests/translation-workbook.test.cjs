@@ -61,6 +61,7 @@ test('translation import filters empty/extraneous rows and saves in place with d
     assert.equal(imported.sheets[0].rows[0].date, '2026-01-07');
     imported.sheets[0].rows.splice(0, 1);
     imported.sheets[0].rows[0].person = 'Updated full name';
+    imported.sheets[0].rows[0].notes = 'Long note\n'.repeat(20);
     await saveWorkbook(file, imported.sheets, imported.sourceMap);
 
     const saved = new ExcelJS.Workbook();
@@ -80,6 +81,12 @@ test('translation import filters empty/extraneous rows and saves in place with d
     assert.equal(savedRegister.getCell('C2').alignment.horizontal, 'center');
     assert.equal(savedRegister.getCell('C2').alignment.vertical, 'middle');
     assert.equal(savedRegister.getCell('C2').border.left.style, 'thin');
+    assert.equal(savedRegister.getCell('I3').border.right.style, 'thin');
+    for (let row = 1; row <= 3; row++) for (let column = 1; column <= 9; column++) {
+      const cell = savedRegister.getRow(row).getCell(column);
+      for (const edge of ['top', 'left', 'bottom', 'right']) assert.equal(cell.border[edge].style, 'thin', `${cell.address} ${edge}`);
+    }
+    assert.ok(savedRegister.getRow(2).height > 240);
     assert.ok(savedRegister.getColumn(3).width >= 'Updated full name'.length);
     assert.ok(savedRegister.getColumn(3).width <= 32);
     assert.equal(savedRegister.getCell('B2').numFmt, 'm/d/yyyy');
@@ -95,11 +102,12 @@ test('translation import filters empty/extraneous rows and saves in place with d
     const refreshed = await readWorkbook(file);
     assert.equal(refreshed.sheets[0].rows[0].person, 'Updated externally');
     const newFile = path.join(dir, 'new-register.xlsx');
-    await createWorkbook(newFile, imported.sheets, 'VI');
+    await createWorkbook(newFile, [...imported.sheets, { ...imported.sheets[0], id: 'second', name: '2027' }], 'VI');
     const created = new ExcelJS.Workbook();
     await created.xlsx.readFile(newFile);
     assert.equal(created.getWorksheet('2026').getCell('A2').value, 1);
     assert.equal(created.getWorksheet('2026').getCell('A1').value, headers.VI[0]);
     assert.equal(created.getWorksheet('2026').getCell('C1').value, headers.VI[2]);
+    assert.equal(created.getWorksheet('2027').getCell('I3').border.right.style, 'thin');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

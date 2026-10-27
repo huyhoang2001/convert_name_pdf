@@ -3,6 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import ExcelJS from 'exceljs';
 import { canEnterSignatureFee } from './signature-fee';
 import { useUndoHistory } from './undoHistory';
+import SheetPager from './SheetPager';
 
 export type SignatureRow = { id: string; number: string; date: string; person: string; document: string; certifier: string; copies: string; fee: string; notes: string; [key: string]: string };
 export type SignatureSheet = { id: string; name: string; rows: SignatureRow[] };
@@ -63,17 +64,17 @@ function SignaturePage({ api, t, labels = {}, isVisible }: { api: SignatureApi; 
         <button className="page-button" type="button" disabled={!active} onClick={() => openSheetDialog('rename')}>{t('sheetRename')}</button>
         <button className="page-button" type="button" disabled={sheets.length < 2} onClick={() => openSheetDialog('delete')}>{t('sheetDelete')}</button>
       </div>
-      <form className="translation-form" onSubmit={addRow}>
+      {sheets.length ? <form className="translation-form" onSubmit={addRow}>
         {form.id && <h2>{t('signatureEdit')}</h2>}
         <div className="signature-fields">
           <label><span className="signature-field-title">{label('field:number', 'signatureHeaderNumber')}</span><input value={form.id ? form.number : String(rows.length + 1)} readOnly /><small>{t('signatureNumberHint')}</small></label>
           <label><span className="signature-field-title">{label('field:date', 'signatureHeaderDate')}<em className="signature-required">*</em></span><input required type="date" value={form.date} onChange={event => setForm({ ...form, date: event.target.value })} /><small>{t('signatureDateHint')}</small></label>
           <label className="signature-person"><span className="signature-field-title"><span>{label('field:person', 'signatureRequestor')}</span><span className="signature-label-icons"><em className="signature-required">*</em><span className="translation-info" title={label('header:signatureHeaderPerson', 'signatureHeaderPerson')} aria-label={label('header:signatureHeaderPerson', 'signatureHeaderPerson')}>i</span></span></span><textarea rows={3} required value={form.person} onChange={event => setForm({ ...form, person: event.target.value })} /></label>
-          <label className="signature-document"><span className="signature-field-title">{label('field:document', 'signatureDocument')}</span><input value={form.document} onChange={event => setForm({ ...form, document: event.target.value })} /></label>
+          <label className="signature-document"><span className="signature-field-title">{label('field:document', 'signatureDocument')}</span><textarea rows={3} value={form.document} onChange={event => setForm({ ...form, document: event.target.value })} /></label>
           <label className="signature-certifier"><span className="signature-field-title">{label('field:certifier', 'signatureHeaderSigner')}</span><select value={form.certifier} onChange={event => setForm({ ...form, certifier: event.target.value })}><option value="" />{[t('certifierHa'), t('certifierXuan'), ...(form.certifier && ![t('certifierHa'), t('certifierXuan')].includes(form.certifier) ? [form.certifier] : [])].map(name => <option key={name}>{name}</option>)}</select></label>
           <label className="signature-copies"><span className="signature-field-title">{label('field:copies', 'signatureCopiesInput')}</span><span className="signature-stepper"><button type="button" aria-label="Decrease copies" onClick={() => setForm({ ...form, copies: String(Math.max(1, Number(form.copies || 1) - 1)) })}>-</button><input inputMode="numeric" value={form.copies} onChange={event => /^\d*$/.test(event.target.value) && setForm({ ...form, copies: event.target.value })} /><button type="button" aria-label="Increase copies" onClick={() => setForm({ ...form, copies: String(Number(form.copies || 0) + 1) })}>+</button></span></label>
           <label className="signature-fee"><span className="signature-field-title">{label('field:fee', 'signatureFeeInput')}</span><span className="signature-money"><input inputMode="numeric" value={feeFocused ? form.fee.replaceAll(',', '') : money(form.fee)} onFocus={() => setFeeFocused(true)} onChange={event => canEnterSignatureFee(event.target.value) && setForm({ ...form, fee: event.target.value })} onBlur={() => setFeeFocused(false)} /><span>VND</span></span></label>
-          <label className="signature-notes"><span className="signature-field-title">{label('field:notes', 'signatureNotesInput')}</span><input value={form.notes} onChange={event => setForm({ ...form, notes: event.target.value })} /></label>
+          <label className="signature-notes"><span className="signature-field-title">{label('field:notes', 'signatureNotesInput')}</span><textarea rows={3} value={form.notes} onChange={event => setForm({ ...form, notes: event.target.value })} /></label>
         </div>
         {customFields.length > 0 && <div className="signature-custom-fields">{customFields.map(field => <label key={field.key}><span className="signature-field-title">{field.label}</span><input maxLength={20000} value={form[field.key] ?? ''} onChange={event => setForm({ ...form, [field.key]: event.target.value })} /></label>)}</div>}
         <div className="translation-actions">
@@ -84,7 +85,7 @@ function SignaturePage({ api, t, labels = {}, isVisible }: { api: SignatureApi; 
           <button type="button" className="page-button" onClick={() => void importFile()}>{t('translationImport')}</button>
           <button type="button" className="page-button" disabled={!sheets.length} onClick={() => void createFile()}>{t('translationNewWorkbook')}</button>
         </div>
-      </form>
+      </form> : <div className="signature-empty"><p>{t('signatureEmpty')}</p><button className="page-button" type="button" onClick={() => void importFile()}>{t('translationImport')}</button></div>}
       <div className="translation-toolbar">
         <input value={query} onChange={event => setQuery(event.target.value)} placeholder={t('translationSearch')} aria-label={t('translationSearch')} />
         <button type="button" className="page-button" disabled={!file} onClick={() => void refreshFile()}>{t('translationRefresh')}</button>
@@ -99,7 +100,8 @@ function SignaturePage({ api, t, labels = {}, isVisible }: { api: SignatureApi; 
           {virtualRows.map(virtualRow => { const row = visibleRows[virtualRow.index]; return <tr key={virtualRow.key} data-index={virtualRow.index} ref={rowVirtualizer.measureElement}><td>{row.number}</td><td>{row.date}</td><td>{row.person}</td><td>{row.document}</td><td>{row.certifier}</td><td>{row.copies}</td><td>{money(row.fee)}</td><td>{row.notes}</td>{customFields.map(field => <td key={field.key}>{row[field.key] ?? ''}</td>)}<td><button className="edit-location row-action-edit" type="button" onClick={() => setForm({ ...row, fee: money(row.fee) })}>{t('edit')}</button><button className="edit-location row-action-delete" type="button" onClick={() => { if (window.confirm(t('translationDeleteConfirm'))) updateRows(current => current.filter(item => item.id !== row.id)); }}>{t('translationDelete')}</button></td></tr>; })}
           {bottomPadding > 0 && <tr className="virtual-table-spacer" aria-hidden="true"><td colSpan={tableColumnCount} style={{ height: bottomPadding }} /></tr>}
         </tbody>
-      </table></div> : <p className="signature-empty">{t('signatureEmpty')}</p>}
+      </table></div> : null}
+      <SheetPager sheets={sheets} activeId={activeId} t={t} onSelect={id => { setActiveId(id); setForm(emptyRow()); }} />
     </section>
     {sheetDialog && <div className="report-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setSheetDialog(null); }}><section className="report-dialog sheet-dialog" role={sheetDialog.action === 'delete' ? 'alertdialog' : 'dialog'} aria-modal="true" aria-labelledby="signature-sheet-dialog-title"><header><div><h2 id="signature-sheet-dialog-title">{t(sheetDialog.action === 'add' ? 'sheetAdd' : sheetDialog.action === 'rename' ? 'sheetRename' : 'sheetDelete')}</h2><p>{sheetDialog.action === 'delete' ? t('sheetDeleteConfirm') : t('sheetNamePrompt')}</p></div><button className="report-close-icon" type="button" aria-label={t('close')} onClick={() => setSheetDialog(null)}>&#10005;</button></header><form onSubmit={submitSheetDialog}>{sheetDialog.action !== 'delete' && <label className="sheet-name-field"><span>{t('sheetNamePrompt')}</span><input autoFocus maxLength={31} value={sheetDialog.name} onChange={event => setSheetDialog({ ...sheetDialog, name: event.target.value })} /></label>}<footer><button className="page-button" type="button" onClick={() => setSheetDialog(null)}>{t('close')}</button><button className="primary-button" type="submit">{t(sheetDialog.action === 'add' ? 'sheetAdd' : sheetDialog.action === 'rename' ? 'sheetRename' : 'sheetDelete')}</button></footer></form></section></div>}
     {error && <p className="error">{error}</p>}

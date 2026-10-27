@@ -3,6 +3,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const ExcelJS = require('exceljs');
 const translation = require('./translation.cjs');
+const { longestLine, fitAndBorder } = require('./register-format.cjs');
 
 function cellText(value) {
   if (value instanceof Date) return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
@@ -71,15 +72,13 @@ function addRegisterSheets(workbook, sheets, language = 'VI', settings = {}) {
     worksheet.addTable({ name: `TranslationRegister${index + 1}_${Date.now()}`, ref: 'A1', headerRow: true, totalsRow: false, style: { theme: 'TableStyleLight15', showRowStripes: true }, columns: headers.map(name => ({ name })), rows });
     worksheet.columns = headers.map((header, column) => {
       const maxWidth = column === 2 ? 32 : column === 6 ? 28 : 60;
-      return { width: Math.max(14, Math.min(maxWidth, Math.max(column === 2 || column === 6 ? 10 : header.length, ...rows.map(row => String(row[column] ?? '').length)) + 2)) };
+      return { width: Math.min(maxWidth, Math.max(14, rows.reduce((max, row) => Math.max(max, longestLine(row[column])), longestLine(header)) + 2)) };
     });
     worksheet.eachRow({ includeEmpty: false }, row => {
       row.font = { name: 'Times New Roman', size: 12, bold: row.number === 1 };
       row.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-      row.eachCell({ includeEmpty: true }, cell => { cell.border = { top: { style: 'thin', color: { argb: 'FFD9E0E8' } }, left: { style: 'thin', color: { argb: 'FFD9E0E8' } }, bottom: { style: 'thin', color: { argb: 'FFD9E0E8' } }, right: { style: 'thin', color: { argb: 'FFD9E0E8' } } }; });
-      const lines = row.values.slice(1).reduce((max, value, index) => Math.max(max, String(value ?? '').split('\n').reduce((total, part) => total + Math.max(1, Math.ceil(part.length / (worksheet.columns[index].width * 1.15))), 0)), 1);
-      row.height = Math.min(240, Math.max(24, lines * 16 + 8));
     });
+    fitAndBorder(worksheet, rows.length + 1, headers.length);
     worksheet.getColumn(2).numFmt = 'm/d/yyyy';
     worksheet.getColumn(7).numFmt = '0';
     worksheet.getColumn(8).numFmt = '#,##0';

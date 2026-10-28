@@ -62,6 +62,8 @@
   "countDropBusy": "Wait for the current scan to finish.",
   "countSelectedFolders": "Scanned folders",
   "countRemoveFolder": "Remove folder",
+  "countClearCache": "Clear cache",
+  "countClearCacheConfirm": "Clear all imported folders and numbering results from this page? Source files and saved reports will not be changed.",
   "checkingNumbers": "Checking numbered files...",
   "numberingResults": "Numbering results",
   "groupsFound": "groups found in the selected folder.",

@@ -62,6 +62,8 @@
   "countDropBusy": "Hãy đợi lần quét hiện tại hoàn tất.",
   "countSelectedFolders": "Các thư mục đã quét",
   "countRemoveFolder": "Bỏ thư mục",
+  "countClearCache": "Xóa bộ nhớ đệm",
+  "countClearCacheConfirm": "Xóa tất cả thư mục đã nhập và kết quả kiểm tra số trên trang này? Tệp gốc và báo cáo đã lưu sẽ không thay đổi.",
   "checkingNumbers": "Đang kiểm tra các tệp đánh số...",
   "numberingResults": "Kết quả kiểm tra số",
   "groupsFound": "nhóm trong thư mục đã chọn.",

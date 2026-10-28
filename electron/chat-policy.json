@@ -1,0 +1,9 @@
+{
+  "blockedPatterns": [
+    "\\b(?:write|generate|show|give|provide|create|make|build|implement|output|print|explain)\\b.{0,50}\\b(?:code|script|program|function|snippet|source code)\\b",
+    "\\b(?:code|script|snippet)\\b.{0,35}\\b(?:for|to|that|in|a|an|the)\\b",
+    "\\b(?:ignore|ignored|ignoring|bypass|circumvent|override|forget|disregard|jailbreak|unfiltered|uncensored)\\b",
+    "\\b(?:viet|tao|cho|cung cap|hien thi|giai thich)\\b.{0,50}\\b(?:ma nguon|doan ma|code|script)\\b",
+    "\\b(?:bo qua|vuot qua|pha bo)\\b.{0,50}\\b(?:quy tac|huong dan|gioi han|han che|bo loc)\\b"
+  ]
+}

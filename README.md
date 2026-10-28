@@ -23,7 +23,11 @@
 
 ### 1.2. Phạm vi
 - **Trong phạm vi**: Quét PDF trực tiếp trong 1 thư mục, nhóm theo prefix, map số, preview, backup + output copy, báo cáo tiếng Việt.
-- **Ngoài phạm vi**: Không quét đệ quy thư mục con, không đọc nội dung PDF, không hỗ trợ mạng (offline-first), không đổi tên file gốc.
+- **Ngoài phạm vi**: Không quét đệ quy thư mục con, không đọc nội dung PDF, không đổi tên file gốc. Các quy trình PDF hoạt động ngoại tuyến; chat trực tuyến là tùy chọn.
+
+### Chat trợ giúp
+
+Chat mặc định ở chế độ **Offline**. Trong **Cài đặt**, nhập khóa API OpenRouter và nhấn **Lưu** để bật **Online**; khóa được mã hóa trong dữ liệu ứng dụng của tài khoản Windows và không hiện lại trên giao diện. Khóa lưu trong Cài đặt được ưu tiên. Nếu xóa khóa này, ứng dụng dùng `OPENROUTER_API_KEY` từ biến môi trường hoặc `.env` tại thư mục dự án (bản phát triển) hay cạnh tệp `.exe` (bản portable). `.env` được Git bỏ qua và không được đóng gói. Online gửi câu hỏi và các lượt chat Online gần đây tới OpenRouter qua danh sách model miễn phí `google/gemma-4-31b-it:free` → `cohere/north-mini-code:free` → `recursive/flint-v1.0:free` (tự chuyển khi model trước lỗi, giới hạn khoảng 18 giây cho cả yêu cầu); không gửi tệp. Khi mạng hoặc dịch vụ lỗi, chat hiển thị câu trả lời Offline.
 
 ### 1.3. Đối tượng sử dụng
 - Người dùng cuối làm việc với bộ hồ sơ/PDF được đánh số tuần tự (ví dụ hồ sơ hành chính, hợp đồng, giấy tờ).
@@ -74,7 +78,7 @@
 | ID | BR-06 |
 |----|-------|
 | **Tên** | Không phụ thuộc mạng |
-| **Mô tả** | Toàn bộ quy trình quét – preview – copy – báo cáo phải hoạt động hoàn toàn offline. Chỉ chức năng kiểm tra cập nhật mới cần mạng. |
+| **Mô tả** | Toàn bộ quy trình quét – preview – copy – báo cáo hoạt động hoàn toàn offline. Kiểm tra cập nhật và chế độ chat Online cần mạng; chat Offline không cần mạng. |
 | **Ưu tiên** | High |
 
 ---

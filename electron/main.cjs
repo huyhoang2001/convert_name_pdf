@@ -202,7 +202,7 @@ ipcMain.handle('chat-online-status', async () => (await chatKeyStore.status()).c
 ipcMain.handle('chat-key-status', () => chatKeyStore.status());
 ipcMain.handle('chat-key-save', (_, value) => chatKeyStore.save(value));
 ipcMain.handle('chat-key-remove', () => chatKeyStore.remove());
-ipcMain.handle('chat-online', async (_, input) => chatbot.askOnline({ ...input, key: await chatKeyStore.resolve() }));
+ipcMain.handle('chat-online', async (event, input) => chatbot.askOnline({ ...input, key: await chatKeyStore.resolve(), onProgress: text => event.sender.send('chat-online-progress', { id: input.id, text }) }));
 const signatureSettingKeys = new Set(['field:number','field:date','field:person','field:document','field:certifier','field:copies','field:fee','field:notes','header:signatureHeaderNumber','header:signatureHeaderDate','header:signatureHeaderPerson','header:signatureHeaderDocument','header:signatureHeaderSigner','header:signatureHeaderCount','header:signatureHeaderFee','header:signatureHeaderNotes']);
 const signatureSettingsFile = () => path.join(app.getPath('userData'), 'signature-settings.json');
 function validateSignatureSettings(value) {

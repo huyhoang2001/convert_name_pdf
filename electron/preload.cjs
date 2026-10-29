@@ -1,4 +1,5 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
+let nextChatId = 0;
 contextBridge.exposeInMainWorld('pdfApp', {
   pickFolder: () => ipcRenderer.invoke('pick-folder'), getDroppedPath: file => webUtils.getPathForFile(file), pickDestination: current => ipcRenderer.invoke('pick-destination', current),
   getDestinations: () => ipcRenderer.invoke('get-destinations'), saveDestination: (kind, value) => ipcRenderer.invoke('save-destinations', { kind, value }), scan: root => ipcRenderer.invoke('scan', root),
@@ -9,7 +10,13 @@ contextBridge.exposeInMainWorld('pdfApp', {
   getChatKeyStatus: () => ipcRenderer.invoke('chat-key-status'),
   saveChatKey: value => ipcRenderer.invoke('chat-key-save', value),
   removeChatKey: () => ipcRenderer.invoke('chat-key-remove'),
-  askOnlineChat: (messages, language) => ipcRenderer.invoke('chat-online', { messages, language }),
+  askOnlineChat: async (messages, language, onProgress) => {
+    const id = ++nextChatId;
+    const listener = (_, progress) => { if (progress.id === id) onProgress(progress.text); };
+    ipcRenderer.on('chat-online-progress', listener);
+    try { return await ipcRenderer.invoke('chat-online', { messages, language, id }); }
+    finally { ipcRenderer.removeListener('chat-online-progress', listener); }
+  },
   onUpdateStatus: callback => { const listener = (_, status) => callback(status); ipcRenderer.on('update-status', listener); return () => ipcRenderer.removeListener('update-status', listener); },
   getSignatureSettings: () => ipcRenderer.invoke('signature-settings-load'), saveSignatureSettings: labels => ipcRenderer.invoke('signature-settings-save', labels),
   getSelectorSettings: selector => ipcRenderer.invoke('selector-settings-load', selector), saveSelectorSettings: (selector, labels) => ipcRenderer.invoke('selector-settings-save', selector, labels),

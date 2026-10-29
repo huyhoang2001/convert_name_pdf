@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { answerQuestion, blockedQuestion } from './chatbotEngine';
 import { faqs, type ChatLanguage } from './chatbotFaq';
 import { chatSize, clampChat, launcherAt, type Point } from './chatDock';
+import { formatChatText } from './chatText';
 
 type Message = { role: 'user' | 'assistant'; text: string; online?: boolean };
 function useChatDrag() {
@@ -72,12 +74,15 @@ export default function HelpChatbot({ language, keyRevision }: { language: ChatL
       return;
     }
     setBusy(true);
+    setMessages(current => [...current, { role: 'assistant', text: '', online: true }]);
     try {
-      const answer = await window.pdfApp.askOnlineChat([...previous, { role: 'user', content: trimmed }], language);
-      setMessages(current => [...current, { role: 'assistant', text: answer, online: true }]);
+      const answer = await window.pdfApp.askOnlineChat([...previous, { role: 'user', content: trimmed }], language, text => {
+        setMessages(current => [...current.slice(0, -1), { role: 'assistant', text: formatChatText(text), online: true }]);
+      });
+      setMessages(current => [...current.slice(0, -1), { role: 'assistant', text: formatChatText(answer), online: true }]);
     } catch {
       const fallback = answerQuestion(trimmed, language).answer;
-      setMessages(current => [...current.slice(0, -1), { ...current.at(-1)!, online: false }, { role: 'assistant', text: `${language === 'VI' ? 'Trợ giúp trực tuyến không khả dụng. Câu trả lời ngoại tuyến: ' : 'Online help is unavailable. Offline answer: '}${fallback}` }]);
+      setMessages(current => [...current.slice(0, -2), { ...current.at(-2)!, online: false }, { role: 'assistant', text: `${language === 'VI' ? 'Trợ giúp trực tuyến không khả dụng. Câu trả lời ngoại tuyến: ' : 'Online help is unavailable. Offline answer: '}${fallback}` }]);
     } finally { setBusy(false); }
   };
   const labels = language === 'VI' ? { title: 'Trợ giúp B6H', subtitle: 'Hỏi về cách dùng ứng dụng', open: 'Mở trợ giúp', close: 'Đóng trợ giúp', newChat: 'Cuộc trò chuyện mới', greeting: 'Xin chào! Tôi có thể hướng dẫn bạn dùng B6H.', placeholder: 'Nhập câu hỏi...', send: 'Gửi', drag: 'Kéo để di chuyển' } : { title: 'B6H Help', subtitle: 'Ask how to use the app', open: 'Open help', close: 'Close help', newChat: 'New chat', greeting: 'Hello! I can guide you through B6H.', placeholder: 'Type a question...', send: 'Send', drag: 'Drag to move' };
@@ -91,7 +96,7 @@ export default function HelpChatbot({ language, keyRevision }: { language: ChatL
       <div className="chat-mode"><div role="group" aria-label={language === 'VI' ? 'Chế độ trợ giúp' : 'Help mode'}><button type="button" aria-pressed={mode === 'offline'} disabled={busy} onClick={() => setMode('offline')}>{modeLabels.offline}</button><button type="button" aria-pressed={mode === 'online'} disabled={busy || !onlineAvailable} onClick={() => setMode('online')} title={onlineAvailable ? modeLabels.onlineHint : modeLabels.noKey}>{modeLabels.online}</button></div><small>{mode === 'online' ? modeLabels.onlineHint : onlineAvailable ? modeLabels.offlineHint : modeLabels.noKey}</small></div>
       <div className="chat-messages" role="log" aria-live="polite" aria-relevant="additions text">
         {messages.length === 0 && <div className="chat-greeting"><img src="./chatbot.ico" alt="" /><p>{labels.greeting}</p></div>}
-        {messages.map((message, index) => <p key={index} className={`chat-message ${message.role}`}>{message.text}</p>)}<div ref={endRef} />
+        {messages.map((message, index) => message.role === 'assistant' ? <div key={index} className="chat-message assistant"><ReactMarkdown skipHtml>{message.text}</ReactMarkdown></div> : <p key={index} className="chat-message user">{message.text}</p>)}<div ref={endRef} />
       </div>
       <div className="chat-suggestions">{faqs.slice(0, 4).map(faq => <button key={faq.id} type="button" disabled={busy} onClick={() => void send(faq.prompts[language])}>{faq.prompts[language]}</button>)}</div>
       <form className="chat-compose" onSubmit={event => { event.preventDefault(); void send(input); }}><input ref={inputRef} value={input} maxLength={1000} onChange={event => setInput(event.target.value)} placeholder={labels.placeholder} aria-label={labels.placeholder} disabled={busy} /><button className="primary-button" type="submit" disabled={!input.trim() || busy}>{busy ? modeLabels.sending : labels.send}</button></form>

@@ -35,26 +35,75 @@ function validateMessages(messages) {
   return messages;
 }
 
-async function askOnline({ messages, language, key, fetchImpl = fetch }) {
+async function askOnline({ messages, language, key, fetchImpl = fetch, onProgress = () => {} }) {
   if (language !== 'EN' && language !== 'VI') throw Error('Invalid chat language.');
   validateMessages(messages);
   if (!key) throw Error('OpenRouter API key is not configured.');
-  let response;
+  const controller = new AbortController();
+  const totalTimer = setTimeout(() => controller.abort(), 60000);
+  let idleTimer;
+  const resetIdle = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => controller.abort(), 20000);
+  };
+  resetIdle();
   try {
-    response = await fetchImpl(endpoint, {
+    const response = await fetchImpl(endpoint, {
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ models, messages: [{ role: 'system', content: `${systemPrompt} Reply in ${language === 'VI' ? 'Vietnamese' : 'English'}.` }, ...messages], max_tokens: 350, temperature: 0.2, stream: false }),
-      signal: AbortSignal.timeout(18000)
+      body: JSON.stringify({ models, messages: [{ role: 'system', content: `${systemPrompt} Reply in ${language === 'VI' ? 'Vietnamese' : 'English'}.` }, ...messages], max_tokens: 2048, temperature: 0.2, stream: true }),
+      signal: controller.signal
     });
-  } catch { throw Error('Online help is unavailable.'); }
-  if (!response.ok) throw Error(`Online help is unavailable (HTTP ${response.status}).`);
-  let answer;
-  try { answer = (await response.json()).choices?.[0]?.message?.content; }
-  catch { throw Error('Online help returned an invalid response.'); }
-  if (typeof answer !== 'string' || !answer.trim()) throw Error('Online help returned an empty response.');
-  if (/```|<script|(?:^|\n)\s*(?:def |function |const |let |class |import |SELECT |#!)/i.test(answer)) throw Error('Online help returned unsupported content.');
-  return answer.trim().slice(0, 4000);
+    if (!response.ok) throw Error(`Online help is unavailable (HTTP ${response.status}).`);
+    if (!response.body) throw Error('Online help returned an invalid response.');
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '', answer = '', done = false;
+    const processLine = line => {
+      if (!line.startsWith('data: ')) return;
+      const data = line.slice(6).trim();
+      if (data === '[DONE]') { done = true; return; }
+      let event;
+      try { event = JSON.parse(data); }
+      catch { throw Error('Online help returned an invalid response.'); }
+      if (event.error || event.choices?.[0]?.finish_reason === 'error') throw Error('Online help was interrupted.');
+      if (event.choices?.[0]?.finish_reason === 'length') throw Error('Online help was interrupted.');
+      const content = event.choices?.[0]?.delta?.content;
+      if (typeof content === 'string' && content) {
+        answer += content;
+        if (answer.length > 32000) throw Error('Online help returned an oversized response.');
+        if (/```|<script|(?:^|\n)\s*(?:def |function |const |let |class |import |SELECT |#!)/i.test(answer)) throw Error('Online help returned unsupported content.');
+        onProgress(answer);
+      }
+    };
+    try {
+      while (!done) {
+        const chunk = await reader.read();
+        if (chunk.done) {
+          buffer += decoder.decode();
+          if (buffer.trim()) processLine(buffer.trim());
+          break;
+        }
+        resetIdle();
+        buffer += decoder.decode(chunk.value, { stream: true });
+        let end;
+        while (!done && (end = buffer.indexOf('\n')) !== -1) {
+          processLine(buffer.slice(0, end).trim());
+          buffer = buffer.slice(end + 1);
+        }
+      }
+    } finally { await reader.cancel().catch(() => {}); }
+    if (!done) throw Error('Online help was interrupted.');
+    if (!answer.trim()) throw Error('Online help returned an empty response.');
+    return answer.trim();
+  } catch (error) {
+    if (controller.signal.aborted) throw Error('Online help timed out.');
+    if (error?.message?.startsWith('Online help')) throw error;
+    throw Error('Online help is unavailable.');
+  } finally {
+    clearTimeout(totalTimer);
+    clearTimeout(idleTimer);
+  }
 }
 
 module.exports = { askOnline, blockedQuestion, readKey, validateMessages };

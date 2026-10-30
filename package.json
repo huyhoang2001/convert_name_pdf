@@ -17,7 +17,8 @@
     "page-mascot": "^0.1.0",
     "react": "latest",
     "react-dom": "latest",
-    "react-markdown": "^10.1.0"
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@types/node": "latest",

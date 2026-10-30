@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { answerQuestion, blockedQuestion } from './chatbotEngine';
 import { faqs, type ChatLanguage } from './chatbotFaq';
 import { chatSize, clampChat, launcherAt, type Point } from './chatDock';
@@ -96,7 +97,7 @@ export default function HelpChatbot({ language, keyRevision }: { language: ChatL
       <div className="chat-mode"><div role="group" aria-label={language === 'VI' ? 'Chế độ trợ giúp' : 'Help mode'}><button type="button" aria-pressed={mode === 'offline'} disabled={busy} onClick={() => setMode('offline')}>{modeLabels.offline}</button><button type="button" aria-pressed={mode === 'online'} disabled={busy || !onlineAvailable} onClick={() => setMode('online')} title={onlineAvailable ? modeLabels.onlineHint : modeLabels.noKey}>{modeLabels.online}</button></div><small>{mode === 'online' ? modeLabels.onlineHint : onlineAvailable ? modeLabels.offlineHint : modeLabels.noKey}</small></div>
       <div className="chat-messages" role="log" aria-live="polite" aria-relevant="additions text">
         {messages.length === 0 && <div className="chat-greeting"><img src="./chatbot.ico" alt="" /><p>{labels.greeting}</p></div>}
-        {messages.map((message, index) => message.role === 'assistant' ? <div key={index} className="chat-message assistant"><ReactMarkdown skipHtml>{message.text}</ReactMarkdown></div> : <p key={index} className="chat-message user">{message.text}</p>)}<div ref={endRef} />
+        {messages.map((message, index) => message.role === 'assistant' ? <div key={index} className="chat-message assistant"><ReactMarkdown skipHtml remarkPlugins={[remarkGfm]} components={{ table: ({ node: _node, ...props }) => <div className="chat-table-scroll"><table {...props} /></div> }}>{message.text}</ReactMarkdown></div> : <p key={index} className="chat-message user">{message.text}</p>)}<div ref={endRef} />
       </div>
       <div className="chat-suggestions">{faqs.slice(0, 4).map(faq => <button key={faq.id} type="button" disabled={busy} onClick={() => void send(faq.prompts[language])}>{faq.prompts[language]}</button>)}</div>
       <form className="chat-compose" onSubmit={event => { event.preventDefault(); void send(input); }}><input ref={inputRef} value={input} maxLength={1000} onChange={event => setInput(event.target.value)} placeholder={labels.placeholder} aria-label={labels.placeholder} disabled={busy} /><button className="primary-button" type="submit" disabled={!input.trim() || busy}>{busy ? modeLabels.sending : labels.send}</button></form>

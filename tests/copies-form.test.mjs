@@ -28,4 +28,6 @@ test('Ctrl+S is the Copies save shortcut without affecting other chords', () => 
   assert.equal(isCopiesSaveShortcut({ key: 'S', ctrlKey: true, altKey: false, shiftKey: false }), true);
   assert.equal(isCopiesSaveShortcut({ key: 's', ctrlKey: false, altKey: false, shiftKey: false }), false);
   assert.equal(isCopiesSaveShortcut({ key: 's', ctrlKey: true, altKey: false, shiftKey: true }), false);
+  assert.equal(isCopiesSaveShortcut({ key: 's', ctrlKey: true, altKey: true, shiftKey: false }), false);
+  assert.equal(isCopiesSaveShortcut({ key: 'x', ctrlKey: true, altKey: false, shiftKey: false }), false);
 });

@@ -35,12 +35,13 @@ function useChatDrag() {
   return { position, moved, down, move, up };
 }
 
-export default function HelpChatbot({ language, keyRevision }: { language: ChatLanguage; keyRevision: number }) {
+export default function HelpChatbot({ language, keyConfigured }: { language: ChatLanguage; keyConfigured: boolean | null }) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [mode, setMode] = useState<'offline' | 'online'>('offline');
   const [onlineAvailable, setOnlineAvailable] = useState(false);
+  const [onlineStatusError, setOnlineStatusError] = useState(false);
   const [busy, setBusy] = useState(false);
   const drag = useChatDrag();
   const launcherPosition = launcherAt(drag.position, window.innerWidth, window.innerHeight);
@@ -49,7 +50,29 @@ export default function HelpChatbot({ language, keyRevision }: { language: ChatL
   const inputRef = useRef<HTMLInputElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (open) inputRef.current?.focus(); }, [open]);
-  useEffect(() => { window.pdfApp.getChatOnlineStatus().then(available => { setOnlineAvailable(available); if (!available) setMode('offline'); }).catch(() => { setOnlineAvailable(false); setMode('offline'); }); }, [keyRevision]);
+  useEffect(() => {
+    let active = true;
+    if (keyConfigured !== null) {
+      setOnlineAvailable(keyConfigured);
+      setOnlineStatusError(false);
+      if (!keyConfigured) setMode('offline');
+      return () => { active = false; };
+    }
+    window.pdfApp.getChatOnlineStatus()
+      .then(available => {
+        if (!active) return;
+        setOnlineAvailable(available);
+        setOnlineStatusError(false);
+        if (!available) setMode('offline');
+      })
+      .catch(() => {
+        if (!active) return;
+        setOnlineAvailable(false);
+        setOnlineStatusError(true);
+        setMode('offline');
+      });
+    return () => { active = false; };
+  }, [keyConfigured, open]);
   useEffect(() => {
     if (!open) return;
     const closeOnOutsidePointer = (event: globalThis.PointerEvent) => {
@@ -81,20 +104,21 @@ export default function HelpChatbot({ language, keyRevision }: { language: ChatL
         setMessages(current => [...current.slice(0, -1), { role: 'assistant', text: formatChatText(text), online: true }]);
       });
       setMessages(current => [...current.slice(0, -1), { role: 'assistant', text: formatChatText(answer), online: true }]);
-    } catch {
+    } catch (reason) {
       const fallback = answerQuestion(trimmed, language).answer;
-      setMessages(current => [...current.slice(0, -2), { ...current.at(-2)!, online: false }, { role: 'assistant', text: `${language === 'VI' ? 'Trợ giúp trực tuyến không khả dụng. Câu trả lời ngoại tuyến: ' : 'Online help is unavailable. Offline answer: '}${fallback}` }]);
+      const detail = String(reason).replace(/^Error: /, '').replace(/sk-or-v1-[A-Za-z0-9]+/g, '[redacted]').replace(/[\r\n]+/g, ' ').slice(0, 180);
+      setMessages(current => [...current.slice(0, -2), { ...current.at(-2)!, online: false }, { role: 'assistant', text: `${language === 'VI' ? `Lỗi trực tuyến: ${detail}. Trả lời ngoại tuyến: ` : `Online error: ${detail}. Offline answer: `}${fallback}` }]);
     } finally { setBusy(false); }
   };
   const labels = language === 'VI' ? { title: 'Trợ giúp B6H', subtitle: 'Hỏi về cách dùng ứng dụng', open: 'Mở trợ giúp', close: 'Đóng trợ giúp', newChat: 'Cuộc trò chuyện mới', greeting: 'Xin chào! Tôi có thể hướng dẫn bạn dùng B6H.', placeholder: 'Nhập câu hỏi...', send: 'Gửi', drag: 'Kéo để di chuyển' } : { title: 'B6H Help', subtitle: 'Ask how to use the app', open: 'Open help', close: 'Close help', newChat: 'New chat', greeting: 'Hello! I can guide you through B6H.', placeholder: 'Type a question...', send: 'Send', drag: 'Drag to move' };
-  const modeLabels = language === 'VI' ? { offline: 'Ngoại tuyến', online: 'Trực tuyến', sending: 'Đang gửi...', offlineHint: 'Câu trả lời có sẵn trên thiết bị.', onlineHint: 'Tin nhắn được gửi tới OpenRouter; không gửi tệp.', noKey: 'Cần khóa OpenRouter trong .env.' } : { offline: 'Offline', online: 'Online', sending: 'Sending...', offlineHint: 'Built-in answers on this device.', onlineHint: 'Messages go to OpenRouter; files do not.', noKey: 'Add an OpenRouter key to .env.' };
+  const modeLabels = language === 'VI' ? { offline: 'Ngoại tuyến', online: 'Trực tuyến', sending: 'Đang gửi...', offlineHint: 'Câu trả lời có sẵn trên thiết bị.', onlineHint: 'Tin nhắn được gửi tới OpenRouter; không gửi tệp.', noKey: 'Thêm khóa OpenRouter trong Cài đặt.', statusError: 'Không thể kiểm tra khóa đã lưu. Hãy lưu lại khóa trong Cài đặt.' } : { offline: 'Offline', online: 'Online', sending: 'Sending...', offlineHint: 'Built-in answers on this device.', onlineHint: 'Messages go to OpenRouter; files do not.', noKey: 'Add an OpenRouter key in Settings.', statusError: 'Could not check the saved key. Save it again in Settings.' };
   return <>
     <button ref={launcherRef} type="button" className="chat-launcher" style={{ left: launcherPosition.x, top: launcherPosition.y }} aria-label={open ? labels.close : labels.open} aria-expanded={open} aria-controls="help-chat-panel" title={`${open ? labels.close : labels.open} · ${labels.drag}`} onPointerDown={drag.down} onPointerMove={drag.move} onPointerUp={drag.up} onClick={() => { if (drag.moved.current) { drag.moved.current = false; return; } setOpen(value => !value); }}><img src="./chatbot.ico" alt="" /></button>
     {open && <section ref={panelRef} id="help-chat-panel" className="chat-panel" style={{ left: drag.position.x, top: drag.position.y }} role="dialog" aria-label={labels.title}>
       <header className="chat-header" title={labels.drag} onPointerDown={drag.down} onPointerMove={drag.move} onPointerUp={drag.up}>
         <div><strong>{labels.title}</strong><span>{labels.subtitle}</span></div><div className="chat-header-actions"><button type="button" disabled={busy} onClick={() => { setMessages([]); setInput(''); inputRef.current?.focus(); }} aria-label={labels.newChat} title={labels.newChat}>↺</button><button type="button" onClick={() => setOpen(false)} aria-label={labels.close} title={labels.close}>×</button></div>
       </header>
-      <div className="chat-mode"><div role="group" aria-label={language === 'VI' ? 'Chế độ trợ giúp' : 'Help mode'}><button type="button" aria-pressed={mode === 'offline'} disabled={busy} onClick={() => setMode('offline')}>{modeLabels.offline}</button><button type="button" aria-pressed={mode === 'online'} disabled={busy || !onlineAvailable} onClick={() => setMode('online')} title={onlineAvailable ? modeLabels.onlineHint : modeLabels.noKey}>{modeLabels.online}</button></div><small>{mode === 'online' ? modeLabels.onlineHint : onlineAvailable ? modeLabels.offlineHint : modeLabels.noKey}</small></div>
+      <div className="chat-mode"><div role="group" aria-label={language === 'VI' ? 'Chế độ trợ giúp' : 'Help mode'}><button type="button" aria-pressed={mode === 'offline'} disabled={busy} onClick={() => setMode('offline')}>{modeLabels.offline}</button><button type="button" aria-pressed={mode === 'online'} disabled={busy || !onlineAvailable} onClick={() => setMode('online')} title={onlineAvailable ? modeLabels.onlineHint : onlineStatusError ? modeLabels.statusError : modeLabels.noKey}>{modeLabels.online}</button></div><small>{mode === 'online' ? modeLabels.onlineHint : onlineStatusError ? modeLabels.statusError : onlineAvailable ? modeLabels.offlineHint : modeLabels.noKey}</small></div>
       <div className="chat-messages" role="log" aria-live="polite" aria-relevant="additions text">
         {messages.length === 0 && <div className="chat-greeting"><img src="./chatbot.ico" alt="" /><p>{labels.greeting}</p></div>}
         {messages.map((message, index) => message.role === 'assistant' ? <div key={index} className="chat-message assistant"><ReactMarkdown skipHtml remarkPlugins={[remarkGfm]} components={{ table: ({ node: _node, ...props }) => <div className="chat-table-scroll"><table {...props} /></div> }}>{message.text}</ReactMarkdown></div> : <p key={index} className="chat-message user">{message.text}</p>)}<div ref={endRef} />

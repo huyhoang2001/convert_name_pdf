@@ -1,5 +1,8 @@
 export const blankCopiesRow = () => ({ id: '', refNo: '', customer: '', description: '', quantity: '0', unitPrice: '0', totalAmount: '', manualTotal: false, manualRefNo: false });
 
+export const isRegisterSaveShortcut = (event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'altKey' | 'shiftKey'>) =>
+  event.ctrlKey && !event.altKey && !event.shiftKey && event.key.toLocaleLowerCase() === 's';
+
 export const decrementCopiesCount = (value: string) => String(Math.max(0, Number(value || 0) - 1));
 
 export function copiesSuggestions(rows: { customer: string; description: string }[], field: 'customer' | 'description', query: string) {
@@ -17,4 +20,4 @@ export function copiesSuggestions(rows: { customer: string; description: string 
   return matches;
 }
 
-export const isCopiesSaveShortcut = (event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'altKey' | 'shiftKey'>) => event.ctrlKey && !event.altKey && !event.shiftKey && event.key.toLocaleLowerCase() === 's';
+export const isCopiesSaveShortcut = isRegisterSaveShortcut;

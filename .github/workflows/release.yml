@@ -27,6 +27,9 @@ jobs:
           node-version: 24
           cache: npm
 
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Verify tag matches app version
         shell: pwsh
         env:
@@ -40,14 +43,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Download Electron runtime
-        run: npx electron --version
-
       - name: Run tests
         run: npm test
 
-      - name: Build portable app
-        run: npm run build
+      - name: Build Tauri app
+        run: npm run tauri:build
+
+      - name: Prepare release executable
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          Copy-Item "src-tauri/target/release/b6h.exe" "B6H-$version.exe"
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2

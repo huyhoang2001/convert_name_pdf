@@ -1,5 +1,6 @@
 import { memo, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { formatRegisterDate } from './registerDate';
 
 export type TranslationTableRow = { id: string; number: string; date: string; person: string; document: string; languages: string; certifier: string; copies: string; fee: string; notes: string; [key: string]: string };
 const formatFee = (value: string) => { const digits = value.replaceAll(',', '').trim(); if (!digits || !/^\d+$/.test(digits)) return value; const amount = Number(digits); return Number.isSafeInteger(amount) ? amount.toLocaleString('en-US') : digits; };
@@ -26,7 +27,7 @@ function TranslationRegisterTable({ rows, headers, customFields, active, t, onEd
     <tbody>
       {topPadding > 0 && <tr className="virtual-table-spacer" aria-hidden="true"><td colSpan={columnCount} style={{ height: topPadding }} /></tr>}
       {virtualRows.map(item => { const row = rows[item.index]; return <tr key={item.key} data-index={item.index} ref={virtualizer.measureElement}>
-        <td>{row.number}</td><td>{row.date}</td><td>{row.person}</td><td>{row.document}</td><td>{row.languages}</td><td>{row.certifier}</td><td>{row.copies}</td><td>{formatFee(row.fee)}</td><td>{row.notes}</td>
+        <td>{row.number}</td><td>{formatRegisterDate(row.date)}</td><td>{row.person}</td><td>{row.document}</td><td>{row.languages}</td><td>{row.certifier}</td><td>{row.copies}</td><td>{formatFee(row.fee)}</td><td>{row.notes}</td>
         {customFields.map(field => <td key={field.id}>{row[`custom:${field.id}`] ?? ''}</td>)}
         <td><button className="edit-location row-action-edit" onClick={() => onEdit(row)}>{t('edit')}</button><button className="edit-location row-action-delete" onClick={() => onDelete(row)}>{t('translationDelete')}</button></td>
       </tr>; })}

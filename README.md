@@ -1,4 +1,6 @@
 # BUSINESS RULES DOCUMENT
+
+For Tauri 2 setup and local checks, see [TAURI-MIGRATION-HANDOVER.md](TAURI-MIGRATION-HANDOVER.md). The React and Rust source and current tests define app behavior.
 ## Ứng dụng B6H (SAFE PDF RENAME)
 
 | Thông tin | Chi tiết |
@@ -27,7 +29,7 @@
 
 ### Chat trợ giúp
 
-Chat mặc định ở chế độ **Offline**. Trong **Cài đặt**, nhập khóa API OpenRouter và nhấn **Lưu** để bật **Online**; khóa được mã hóa trong dữ liệu ứng dụng của tài khoản Windows và không hiện lại trên giao diện. Khóa lưu trong Cài đặt được ưu tiên. Nếu xóa khóa này, ứng dụng dùng `OPENROUTER_API_KEY` từ biến môi trường hoặc `.env` tại thư mục dự án (bản phát triển) hay cạnh tệp `.exe` (bản portable). `.env` được Git bỏ qua và không được đóng gói. Online gửi câu hỏi và các lượt chat Online gần đây tới OpenRouter qua danh sách model miễn phí `google/gemma-4-31b-it:free` → `cohere/north-mini-code:free` → `recursive/flint-v1.0:free` (tự chuyển khi model trước lỗi, giới hạn 60 giây cho cả câu trả lời và 20 giây khi không nhận dữ liệu); không gửi tệp. Khi mạng hoặc dịch vụ lỗi, chat hiển thị câu trả lời Offline.
+Chat mặc định ở chế độ **Offline**. Trong **Cài đặt**, nhập khóa API OpenRouter và nhấn **Lưu** để bật **Online**; khóa được lưu trong Windows Credential Manager và không hiện lại trên giao diện. Khóa lưu trong Cài đặt được ưu tiên. Nếu xóa khóa này, ứng dụng dùng `OPENROUTER_API_KEY` từ biến môi trường hoặc `.env` tại thư mục dự án (bản phát triển) hay cạnh tệp `.exe` (bản portable). `.env` không được đóng gói. Online gửi câu hỏi và các lượt chat Online gần đây tới OpenRouter qua danh sách model `nvidia/nemotron-3-ultra-550b-a55b` → `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` → `nvidia/nemotron-3.5-super-vl`; không gửi tệp. Nếu yêu cầu trực tuyến lỗi hoặc bị ngắt, chat hiển thị câu trả lời Offline.
 
 ### 1.3. Đối tượng sử dụng
 - Người dùng cuối làm việc với bộ hồ sơ/PDF được đánh số tuần tự (ví dụ hồ sơ hành chính, hợp đồng, giấy tờ).

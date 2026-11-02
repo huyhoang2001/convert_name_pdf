@@ -1,5 +1,5 @@
 import { faqs, type ChatLanguage } from './chatbotFaq.ts';
-import policy from '../electron/chat-policy.json' with { type: 'json' };
+import policy from '../src-tauri/chat-policy.json' with { type: 'json' };
 
 export function normalizeQuestion(value: string) {
   return value.toLowerCase().replace(/đ/g, 'd').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');

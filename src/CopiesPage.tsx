@@ -4,15 +4,16 @@ import customerNameDescriptionData from '../customer_name_description_data.json'
 import { compactReferenceNumbers, compactSortedReferenceNumbers, distributeRows, insertReferenceNumber, inspectAdjacentReferenceNumbers, nextReferenceNumber } from './copiesSequence';
 import { randomCopiesDetails } from './copiesRandom';
 import { useUndoHistory } from './undoHistory';
-import { amountInWords } from '../electron/copies-words.mjs';
+import { amountInWords } from './copiesWords';
 import SheetPager from './SheetPager';
 import { blankCopiesRow as blankRow, copiesSuggestions, decrementCopiesCount, isCopiesSaveShortcut } from './copiesForm';
+import RegisterFolderDropTarget from './RegisterFolderDropTarget';
 
 export type CopiesRow = { id: string; refNo: string; customer: string; description: string; quantity: string; unitPrice: string; totalAmount?: string; manualTotal?: boolean; manualRefNo?: boolean; [key: string]: string | boolean | undefined };
 export type CopiesSheet = { id: string; name: string; title: string; address: string; date: string; rows: CopiesRow[] };
 type CopiesFile = { file: string; sheets: CopiesSheet[]; sourceMap: Record<string, string> };
 type CopiesApi = {
-  importCopiesWorkbook: () => Promise<CopiesFile | null>;
+  importCopiesWorkbook: (folder?: string) => Promise<CopiesFile | null>;
   refreshCopiesWorkbook: (file: string) => Promise<CopiesFile>;
   saveCopiesWorkbook: (input: { file: string; sheets: CopiesSheet[]; sourceMap: Record<string, string> }) => Promise<number>;
   newCopiesWorkbook: (sheets: CopiesSheet[]) => Promise<{ file: string; sourceMap: Record<string, string> } | null>;
@@ -56,6 +57,7 @@ function CopiesPage({ api, t, labels = {}, isVisible, language }: { api: CopiesA
   const customFields = [...new Set(Object.keys(labels).map(key => key.match(/^custom:([a-f0-9-]{36}):label$/)?.[1]).filter((id): id is string => Boolean(id)))];
   const visibleRows = useMemo(() => rows.map((row, index) => ({ row, index })).filter(({ row }) => Object.values(row).join(' ').toLocaleLowerCase().includes(query.toLocaleLowerCase())), [rows, query]);
   const tableWrapRef = useRef<HTMLDivElement>(null);
+  const saveButtonRef = useRef<HTMLButtonElement>(null);
   const rowVirtualizer = useVirtualizer({ count: visibleRows.length, getScrollElement: () => tableWrapRef.current, estimateSize: () => 58, overscan: 8, getItemKey: index => visibleRows[index].row.id, enabled: isVisible });
   const virtualRows = rowVirtualizer.getVirtualItems();
   const topPadding = virtualRows[0]?.start ?? 0;
@@ -95,12 +97,12 @@ function CopiesPage({ api, t, labels = {}, isVisible, language }: { api: CopiesA
   };
   const addSheet = () => { setSheetDialogError(''); setSheetDialog({ action: 'add', name: `${t('copies')} ${sheets.length + 1}` }); };
   const renameSheet = () => { if (active) { setSheetDialogError(''); setSheetDialog({ action: 'rename', name: active.name }); } };
-  const deleteSheet = () => { if (!active || sheets.length < 2 || !window.confirm(t('copiesDeleteSheetConfirm'))) return; remember(); const remaining = sheets.filter(sheet => sheet.id !== active.id); setSheets(resequenceSheets(remaining, active.rows)); setActiveId(remaining[0]?.id ?? ''); setForm(blankRow()); markDirty(); };
-  const importFile = async () => { try { if (dirty && !window.confirm(t('copiesImportConfirm'))) return; const imported = await api.importCopiesWorkbook(); if (!imported) return; undo.clear(); setSheets(imported.sheets); setActiveId(imported.sheets[0]?.id ?? ''); setFile(imported.file); setSourceMap(imported.sourceMap); setForm(blankRow()); setDirty(false); setMessage(`${imported.sheets.reduce((sum, sheet) => sum + sheet.rows.length, 0)} ${t('translationImported')}`); setError(''); } catch (reason) { readError(reason); } };
-  const refresh = async () => { if (!file) return; if (dirty && !window.confirm(t('copiesRefreshConfirm'))) return; try { const refreshed = await api.refreshCopiesWorkbook(file); const updated = compactWorkbookSheets(refreshed.sheets); await api.saveCopiesWorkbook({ file, sheets: updated, sourceMap: refreshed.sourceMap }); setSheets(updated); setActiveId(updated[0]?.id ?? ''); setSourceMap(Object.fromEntries(updated.map(sheet => [sheet.id, sheet.name]))); setForm(blankRow()); setDirty(false); setMessage(t('copiesRefreshed')); setError(''); } catch (reason) { readError(reason); } };
-  const clearCache = async () => { if (!window.confirm(t('copiesClearCacheConfirm'))) return; try { await api.clearCopiesCache(); undo.clear(); setSheets([]); setActiveId(''); setFile(''); setSourceMap({}); setForm(blankRow()); setDirty(false); setQuery(''); setMessage(t('copiesCacheCleared')); setError(''); } catch (reason) { readError(reason); } };
+  const deleteSheet = async () => { try { if (!active || sheets.length < 2 || !(await window.confirm(t('copiesDeleteSheetConfirm')))) return; remember(); const remaining = sheets.filter(sheet => sheet.id !== active.id); setSheets(resequenceSheets(remaining, active.rows)); setActiveId(remaining[0]?.id ?? ''); setForm(blankRow()); markDirty(); } catch (reason) { readError(reason); } };
+  const importFile = async (folder?: string) => { try { if (dirty && !(await window.confirm(t('copiesImportConfirm')))) return; const imported = await api.importCopiesWorkbook(folder); if (!imported) return; undo.clear(); setSheets(imported.sheets); setActiveId(imported.sheets[0]?.id ?? ''); setFile(imported.file); setSourceMap(imported.sourceMap); setForm(blankRow()); setDirty(false); setMessage(`${imported.sheets.reduce((sum, sheet) => sum + sheet.rows.length, 0)} ${t('translationImported')}`); setError(''); } catch (reason) { readError(reason); } };
+  const refresh = async () => { if (!file) return; try { if (dirty && !(await window.confirm(t('copiesRefreshConfirm')))) return; const refreshed = await api.refreshCopiesWorkbook(file); const updated = compactWorkbookSheets(refreshed.sheets); await api.saveCopiesWorkbook({ file, sheets: updated, sourceMap: refreshed.sourceMap }); setSheets(updated); setActiveId(updated[0]?.id ?? ''); setSourceMap(Object.fromEntries(updated.map(sheet => [sheet.id, sheet.name]))); setForm(blankRow()); setDirty(false); setMessage(t('copiesRefreshed')); setError(''); } catch (reason) { readError(reason); } };
+  const clearCache = async () => { try { if (!(await window.confirm(t('copiesClearCacheConfirm')))) return; await api.clearCopiesCache(); undo.clear(); setSheets([]); setActiveId(''); setFile(''); setSourceMap({}); setForm(blankRow()); setDirty(false); setQuery(''); setMessage(t('copiesCacheCleared')); setError(''); } catch (reason) { readError(reason); } };
   const save = async () => { if (!sheets.length) return; try { if (file) { await api.saveCopiesWorkbook({ file, sheets, sourceMap }); setSourceMap(Object.fromEntries(sheets.map(sheet => [sheet.id, sheet.name]))); } else { const created = await api.newCopiesWorkbook(sheets); if (!created) return; undo.clear(); setFile(created.file); setSourceMap(created.sourceMap); } setDirty(false); setMessage(t('copiesSaved')); setError(''); } catch (reason) { readError(reason); } };
-  useEffect(() => { if (!isVisible) return; const onKeyDown = (event: KeyboardEvent) => { if (!isCopiesSaveShortcut(event)) return; event.preventDefault(); if (dirty && active) void save(); }; window.addEventListener('keydown', onKeyDown); return () => window.removeEventListener('keydown', onKeyDown); }, [isVisible, dirty, active, save]);
+  useEffect(() => { if (!isVisible) return; const onKeyDown = (event: KeyboardEvent) => { if (!isCopiesSaveShortcut(event)) return; event.preventDefault(); saveButtonRef.current?.click(); }; window.addEventListener('keydown', onKeyDown); return () => window.removeEventListener('keydown', onKeyDown); }, [isVisible]);
   const createFile = async () => { try { const created = await api.newCopiesWorkbook(sheets); if (!created) return; undo.clear(); setFile(created.file); setSourceMap(created.sourceMap); setDirty(false); setMessage(t('copiesSaved')); setError(''); } catch (reason) { readError(reason); } };
   const exportFile = async () => { try { const exported = await api.exportCopiesWorkbook(sheets); if (exported) { setMessage(`${t('copiesExported')} ${exported}`); setError(''); } } catch (reason) { readError(reason); } };
   const submit = (event: FormEvent) => {
@@ -139,7 +141,7 @@ function CopiesPage({ api, t, labels = {}, isVisible, language }: { api: CopiesA
             <div className="translation-actions copies-actions">
               <button className="primary-button" type="submit" disabled={!active}>{form.id ? t('copiesUpdate') : t('copiesAdd')}</button>
               <button type="button" className="page-button" onClick={() => setForm(blankRow())}>{t('translationClear')}</button>
-              <button type="button" className="page-button" disabled={!dirty || !active} onClick={() => void save()}>{t('translationSave')}</button>
+              <button ref={saveButtonRef} type="button" className="page-button" disabled={!dirty || !active} onClick={() => void save()}>{t('translationSave')}</button>
               <button type="button" className="page-button" disabled={!sheets.length} onClick={() => void exportFile()}>{t('translationExport')}</button>
               <button type="button" className="page-button" onClick={() => void importFile()}>{t('translationImport')}</button>
               <button type="button" className="page-button" disabled={!sheets.length} onClick={() => void createFile()}>{t('translationNewWorkbook')}</button>
@@ -154,7 +156,7 @@ function CopiesPage({ api, t, labels = {}, isVisible, language }: { api: CopiesA
             {customFields.map(id => <label key={id}><span>{labels[`custom:${id}:label`]}</span><input maxLength={20000} value={String(form[`custom:${id}`] ?? '')} onChange={event => setForm({ ...form, [`custom:${id}`]: event.target.value })} /></label>)}
           </div>
         </div>
-      </form> : <div className="signature-empty"><p>{t('copiesEmpty')}</p><button className="page-button" type="button" onClick={() => void importFile()}>{t('translationImport')}</button></div>}
+      </form> : <RegisterFolderDropTarget isVisible={isVisible && !file} t={t} onFolderDrop={importFile} onInvalidDrop={() => setError(t('registerDropOneFolder'))} onChooseFile={() => importFile()} />}
       <div className="translation-toolbar">
         <input value={query} onChange={event => setQuery(event.target.value)} placeholder={t('translationSearch')} aria-label={t('translationSearch')} disabled={!active} />
         <button type="button" className="page-button" disabled={!file} onClick={() => void refresh()}>{t('translationRefresh')}</button>
@@ -166,7 +168,7 @@ function CopiesPage({ api, t, labels = {}, isVisible, language }: { api: CopiesA
         <table className="translation-table copies-table"><thead><tr>{[['number','copiesNo'],['refNo','copiesRefNo'],['customer','copiesCustomer'],['description','copiesDescription'],['quantity','copiesQuantity'],['unitPrice','copiesUnitPrice'],['total','copiesTotal']].map(([key,fallback]) => <th key={key}>{labels[`header:${key}`]?.trim() || t(fallback)}</th>)}{customFields.map(id=><th key={id}>{labels[`custom:${id}:header`]}</th>)}<th>{t('translationActions')}</th></tr></thead>
           <tbody>
             {topPadding > 0 && <tr className="virtual-table-spacer" aria-hidden="true"><td colSpan={tableColumnCount} style={{ height: topPadding }} /></tr>}
-            {virtualRows.map(virtualRow => { const { row, index } = visibleRows[virtualRow.index]; return <tr key={virtualRow.key} data-index={virtualRow.index} ref={rowVirtualizer.measureElement}><td>{index + 1}</td><td>{row.refNo}</td><td>{row.customer}</td><td>{row.description}</td><td>{row.quantity}</td><td>{amount(row.unitPrice)}</td><td>{amount(rowTotal(row))}</td>{customFields.map(id=><td key={id}>{String(row[`custom:${id}`] ?? '')}</td>)}<td><button className="edit-location row-action-edit" type="button" onClick={() => setForm({ ...row, quantity: row.quantity, unitPrice: row.unitPrice })}>{t('edit')}</button><button className="edit-location row-action-delete" type="button" onClick={() => { if (window.confirm(t('translationDeleteConfirm'))) deleteRow(row); }}>{t('translationDelete')}</button></td></tr>; })}
+            {virtualRows.map(virtualRow => { const { row, index } = visibleRows[virtualRow.index]; return <tr key={virtualRow.key} data-index={virtualRow.index} ref={rowVirtualizer.measureElement}><td>{index + 1}</td><td>{row.refNo}</td><td>{row.customer}</td><td>{row.description}</td><td>{row.quantity}</td><td>{amount(row.unitPrice)}</td><td>{amount(rowTotal(row))}</td>{customFields.map(id=><td key={id}>{String(row[`custom:${id}`] ?? '')}</td>)}<td><button className="edit-location row-action-edit" type="button" onClick={() => setForm({ ...row, quantity: row.quantity, unitPrice: row.unitPrice })}>{t('edit')}</button><button className="edit-location row-action-delete" type="button" onClick={async () => { try { if (await window.confirm(t('translationDeleteConfirm'))) deleteRow(row); } catch (reason) { readError(reason); } }}>{t('translationDelete')}</button></td></tr>; })}
             {bottomPadding > 0 && <tr className="virtual-table-spacer" aria-hidden="true"><td colSpan={tableColumnCount} style={{ height: bottomPadding }} /></tr>}
           </tbody>
           <tfoot><tr><td colSpan={6}>{t('copiesFooterTotal')}</td><td>{sheetTotal.toLocaleString('en-US')}</td><td colSpan={customFields.length} /><td /></tr><tr><td colSpan={8 + customFields.length}>{t('copiesFooterWords')}: {amountInWords(sheetTotal, language)}</td></tr><tr><td colSpan={3}>{t('copiesFooterInvoice')}</td><td colSpan={5 + customFields.length}>{t('copiesFooterSupplier')}</td></tr><tr><td colSpan={3} /><td colSpan={5 + customFields.length}>{t('copiesFooterSignature')}</td></tr></tfoot>

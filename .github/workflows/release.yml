@@ -61,4 +61,4 @@ jobs:
           tag_name: ${{ inputs.release_tag || github.ref_name }}
           name: B6H ${{ inputs.release_tag || github.ref_name }}
           generate_release_notes: true
-          files: portable-package/B6H-*.exe
+          files: B6H-*.exe

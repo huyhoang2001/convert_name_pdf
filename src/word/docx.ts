@@ -44,7 +44,7 @@ export function substituteMissingFonts(configuration: FontConfigurationFragment,
   const substitutions: FontSourceSubstitution[] = [];
   for (const family of missing) {
     const lower = family.toLowerCase();
-    const target = lower === 'open sans' ? 'Arial' : lower === 'times new roman bold' ? 'Times New Roman' : '';
+    const target = lower === 'open sans' || lower === 'sf pro text' ? 'Arial' : lower === 'times new roman bold' || lower === '.vntime' ? 'Times New Roman' : '';
     if (!target) return null;
     const matches = sources.map(source => source.request).filter(request => request.family.toLowerCase() === target.toLowerCase() && (lower !== 'times new roman bold' || request.weight === 700));
     if (!matches.length) return null;

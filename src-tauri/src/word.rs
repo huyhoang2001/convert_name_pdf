@@ -62,6 +62,7 @@ pub struct TemplateEntry {
     pub topic: String,
     pub kind: String,
     pub error: Option<String>,
+    pub pinned: bool,
 }
 
 fn library_path() -> Result<PathBuf, String> {
@@ -130,6 +131,21 @@ fn safe_name(name: &str) -> Result<String, String> {
         return Err("Choose a valid document name.".into());
     }
     Ok(base.to_string())
+}
+fn save_as_target(path: &str) -> Result<(PathBuf, String), String> {
+    let path = PathBuf::from(path);
+    if !path.is_absolute() || !path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("docx")) {
+        return Err("Choose an absolute DOCX save location.".into());
+    }
+    let file_name = path.file_stem().and_then(|name| name.to_str()).ok_or("Choose a valid document name.")?;
+    if file_name.to_ascii_lowercase().ends_with(".docx") {
+        return Err("Choose a valid DOCX file name.".into());
+    }
+    let name = safe_name(file_name)?;
+    Ok((path, name))
+}
+fn document_path(root: &Path, template: &str, day: &str, month: &str, name: &str) -> PathBuf {
+    root.join(template).join(format!("{day}_{month}")).join(format!("{name}.docx"))
 }
 fn docx_bytes(bytes: &[u8]) -> Result<(), String> {
     if bytes.len() as u64 > MAX_FILE || bytes.len() < 4 {
@@ -230,10 +246,22 @@ pub fn templates() -> Result<Vec<TemplateEntry>, String> {
             topic: m["topic"].as_str().unwrap_or("General").into(),
             kind: m["kind"].as_str().unwrap_or("Document").into(),
             error: read_docx(&path).err(),
+            pinned: m["pinned"].as_bool().unwrap_or(false),
         });
     }
-    entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    entries.sort_by(|a, b| b.pinned.cmp(&a.pinned).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
     Ok(entries)
+}
+pub fn set_template_pinned(file: &str, pinned: bool) -> Result<(), String> {
+    let root = fs::canonicalize(path_setting("templatesDirectory")?).map_err(|e| e.to_string())?;
+    let path = fs::canonicalize(file).map_err(|e| e.to_string())?;
+    if path.parent() != Some(root.as_path()) || !path.extension().is_some_and(|e| e.eq_ignore_ascii_case("docx")) {
+        return Err("Template is outside the configured folder.".into());
+    }
+    let _write = WRITE_LOCK.lock().map_err(|e| e.to_string())?;
+    let mut book = library()?;
+    book["templates"][path.to_string_lossy().as_ref()]["pinned"] = json!(pinned);
+    save_library(&book)
 }
 pub fn read_template(file: &str) -> Result<Value, String> {
     let root = fs::canonicalize(path_setting("templatesDirectory")?).map_err(|e| e.to_string())?;
@@ -277,7 +305,6 @@ pub fn import_template(
     kind: &str,
     replace_existing: bool,
 ) -> Result<TemplateEntry, String> {
-    let _write = WRITE_LOCK.lock().map_err(|e| e.to_string())?;
     let source = Path::new(source);
     if !source.is_absolute() {
         return Err("Choose a valid DOCX file.".into());
@@ -290,6 +317,7 @@ pub fn import_template(
     if fs::canonicalize(source).ok() == fs::canonicalize(&target).ok() {
         return Err("Template source and destination are the same file.".into());
     }
+    let _write = WRITE_LOCK.lock().map_err(|e| e.to_string())?;
     if target.exists() {
         if !replace_existing {
             return Err("A template with this name already exists.".into());
@@ -309,7 +337,8 @@ pub fn import_template(
         .as_str()
         .map(str::to_owned)
         .unwrap_or_else(|| Uuid::new_v4().to_string());
-    book["templates"][&key] = json!({"id":id,"topic":topic.trim().chars().take(80).collect::<String>(),"kind":kind.trim().chars().take(80).collect::<String>()});
+    let pinned = book["templates"][&key]["pinned"].as_bool().unwrap_or(false);
+    book["templates"][&key] = json!({"id":id,"topic":topic.trim().chars().take(80).collect::<String>(),"kind":kind.trim().chars().take(80).collect::<String>(),"pinned":pinned});
     save_library(&book)?;
     let (size, modified) = meta(&target)?;
     Ok(TemplateEntry {
@@ -321,6 +350,7 @@ pub fn import_template(
         topic: topic.into(),
         kind: kind.into(),
         error: None,
+        pinned,
     })
 }
 pub fn create_template(
@@ -329,7 +359,6 @@ pub fn create_template(
     topic: &str,
     kind: &str,
 ) -> Result<TemplateEntry, String> {
-    let _write = WRITE_LOCK.lock().map_err(|e| e.to_string())?;
     if encoded.len() > ((MAX_FILE * 4 / 3 + 8) as usize) {
         return Err("DOCX exceeds the supported size.".into());
     }
@@ -340,6 +369,7 @@ pub fn create_template(
     let base = safe_name(name)?;
     let root = path_setting("templatesDirectory")?;
     let target = root.join(format!("{base}.docx"));
+    let _write = WRITE_LOCK.lock().map_err(|e| e.to_string())?;
     write_new(&target, &bytes)?;
     let mut book = library()?;
     if !book["templates"].is_object() {
@@ -359,6 +389,7 @@ pub fn create_template(
         topic: topic.into(),
         kind: kind.into(),
         error: None,
+        pinned: false,
     })
 }
 pub fn open_external(state: &State, file: &Path) -> Result<Value, String> {
@@ -374,7 +405,43 @@ pub fn open_external(state: &State, file: &Path) -> Result<Value, String> {
     )
 }
 pub fn recent() -> Result<Value, String> {
-    Ok(library()?["recent"].clone())
+    let mut rows = library()?["recent"].as_array().cloned().unwrap_or_default();
+    rows.sort_by_key(|row| !row["pinned"].as_bool().unwrap_or(false));
+    Ok(json!(rows))
+}
+pub fn update_recent(file: &str, action: &str, name: Option<&str>) -> Result<(), String> {
+    let _write = WRITE_LOCK.lock().map_err(|e| e.to_string())?;
+    let mut book = library()?;
+    let rows = book["recent"].as_array_mut().ok_or("Recent files are unavailable.")?;
+    let index = rows.iter().position(|row| row["path"].as_str() == Some(file)).ok_or("Document is not in Recent files.")?;
+    match action {
+        "pin" | "unpin" => rows[index]["pinned"] = json!(action == "pin"),
+        "remove" => { rows.remove(index); }
+        "delete" => {
+            let path = fs::canonicalize(file).map_err(|e| e.to_string())?;
+            if path != Path::new(file) || !path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("docx")) { return Err("Invalid recent document path.".into()); }
+            fs::remove_file(path).map_err(|e| e.to_string())?;
+            rows.remove(index);
+        }
+        "rename" => {
+            let path = fs::canonicalize(file).map_err(|e| e.to_string())?;
+            if path != Path::new(file) || !path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("docx")) { return Err("Invalid recent document path.".into()); }
+            let filename = safe_name(name.ok_or("Choose a document name.")?)?;
+            let target = path.with_file_name(format!("{filename}.docx"));
+            if target != path {
+                if target.exists() { return Err("A document with this name already exists.".into()); }
+                fs::rename(&path, &target).map_err(|e| e.to_string())?;
+            }
+            let canonical = fs::canonicalize(&target).map_err(|e| e.to_string())?;
+            let (size, modified) = meta(&canonical)?;
+            rows[index]["path"] = json!(canonical);
+            rows[index]["name"] = json!(filename);
+            rows[index]["size"] = json!(size);
+            rows[index]["modified"] = json!(modified);
+        }
+        _ => return Err("Unknown recent-file action.".into()),
+    }
+    save_library(&book)
 }
 pub fn open_recent(state: &State, file: &str) -> Result<Value, String> {
     let path = fs::canonicalize(file).map_err(|e| e.to_string())?;
@@ -402,8 +469,15 @@ pub fn open_recent(state: &State, file: &str) -> Result<Value, String> {
         json!({"file":path,"name":path.file_stem().unwrap_or_default().to_string_lossy(),"bytesBase64":STANDARD.encode(bytes),"hash":current,"source":if managed{"managed"}else{"external"},"templateName":entry["templateName"],"day":entry["day"],"month":entry["month"]}),
     )
 }
+pub fn open_recent_location(file: &str) -> Result<(), String> {
+    let path = fs::canonicalize(file).map_err(|e| e.to_string())?;
+    if !path.extension().is_some_and(|e| e.eq_ignore_ascii_case("docx"))
+        || !library()?["recent"].as_array().is_some_and(|rows| rows.iter().any(|row| row["path"].as_str().is_some_and(|p| Path::new(p) == path))) {
+        return Err("Document is not in Recent files.".into());
+    }
+    std::process::Command::new("explorer.exe").arg(format!("/select,{}", path.display())).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
 pub fn save_document(state: &State, input: Value) -> Result<Value, String> {
-    let _write = WRITE_LOCK.lock().map_err(|e| e.to_string())?;
     let encoded = input["bytesBase64"]
         .as_str()
         .ok_or("Missing DOCX content.")?;
@@ -414,12 +488,17 @@ pub fn save_document(state: &State, input: Value) -> Result<Value, String> {
         .decode(encoded)
         .map_err(|_| "Invalid DOCX content.".to_string())?;
     docx_bytes(&bytes)?;
-    let name = safe_name(input["name"].as_str().ok_or("Choose a document name.")?)?;
+    let save_as = input["targetPath"].as_str().map(save_as_target).transpose()?;
+    let name = if let Some((_, name)) = &save_as { name.clone() } else { safe_name(input["name"].as_str().ok_or("Choose a document name.")?)? };
+    let _write = WRITE_LOCK.lock().map_err(|e| e.to_string())?;
     let mut book = library()?;
     if !book["recent"].is_array() {
         book["recent"] = json!([]);
     }
     let current = input["currentPath"].as_str().filter(|s| !s.is_empty());
+    if current.is_some() && save_as.is_some() {
+        return Err("Choose either Save or Save As, not both.".into());
+    }
     let mut path = None;
     if let Some(current) = current {
         let canonical = fs::canonicalize(current).map_err(|e| e.to_string())?;
@@ -448,6 +527,8 @@ pub fn save_document(state: &State, input: Value) -> Result<Value, String> {
     }
     let target = if let Some(path) = path {
         path
+    } else if let Some((target, _)) = &save_as {
+        target.clone()
     } else {
         let template = safe_name(
             input["templateName"]
@@ -467,11 +548,7 @@ pub fn save_document(state: &State, input: Value) -> Result<Value, String> {
         {
             return Err("Invalid document creation date.".into());
         }
-        path_setting("documentsDirectory")?
-            .join(template)
-            .join(day)
-            .join(month)
-            .join(format!("{name}.docx"))
+        document_path(&path_setting("documentsDirectory")?, &template, day, month, &name)
     };
     if let Some(current) = current {
         if target != Path::new(current) {
@@ -479,7 +556,7 @@ pub fn save_document(state: &State, input: Value) -> Result<Value, String> {
         }
     }
     if target.exists() {
-        if current.is_none() {
+        if current.is_none() && save_as.is_none() {
             return Err(
                 "A document with this name already exists. Choose a different name.".into(),
             );
@@ -489,6 +566,9 @@ pub fn save_document(state: &State, input: Value) -> Result<Value, String> {
         write_new(&target, &bytes)?;
     }
     let canonical = fs::canonicalize(&target).map_err(|e| e.to_string())?;
+    if save_as.is_some() {
+        state.external.lock().map_err(|e| e.to_string())?.remove(&canonical);
+    }
     let digest = hash(&bytes);
     let (size, modified) = meta(&canonical)?;
     let rows = book["recent"].as_array_mut().unwrap();
@@ -508,6 +588,20 @@ mod tests {
         assert!(safe_name("COM9.docx").is_err());
         assert!(safe_name(".docx").is_err());
         assert_eq!(safe_name("Test.DOCX").unwrap(), "Test");
+    }
+    #[test]
+    fn save_as_requires_an_absolute_docx_destination() {
+        let path = std::env::temp_dir().join("Chosen.DOCX");
+        let (target, name) = save_as_target(path.to_str().unwrap()).unwrap();
+        assert_eq!(target, path);
+        assert_eq!(name, "Chosen");
+        assert!(save_as_target("relative.docx").is_err());
+        assert!(save_as_target(std::env::temp_dir().join("file.xlsx").to_str().unwrap()).is_err());
+    }
+    #[test]
+    fn documents_use_template_and_day_month_folder() {
+        let path = document_path(Path::new("Documents/B6H/Word"), "Templates", "02", "11", "trannam");
+        assert_eq!(path, Path::new("Documents/B6H/Word/Templates/02_11/trannam.docx"));
     }
     #[test]
     fn bad_docx_is_rejected() {

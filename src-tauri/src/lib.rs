@@ -8,7 +8,7 @@ mod workbook;
 use std::sync::Arc;
 use tauri::{
     Manager, State,
-    menu::{MenuBuilder, SubmenuBuilder},
+    menu::{MenuBuilder, MenuItem, SubmenuBuilder},
 };
 use tauri_plugin_dialog::DialogExt;
 
@@ -29,7 +29,8 @@ fn install_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
         .build()?;
     let view = SubmenuBuilder::new(app, label("View", "Xem"))
         .text("reload", label("Reload", "Tải lại"));
-    let view = view.text("devtools", label("Developer tools", "Công cụ phát triển"));
+    let devtools = MenuItem::with_id(app, "devtools", label("Developer tools", "Công cụ phát triển"), true, Some("Ctrl+F12"))?;
+    let view = view.item(&devtools);
     let view = view
         .separator()
         .text("fullscreen", label("Fullscreen", "Toàn màn hình"))
@@ -468,6 +469,24 @@ fn get_recent_word_documents() -> Result<serde_json::Value, String> {
     word::recent()
 }
 #[tauri::command]
+fn set_word_template_pinned(file: String, pinned: bool) -> Result<(), String> {
+    word::set_template_pinned(&file, pinned)
+}
+#[tauri::command]
+fn open_recent_word_location(file: String) -> Result<(), String> {
+    word::open_recent_location(&file)
+}
+#[tauri::command]
+fn open_word_devtools(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(debug_assertions)]
+    app.get_webview_window("main").ok_or("Main window is unavailable.")?.open_devtools();
+    Ok(())
+}
+#[tauri::command]
+fn update_recent_word_document(file: String, action: String, name: Option<String>) -> Result<(), String> {
+    word::update_recent(&file, &action, name.as_deref())
+}
+#[tauri::command]
 async fn save_word_document(
     input: serde_json::Value,
     state: State<'_, Arc<word::State>>,
@@ -635,6 +654,10 @@ pub fn run() {
             open_external_word_document,
             open_recent_word_document,
             get_recent_word_documents,
+            set_word_template_pinned,
+            open_recent_word_location,
+            open_word_devtools,
+            update_recent_word_document,
             save_word_document
         ])
         .run(tauri::generate_context!())

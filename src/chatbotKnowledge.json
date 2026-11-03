@@ -1,0 +1,332 @@
+[
+  {
+    "id": "rename",
+    "prompts": {
+      "EN": "How do I rename PDFs?",
+      "VI": "Đổi tên PDF như thế nào?"
+    },
+    "terms": [
+      "rename pdf",
+      "rename pdfs",
+      "rename files",
+      "doi ten pdf",
+      "doi ten tep",
+      "new filename",
+      "ten moi"
+    ],
+    "answer": {
+      "EN": "Open Rename PDFs. Choose a source folder and scan it, select a numbered group and files, then enter the new name. Review the preview and any errors before confirming Run verified copy. The original PDFs remain in place.",
+      "VI": "Mở Đổi tên PDF. Chọn thư mục nguồn và quét, chọn nhóm và các tệp có số, rồi nhập tên mới. Kiểm tra bản xem trước và lỗi trước khi xác nhận chạy sao chép có kiểm tra. PDF gốc vẫn ở nguyên vị trí."
+    }
+  },
+  {
+    "id": "scan",
+    "prompts": {
+      "EN": "Why is my PDF missing from the scan?",
+      "VI": "Vì sao quét không thấy tệp PDF?"
+    },
+    "terms": [
+      "pdf missing scan",
+      "pdf not found",
+      "scan folder",
+      "ignored pdf",
+      "quet khong thay",
+      "tep pdf khong thay",
+      "bo qua pdf"
+    ],
+    "answer": {
+      "EN": "Rename PDFs scans PDF files directly inside the chosen folder. Use names such as 12.pdf or Case_012.pdf; other naming patterns appear as ignored files. Check the chosen folder and filename, then scan again.",
+      "VI": "Đổi tên PDF chỉ quét tệp PDF nằm trực tiếp trong thư mục đã chọn. Hãy dùng tên như 12.pdf hoặc Case_012.pdf; tên không đúng mẫu sẽ bị bỏ qua. Kiểm tra thư mục và tên tệp rồi quét lại."
+    }
+  },
+  {
+    "id": "count",
+    "prompts": {
+      "EN": "How do I find missing numbers?",
+      "VI": "Làm sao tìm số còn thiếu?"
+    },
+    "terms": [
+      "missing numbers",
+      "number gaps",
+      "count number",
+      "find missing",
+      "so con thieu",
+      "kiem tra so",
+      "dem so"
+    ],
+    "answer": {
+      "EN": "Open Count number, choose or drop a folder. The page groups numbered files directly inside it and shows each group’s range and missing numbers. Use Save report to write the numbering report.",
+      "VI": "Mở Đếm số rồi chọn hoặc thả thư mục. Trang này nhóm các tệp có số nằm trực tiếp trong thư mục, hiển thị khoảng số và số còn thiếu. Chọn Lưu báo cáo để ghi báo cáo thống kê."
+    }
+  },
+  {
+    "id": "merge",
+    "prompts": {
+      "EN": "How do I merge numbered groups?",
+      "VI": "Làm sao gộp các nhóm số?"
+    },
+    "terms": [
+      "merge groups",
+      "merge all",
+      "gop nhom",
+      "gop tat ca"
+    ],
+    "answer": {
+      "EN": "In Rename PDFs, scan a folder with at least two numbered groups and select Merge all. Review the preview: groups are ordered by prefix and each group’s number range is shifted into the new sequence.",
+      "VI": "Trong Đổi tên PDF, quét thư mục có ít nhất hai nhóm số rồi chọn Gộp tất cả. Kiểm tra bản xem trước: các nhóm được xếp theo tiền tố và khoảng số của từng nhóm được chuyển sang dãy mới."
+    }
+  },
+  {
+    "id": "backup",
+    "prompts": {
+      "EN": "Where are Backup and Output?",
+      "VI": "Backup và Output nằm ở đâu?"
+    },
+    "terms": [
+      "backup output",
+      "backup folder",
+      "output folder",
+      "thu muc backup",
+      "thu muc output"
+    ],
+    "answer": {
+      "EN": "The Rename PDFs preview shows the Backup and Output destinations before you run. The app copies original filenames into Backup and new filenames into Output, then writes a report in Output. Use Open backup, Open output, or Open report after a run.",
+      "VI": "Bản xem trước Đổi tên PDF hiển thị nơi lưu Backup và Output trước khi chạy. Ứng dụng sao chép tệp với tên gốc vào Backup, tên mới vào Output và ghi báo cáo trong Output. Sau khi chạy, dùng Mở backup, Mở output hoặc Mở báo cáo."
+    }
+  },
+  {
+    "id": "translation",
+    "prompts": {
+      "EN": "How do I use the Translation register?",
+      "VI": "Dùng sổ Dịch thuật như thế nào?"
+    },
+    "terms": [
+      "translation register",
+      "translation excel",
+      "translated records",
+      "so dich thuat",
+      "dich thuat excel",
+      "ban ghi dich thuat"
+    ],
+    "answer": {
+      "EN": "Open Translation to manage certified translation records. You can add or edit records, search, and import or export an Excel workbook. This register does not translate PDF contents.",
+      "VI": "Mở Dịch thuật để quản lý bản ghi chứng thực bản dịch. Bạn có thể thêm hoặc sửa bản ghi, tìm kiếm, nhập hoặc xuất sổ Excel. Sổ này không tự dịch nội dung PDF."
+    }
+  },
+  {
+    "id": "signature",
+    "prompts": {
+      "EN": "How do I manage signature records?",
+      "VI": "Quản lý sổ chứng thực chữ ký thế nào?"
+    },
+    "terms": [
+      "signature authentication",
+      "signature records",
+      "chu ky",
+      "chung thuc chu ky"
+    ],
+    "answer": {
+      "EN": "Open Signature authentication to add or edit signature and fingerprint authentication records. You can import an Excel workbook and export the register.",
+      "VI": "Mở Chứng thực chữ ký để thêm hoặc sửa bản ghi chứng thực chữ ký và điểm chỉ. Bạn có thể nhập sổ Excel và xuất sổ."
+    }
+  },
+  {
+    "id": "copies",
+    "prompts": {
+      "EN": "How do I manage certified copies?",
+      "VI": "Quản lý sổ bản sao thế nào?"
+    },
+    "terms": [
+      "certified copies",
+      "copies register",
+      "ban sao",
+      "so ban sao"
+    ],
+    "answer": {
+      "EN": "Open Copies to manage certified-copy records. Add a sheet or import an Excel workbook, then add or edit records. The page also provides a Ref. No. gap check.",
+      "VI": "Mở Bản sao để quản lý bản ghi chứng thực bản sao. Thêm trang tính hoặc nhập sổ Excel, rồi thêm hoặc sửa bản ghi. Trang này cũng có kiểm tra số tham chiếu bị thiếu."
+    }
+  },
+  {
+    "id": "settings",
+    "prompts": {
+      "EN": "How do I change language or theme?",
+      "VI": "Đổi ngôn ngữ hoặc giao diện thế nào?"
+    },
+    "terms": [
+      "change language",
+      "change theme",
+      "dark mode",
+      "settings language",
+      "doi ngon ngu",
+      "doi giao dien",
+      "che do toi"
+    ],
+    "answer": {
+      "EN": "Open Settings to switch between English and Vietnamese or Light and Dark appearance. Settings also lets you edit available field labels.",
+      "VI": "Mở Cài đặt để đổi giữa tiếng Anh và tiếng Việt hoặc giao diện Sáng và Tối. Bạn cũng có thể sửa các nhãn trường có sẵn."
+    }
+  },
+  {
+    "id": "privacy",
+    "prompts": {
+      "EN": "Does this chat work offline?",
+      "VI": "Chat này có dùng ngoại tuyến không?"
+    },
+    "terms": [
+      "chat offline",
+      "chat privacy",
+      "chat internet",
+      "tro chuyen ngoai tuyen",
+      "bao mat chat"
+    ],
+    "answer": {
+      "EN": "Offline mode uses built-in answers on this device. Online mode sends your typed chat messages to OpenRouter; it does not read or send your files. You choose the mode in the chat panel.",
+      "VI": "Chế độ ngoại tuyến dùng câu trả lời có sẵn trên thiết bị. Chế độ trực tuyến gửi tin nhắn bạn nhập tới OpenRouter; không đọc hoặc gửi tệp của bạn. Bạn chọn chế độ trong khung chat."
+    }
+  },
+  {
+    "id": "word-recent",
+    "prompts": {
+      "EN": "How do I manage recent Word files?",
+      "VI": "Quản lý tệp Word gần đây như thế nào?"
+    },
+    "terms": [
+      "word recent files",
+      "favorite recent word file",
+      "favorite a recent word file",
+      "favorite recent files in word",
+      "favorite word document",
+      "recent word favorites",
+      "yeu thich tep word gan day",
+      "word f12",
+      "save as shortcut",
+      "pin word file",
+      "remove recent word",
+      "rename word file",
+      "delete word file",
+      "tep word gan day",
+      "phim tat f12",
+      "open file location",
+      "show in explorer",
+      "word recent menu",
+      "vi tri tep word"
+    ],
+    "answer": {
+      "EN": "In Word, press F12 to save the active document as a new file; Ctrl+F12 opens Developer tools. In Recent files, click a document's star to add or remove it from Favorites. The Favorites tab shows starred recent documents, and the All, B6H files, and Other files filters still apply. Use the three-dot menu to quick edit, remove from Recent files, rename, delete after confirmation, or open the file location in Explorer. Remove only clears the recent list.",
+      "VI": "Trong Word, nhấn F12 để lưu tài liệu đang mở thành tệp mới; Ctrl+F12 mở Công cụ phát triển. Trong mục Tệp gần đây, nhấn ngôi sao cạnh tài liệu để thêm vào hoặc bỏ khỏi mục Yêu thích. Thẻ Yêu thích hiển thị các tài liệu gần đây đã đánh dấu sao; các bộ lọc Tất cả, Tệp B6H và Tệp khác vẫn áp dụng. Dùng menu ba chấm để sửa nhanh, xóa khỏi danh sách gần đây, đổi tên, xóa sau khi xác nhận hoặc mở vị trí tệp trong Explorer. Xóa khỏi danh sách chỉ gỡ mục khỏi danh sách gần đây."
+    }
+  },
+  {
+    "id": "word-shortcuts",
+    "prompts": {
+      "EN": "What are the Word keyboard shortcuts?",
+      "VI": "Các phím tắt trong Word là gì?"
+    },
+    "terms": [
+      "word keyboard shortcut",
+      "word shortcuts",
+      "ctrl s word",
+      "ctrl shift s word",
+      "ctrl o word",
+      "ctrl p word",
+      "ctrl f12",
+      "developer tools word",
+      "phim tat word",
+      "ctrl s word",
+      "ctrl n word",
+      "new file shortcut word",
+      "tao tep word moi"
+    ],
+    "answer": {
+      "EN": "In Word, Ctrl+N or File > New File creates a blank DOCX. Ctrl+S saves; F12 and Ctrl+Shift+S open Save As; Ctrl+F12 opens Developer tools; Ctrl+O opens files and Ctrl+P prints.",
+      "VI": "Trong Word, Ctrl+N hoặc Tệp > Tệp mới tạo DOCX trống. Ctrl+S lưu; F12 và Ctrl+Shift+S mở Lưu thành; Ctrl+F12 mở Công cụ phát triển; Ctrl+O mở tệp và Ctrl+P in."
+    }
+  },
+  {
+    "id": "word-multiple-files",
+    "prompts": {
+      "EN": "How do I open multiple Word files?",
+      "VI": "Mở nhiều tệp Word cùng lúc như thế nào?"
+    },
+    "terms": [
+      "open multiple word files",
+      "open multiple files at once",
+      "limit of 5 files",
+      "limit five files",
+      "open multiple documents",
+      "open several word files",
+      "five word files",
+      "5 word files",
+      "five files word",
+      "word file limit",
+      "too many open documents",
+      "mo nhieu tep word",
+      "gioi han tep word",
+      "unlimited word files",
+      "unlimited word tabs",
+      "more than five word files",
+      "khong gioi han tep word"
+    ],
+    "answer": {
+      "EN": "Word has no application-level limit on open documents. Use Open or Ctrl+O to select multiple DOCX files; each appears in its own tab. Blank documents and templates also open in tabs.",
+      "VI": "Word không giới hạn số lượng tài liệu được mở ở cấp ứng dụng. Chọn Mở hoặc nhấn Ctrl+O để chọn nhiều tệp DOCX; mỗi tệp xuất hiện trong một thẻ riêng. Tài liệu trống và mẫu cũng mở trong các thẻ."
+    }
+  },
+  {
+    "id": "word-documents",
+    "prompts": {
+      "EN": "How do I create or open a Word document?",
+      "VI": "Tạo hoặc mở tài liệu Word như thế nào?"
+    },
+    "terms": [
+      "create word document",
+      "new word document",
+      "open docx in word",
+      "word templates",
+      "use a word template",
+      "save word document",
+      "word file",
+      "tao tai lieu word",
+      "mo tep docx",
+      "mau word",
+      "word font missing",
+      "vntime font",
+      "sf pro text font",
+      "pin templates",
+      "favorite word templates",
+      "favourite word templates",
+      "word favorites",
+      "word favourites",
+      "yeu thich mau word",
+      "mau word yeu thich",
+      "ghim mau word",
+      "thay font word",
+      "pin word template"
+    ],
+    "answer": {
+      "EN": "Open Word from app navigation. Choose Create or Ctrl+N for a blank DOCX, Open or Ctrl+O to select files, or choose a template. Select a template's star to add or remove it from Favorites; the Favorites tab shows only starred templates. New documents are saved under Documents\\B6H\\Word\\Templates\\dd_mm\\name.docx; documents created from a template use Documents\\B6H\\Word\\<template>\\dd_mm\\name.docx. Known missing fonts .VnTime, SF Pro Text, and Times New Roman Bold are substituted for editing while original font names stay in the DOCX and a layout warning is shown; unknown missing fonts remain read-only.",
+      "VI": "Mở Word từ thanh điều hướng. Chọn Tạo hoặc Ctrl+N để tạo DOCX trống, Mở hoặc Ctrl+O để chọn tệp, hoặc chọn một mẫu. Nhấn ngôi sao của mẫu để thêm hoặc bỏ mẫu khỏi mục Yêu thích; thẻ Yêu thích chỉ hiển thị các mẫu đã đánh dấu sao. Tài liệu mới được lưu tại Documents\\B6H\\Word\\Templates\\dd_mm\\name.docx; tài liệu tạo từ mẫu được lưu tại Documents\\B6H\\Word\\<template>\\dd_mm\\name.docx. Các phông .VnTime, SF Pro Text và Times New Roman Bold bị thiếu sẽ được thay thế để chỉnh sửa; tên phông gốc vẫn giữ trong DOCX và ứng dụng hiển thị cảnh báo bố cục. Phông không xác định vẫn chỉ đọc."
+    }
+  },
+  {
+    "id": "features",
+    "prompts": {
+      "EN": "What can the B6H app help me with?",
+      "VI": "Ứng dụng B6H có thể giúp tôi những việc gì?"
+    },
+    "terms": [
+      "what can b6h do",
+      "app features",
+      "help with b6h",
+      "what features",
+      "b6h help",
+      "tinh nang b6h",
+      "ung dung lam duoc gi"
+    ],
+    "answer": {
+      "EN": "B6H includes Rename PDFs for verified copies of numbered PDFs, Count number for finding gaps in numbered files, Translation and Signature authentication registers, Copies records, Word document editing, and Settings for language, appearance, folders, and chat preferences. Tell me which feature you want to use.",
+      "VI": "B6H có Đổi tên PDF để tạo bản sao đã kiểm tra từ PDF đánh số, Đếm số để tìm số bị thiếu, sổ Dịch thuật và Chứng thực chữ ký, sổ Bản sao, trình soạn thảo Word và Cài đặt ngôn ngữ, giao diện, thư mục cùng tùy chọn trò chuyện. Hãy cho tôi biết bạn muốn dùng tính năng nào."
+    }
+  }
+]

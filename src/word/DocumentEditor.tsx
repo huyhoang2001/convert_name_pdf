@@ -22,9 +22,9 @@ const insertMenu = CHROME_MENUS.find(menu => menu.id === 'insert');
 if (!insertMenu) throw Error('The document editor Insert menu is unavailable.');
 const insertMenuEntries: readonly ChromeMenuEntry[] = insertMenu.entries.filter(entry => !('slot' in entry) || entry.slot !== 'table.insert');
 
-export const DocumentEditor = memo(function DocumentEditor({ tab, active, primary, fonts, register, onChange, onSafety, onOpen, onSave, t, language, theme }: {
+export const DocumentEditor = memo(function DocumentEditor({ tab, active, primary, fonts, register, onChange, onSafety, onOpen, onSave, onNew, t, language, theme }: {
   tab: Tab; active: boolean; primary: boolean; fonts: FontConfigurationFragment | null; register: (access: EditorAccess | null) => void;
-  onChange: () => void; onSafety: (reason: string) => void; onOpen: () => void; onSave: () => void;
+  onChange: () => void; onSafety: (reason: string) => void; onOpen: () => void; onSave: () => void; onNew: () => void;
   t: T; language: 'EN' | 'VI'; theme: 'light' | 'dark';
 }) {
   const editorRef = useRef<DocxEditorRef>(null);
@@ -56,13 +56,13 @@ export const DocumentEditor = memo(function DocumentEditor({ tab, active, primar
   const selectPrintPage = useCallback((index: number) => setActivePrintPage(index), []);
   const leavePrintPage = useCallback(() => setActivePrintPage(null), []);
   const fallbackConfiguration = missingFonts.length && fonts ? substituteMissingFonts(fonts, missingFonts) : null;
-  const enableFontFallback = () => {
-    if (!fallbackConfiguration) return;
+  const applyFontFallback = (configuration: FontConfigurationFragment) => {
     fontLoadFailure.current = '';
     checked.current = false;
-    setReason(''); setSafe(false); setMissingFonts([]); setFallbackFonts(fallbackConfiguration); setEditorVersion(version => version + 1);
+    setReason(''); setSafe(false); setMissingFonts([]); setFallbackFonts(configuration); setEditorVersion(version => version + 1);
     onSafety('');
   };
+  const enableFontFallback = () => { if (fallbackConfiguration) applyFontFallback(fallbackConfiguration); };
   const updatePageNumbers = async (change: Parameters<typeof changePageNumbers>[1]) => {
     const editor = editorRef.current?.getEditor();
     if (!editor || !safe) throw Error('This document cannot be edited.');
@@ -249,12 +249,17 @@ export const DocumentEditor = memo(function DocumentEditor({ tab, active, primar
     const snapshot = editorRef.current?.snapshot();
     if (!snapshot || snapshot.isLoading || snapshot.isOpening) { window.setTimeout(() => void verify(), 250); return; }
     checked.current = true;
-    let failure = snapshot.parseError || snapshot.openFailure?.reason || fontLoadFailure.current;
+    let failure = snapshot.parseError || snapshot.openFailure?.reason || '';
     const available = new Set(editorFonts.supportedFamilies?.map(family => family.toLowerCase()) || []);
     const substituted = new Set(editorFonts.substitutions?.map(substitution => substitution.from.family.toLowerCase()) || []);
     const missing = requiredDocumentFonts(tab.bytes).filter(family => !available.has(family.toLowerCase()) && !substituted.has(family.toLowerCase()));
-    setMissingFonts(!failure ? missing : []);
-    if (!failure && missing.length) failure = `Document font unavailable: ${missing.join(', ')}.`;
+    setMissingFonts(failure ? [] : missing);
+    if (!failure && missing.length) {
+      const replacement = !fallbackFonts && fonts ? substituteMissingFonts(fonts, missing) : null;
+      if (replacement) { applyFontFallback(replacement); return; }
+      failure = `Document font unavailable: ${missing.join(', ')}.`;
+    }
+    if (!failure) failure = fontLoadFailure.current;
     if (!failure) {
       try {
         const output = await editorRef.current?.save();
@@ -278,9 +283,9 @@ export const DocumentEditor = memo(function DocumentEditor({ tab, active, primar
         locale={language === 'VI' ? 'vi-VN' : 'en-US'}
         onReady={() => { void verify(); }}
         onChange={change => { if (change.source === 'load' || change.source === 'refresh' || change.source === 'recovery') { void verify(); return; } onChange(); }}
-        onFontError={error => { const message = String(error); fontLoadFailure.current = message; setReason(message); setSafe(false); onSafety(message); }}>
+        onFontError={error => { const message = String(error); if (!fallbackFonts) { fontLoadFailure.current = message; setReason(message); setSafe(false); onSafety(message); } checked.current = false; window.setTimeout(() => void verify(), 0); }}>
         <RulerControls host={hostRef} active={active} language={language}/><DocxEditor.Loading overlay indicator={<span data-docx-layout-pending>{t('wordLayingOutPages')}</span>}/>
-        {toolbarHost && createPortal(<><div className="word-commandbar-menu"><DocxEditor.Menu onOpen={onOpen} onSave={onSave} reportIssue={false}><DocxEditor.Menu.File><DocxEditor.Menu.Print hidden/></DocxEditor.Menu.File><DocxEditor.Menu.Insert>{insertMenuEntries.map((entry, index) => <DocxEditor.Menu.Entry key={`${entry.kind}-${index}`} entry={entry}/>)}{pageNumberMenu}</DocxEditor.Menu.Insert></DocxEditor.Menu><div className="word-view-controls" role="group" aria-label={t('wordDocumentViews')}>{(['read','print','web'] as const).map(mode => <button key={mode} type="button" aria-pressed={viewMode === mode} onClick={() => { if (mode === 'read') { const scroll = hostRef.current?.querySelector<HTMLElement>('.docx-editor__scroll-container'); readScrollPosition.current = { top: scroll?.scrollTop ?? 0, left: scroll?.scrollLeft ?? 0 }; } setViewMode(mode); }}>{t(mode === 'read' ? 'wordReadMode' : mode === 'print' ? 'wordPrintLayout' : 'wordWebLayout')}</button>)}</div></div><div className="word-commandbar-scroll"><DocxEditor.Toolbar preset={false} onSave={onSave}>
+        {toolbarHost && createPortal(<><div className="word-commandbar-menu"><DocxEditor.Menu onOpen={onOpen} onSave={onSave} reportIssue={false}><DocxEditor.Menu.File><DocxEditor.Menu.Row shortcut="Ctrl+N" onSelect={onNew}>{t('wordNewFile')}</DocxEditor.Menu.Row><DocxEditor.Menu.Print hidden/></DocxEditor.Menu.File><DocxEditor.Menu.Insert>{insertMenuEntries.map((entry, index) => <DocxEditor.Menu.Entry key={`${entry.kind}-${index}`} entry={entry}/>)}{pageNumberMenu}</DocxEditor.Menu.Insert></DocxEditor.Menu><div className="word-view-controls" role="group" aria-label={t('wordDocumentViews')}>{(['read','print','web'] as const).map(mode => <button key={mode} type="button" aria-pressed={viewMode === mode} onClick={() => { if (mode === 'read') { const scroll = hostRef.current?.querySelector<HTMLElement>('.docx-editor__scroll-container'); readScrollPosition.current = { top: scroll?.scrollTop ?? 0, left: scroll?.scrollLeft ?? 0 }; } setViewMode(mode); }}>{t(mode === 'read' ? 'wordReadMode' : mode === 'print' ? 'wordPrintLayout' : 'wordWebLayout')}</button>)}</div></div><div className="word-commandbar-scroll"><DocxEditor.Toolbar preset={false} onSave={onSave}>
           <button type="button" className="docx-toolbar__button" aria-label={language === 'VI' ? 'Tìm trong tài liệu' : 'Find in document'} title={language === 'VI' ? 'Tìm trong tài liệu' : 'Find in document'} onClick={() => { setSearchTab('find'); setSearchOpen(true); }}><svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg></button>
           <button type="button" className="docx-toolbar__button" aria-label={language === 'VI' ? 'Hiện dẫn hướng' : 'Show navigation'} aria-pressed={searchOpen} title={language === 'VI' ? 'Dẫn hướng' : 'Navigation'} onClick={() => { setSearchTab('headings'); setSearchOpen(open => !open); }}><svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M12 8h6M12 12h6M12 16h4"/></svg></button>
           <DocxEditor.Toolbar.Separator/><DocxEditor.Toolbar.Undo/><DocxEditor.Toolbar.Redo/><button type="button" className="docx-toolbar__button" aria-label={language === 'VI' ? 'In tài liệu' : 'Print document'} title={language === 'VI' ? 'In tài liệu (Ctrl+P)' : 'Print document (Ctrl+P)'} onClick={() => void handlePrint()}><svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9V3h12v6M6 17H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1 2-2h-2M6 14h12v7H6z"/><path d="M18 12h.01"/></svg></button><DocxEditor.Toolbar.Button slotId="format.painter"/><DocxEditor.Toolbar.Zoom/>

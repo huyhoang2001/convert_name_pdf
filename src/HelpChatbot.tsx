@@ -123,7 +123,7 @@ export default function HelpChatbot({ language, keyConfigured }: { language: Cha
         {messages.length === 0 && <div className="chat-greeting"><img src="./chatbot.ico" alt="" /><p>{labels.greeting}</p></div>}
         {messages.map((message, index) => message.role === 'assistant' ? <div key={index} className="chat-message assistant"><ReactMarkdown skipHtml remarkPlugins={[remarkGfm]} components={{ table: ({ node: _node, ...props }) => <div className="chat-table-scroll"><table {...props} /></div> }}>{message.text}</ReactMarkdown></div> : <p key={index} className="chat-message user">{message.text}</p>)}<div ref={endRef} />
       </div>
-      <div className="chat-suggestions">{faqs.slice(0, 4).map(faq => <button key={faq.id} type="button" disabled={busy} onClick={() => void send(faq.prompts[language])}>{faq.prompts[language]}</button>)}</div>
+      <div className="chat-suggestions">{faqs.filter(faq => ['rename', 'count', 'word-multiple-files', 'settings'].includes(faq.id)).map(faq => <button key={faq.id} type="button" disabled={busy} onClick={() => void send(faq.prompts[language])}>{faq.prompts[language]}</button>)}</div>
       <form className="chat-compose" onSubmit={event => { event.preventDefault(); void send(input); }}><input ref={inputRef} value={input} maxLength={1000} onChange={event => setInput(event.target.value)} placeholder={labels.placeholder} aria-label={labels.placeholder} disabled={busy} /><button className="primary-button" type="submit" disabled={!input.trim() || busy}>{busy ? modeLabels.sending : labels.send}</button></form>
     </section>}
   </>;

@@ -18,6 +18,21 @@ test('chatbot routes verified workflows in both languages', () => {
   assert.equal(answerQuestion('so con thieu', 'VI').faq, 'count');
   assert.equal(answerQuestion('How do I use the Translation register?', 'EN').faq, 'translation');
   assert.match(answerQuestion('How do I use the Translation register?', 'EN').answer, /does not translate PDF contents/);
+  assert.equal(answerQuestion('word f12', 'EN').faq, 'word-recent');
+  assert.match(answerQuestion('How do I manage recent Word files?', 'VI').answer, /Ctrl\+F12/);
+  assert.match(answerQuestion('How do I favorite a recent Word file?', 'EN').answer, /click a document's star/);
+  assert.match(normalizeQuestion(answerQuestion('yeu thich tep word gan day', 'VI').answer), /muc yeu thich/);
+  assert.equal(answerQuestion('How do I open multiple Word files?', 'EN').faq, 'word-multiple-files');
+  assert.equal(answerQuestion('I want to open multiple files at once with a limit of 5 files', 'EN').faq, 'word-multiple-files');
+  assert.match(answerQuestion('How do I open multiple Word files?', 'EN').answer, /no application-level limit/);
+  assert.match(answerQuestion('How do I open multiple Word files?', 'EN').answer, /each appears in its own tab/);
+  assert.match(answerQuestion('What is the Word shortcut for a new file?', 'EN').answer, /Ctrl\+N/);
+  assert.match(answerQuestion('Open file location for Word recent files', 'EN').answer, /file location in Explorer/);
+  assert.match(answerQuestion('How do I add a Word template to favorites?', 'EN').answer, /add or remove it from Favorites/);
+  assert.match(normalizeQuestion(answerQuestion('Lam sao de yeu thich mau Word?', 'VI').answer), /yeu thich/);
+  assert.match(answerQuestion('How do I save a new Word document?', 'EN').answer, /Word\\Templates\\dd_mm/);
+  assert.match(normalizeQuestion(answerQuestion('mo nhieu tep word', 'VI').answer), /khong gioi han so luong tai lieu/);
+  assert.equal(answerQuestion('What can the B6H app help me with?', 'EN').faq, 'features');
 });
 
 test('chatbot asks for clarification on vague, competing, or unrelated requests', () => {

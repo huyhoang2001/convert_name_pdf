@@ -9,10 +9,12 @@ const configuration = { sources: [
 ] };
 
 test('known missing DOCX fonts map to installed local faces', () => {
-  const result = substituteMissingFonts(configuration, ['Open Sans', 'Times New Roman Bold']);
+  const result = substituteMissingFonts(configuration, ['Open Sans', '.VnTime', 'SF Pro Text', 'Times New Roman Bold']);
   assert.ok(result);
-  assert.equal(result.substitutions.length, 6);
+  assert.equal(result.substitutions.length, 13);
   assert.deepEqual(result.substitutions.find(row => row.from.family === 'Open Sans' && row.from.weight === 700)?.to, { family: 'Arial', weight: 700, style: 'normal' });
+  assert.deepEqual(result.substitutions.find(row => row.from.family === '.VnTime')?.to, { family: 'Times New Roman', weight: 400, style: 'normal' });
+  assert.deepEqual(result.substitutions.find(row => row.from.family === 'SF Pro Text')?.to, { family: 'Arial', weight: 400, style: 'normal' });
   assert.deepEqual(result.substitutions.find(row => row.from.family === 'Times New Roman Bold' && row.from.style === 'italic')?.to, { family: 'Times New Roman', weight: 700, style: 'italic' });
 });
 

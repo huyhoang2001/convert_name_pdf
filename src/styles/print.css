@@ -1,0 +1,81 @@
+@page {
+  margin: 0;
+}
+
+@media print {
+  html,
+  body,
+  #root {
+    width: auto !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    overflow: visible !important;
+  }
+
+  .no-print,
+  .navigation-pane,
+  .toolbar,
+  .statusbar,
+  .search-box,
+  .page-setup-warning,
+  [role='dialog'],
+  [role='toolbar'],
+  [data-no-print] {
+    display: none !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .docx-print-root,
+  .docx-print-root * {
+    visibility: visible !important;
+  }
+
+  .docx-print-root {
+    position: static !important;
+    width: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    transform: none !important;
+    zoom: 1 !important;
+  }
+
+  .docx-page {
+    box-sizing: border-box !important;
+    display: block !important;
+    position: relative !important;
+    inset: auto !important;
+    contain: none !important;
+    overflow: hidden !important;
+    box-shadow: none !important;
+    border: 0 !important;
+    margin: 0 !important;
+    zoom: 1 !important;
+    transform: none !important;
+    break-after: page !important;
+  }
+
+  .docx-page:last-child {
+    break-after: auto !important;
+  }
+
+  .docx-print-root,
+  .docx-print-root * {
+    caret-color: transparent !important;
+    user-select: none !important;
+    outline: none !important;
+  }
+
+  ::selection {
+    background: transparent !important;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

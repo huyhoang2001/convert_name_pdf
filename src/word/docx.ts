@@ -1,6 +1,7 @@
 import { blankDocumentBytes } from '@docx-editor.dev/core';
 import { readOoxmlPackage, readZip, writeZip } from '@docx-editor.dev/core/store';
 import { createFontSource, type FontConfigurationFragment } from '@docx-editor.dev/core/editor';
+import type { FontSourceSubstitution } from '@docx-editor.dev/core/contracts/editor';
 import { serializeOoxmlPart } from '@docx-editor.dev/core/store';
 import type { WordFont } from './bridge';
 
@@ -36,6 +37,20 @@ export function fontConfiguration(fonts: WordFont[]): FontConfigurationFragment 
     return 'source' in result ? [result.source] : [];
   });
   return { sources, supportedFamilies: [...new Set(fonts.map(face => face.family))] };
+}
+
+export function substituteMissingFonts(configuration: FontConfigurationFragment, missing: readonly string[]): FontConfigurationFragment | null {
+  const sources = configuration.sources ?? [];
+  const substitutions: FontSourceSubstitution[] = [];
+  for (const family of missing) {
+    const lower = family.toLowerCase();
+    const target = lower === 'open sans' ? 'Arial' : lower === 'times new roman bold' ? 'Times New Roman' : '';
+    if (!target) return null;
+    const matches = sources.map(source => source.request).filter(request => request.family.toLowerCase() === target.toLowerCase() && (lower !== 'times new roman bold' || request.weight === 700));
+    if (!matches.length) return null;
+    substitutions.push(...matches.map(to => ({ from: { ...to, family }, to } satisfies FontSourceSubstitution)));
+  }
+  return { ...configuration, substitutions: [...(configuration.substitutions ?? []), ...substitutions] };
 }
 
 function canonical(value: unknown): unknown {

@@ -2,6 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './ui';
 import './style.css';
+import './styles/print.css';
 import { desktopApi, listenForFolderDrops } from './desktop/api';
 import { invoke } from '@tauri-apps/api/core';
 

@@ -1,21 +1,24 @@
 type PageSize = { width: number; height: number };
+type PageSnapshot = { element: HTMLElement; width: number; height: number };
+type PrintPageSource = { pageCount: number; zoom: number; currentPageCount: () => number; revealPage: (pageNumber: number) => boolean };
 
-const pxToMm = (pixels: number) => `${(pixels * 25.4 / 96).toFixed(2)}mm`;
-
-export function printPageStyles(sizes: PageSize[]): string {
-  const pages = new Map<string, { name: string; width: string; height: string }>();
+export function printPageStyles(sizes: PageSize[], zoom = 1): string {
+  const pages = new Map<string, { name: string; width: number; height: number }>();
+  const uniform = sizes.every(size => size.width === sizes[0].width && size.height === sizes[0].height);
+  const scale = 1 / zoom;
   const assignments = sizes.map(({ width, height }, index) => {
-    const widthMm = pxToMm(width), heightMm = pxToMm(height), key = `${widthMm}:${heightMm}`;
+    const widthPx = `${width}px`, heightPx = `${height}px`, key = `${widthPx}:${heightPx}`;
     let page = pages.get(key);
-    if (!page) { page = { name: `docx-page-${pages.size}`, width: widthMm, height: heightMm }; pages.set(key, page); }
-    return `.docx-print-page-${index}{page:${page.name};width:${page.width}!important;height:${page.height}!important}`;
+    if (!page) { page = { name: `docx-page-${pages.size}`, width, height }; pages.set(key, page); }
+    return `.docx-print-page-${index}{${uniform ? '' : `page:${page.name};`}width:${width}px!important;height:${height}px!important}`;
   });
-  return [...[...pages.values()].map(page => `@page ${page.name}{size:${page.width} ${page.height};margin:0}`),
+  const first = sizes[0];
+  return [`@page{size:${Math.ceil(first.width * scale + 1)}px ${Math.ceil(first.height * scale + 1)}px;margin:0}`, ...[...pages.values()].map(page => `@page ${page.name}{size:${Math.ceil(page.width * scale + 1)}px ${Math.ceil(page.height * scale + 1)}px;margin:0}`),
     'html,body{width:auto!important;height:auto!important;margin:0!important;padding:0!important;overflow:visible!important;background:#fff!important}',
-    '.docx-print-root{display:block!important;transform:none!important;zoom:1!important}',
+    '.docx-print-root{display:block!important;position:static!important;width:auto!important;margin:0!important;padding:0!important;transform:none!important;zoom:1!important}',
     '.docx-pages{display:block!important;margin:0!important;padding:0!important;gap:0!important}',
-    '.docx-page{box-sizing:border-box!important;margin:0!important;break-after:page!important;page-break-after:always!important;break-inside:avoid}',
-    '.docx-page:last-child{break-after:auto!important;page-break-after:auto!important}',
+    `.docx-page{box-sizing:border-box!important;display:block!important;position:relative!important;inset:auto!important;contain:none!important;overflow:hidden!important;box-shadow:none!important;border:0!important;margin:0!important;zoom:${scale}!important;transform:none!important}`,
+    '.docx-page+.docx-page{break-before:page!important}',
     '.docx-print-root,.docx-print-root *{caret-color:transparent!important;outline:none!important}',
     '::selection{background:transparent!important}',
     '*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}',
@@ -30,29 +33,68 @@ function copiedStyles(): string {
   }).join('\n');
 }
 
+export function releaseEditorFocus(): void {
+  (document.activeElement as HTMLElement | null)?.blur();
+  window.getSelection()?.removeAllRanges();
+}
+
 async function waitForAssets(doc: Document): Promise<void> {
   const styles = [...doc.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].map(link =>
-    link.sheet ? Promise.resolve() : new Promise<void>(resolve => {
-      const timer = window.setTimeout(resolve, 10_000);
-      const done = () => { window.clearTimeout(timer); resolve(); };
-      link.addEventListener('load', done, { once: true });
-      link.addEventListener('error', done, { once: true });
+    link.sheet ? Promise.resolve() : new Promise<void>((resolve, reject) => {
+      const timer = window.setTimeout(() => {
+        cleanup();
+        reject(Error(`Print stylesheet did not load: ${link.href}`));
+      }, 10_000);
+      const cleanup = () => {
+        window.clearTimeout(timer);
+        link.removeEventListener('load', onLoad);
+        link.removeEventListener('error', onError);
+      };
+      const onLoad = () => { cleanup(); resolve(); };
+      const onError = () => { cleanup(); reject(Error(`Print stylesheet failed to load: ${link.href}`)); };
+      link.addEventListener('load', onLoad, { once: true });
+      link.addEventListener('error', onError, { once: true });
     })
   );
   await Promise.all(styles);
-  await doc.fonts?.ready.catch(() => {});
-  await Promise.all([...doc.images].map(image => image.decode().catch(() => {})));
+  if (doc.fonts) await doc.fonts.ready;
+  await Promise.all([...doc.images].map(image => image.decode()));
 }
 
-export async function printDocxPages(pages: HTMLElement): Promise<void> {
-  const sourcePages = [...pages.querySelectorAll<HTMLElement>('.docx-page')];
-  if (!sourcePages.length) throw Error('The document pages are not ready to print.');
-  const sizes = sourcePages.map(page => {
-    const style = getComputedStyle(page);
-    const width = Number.parseFloat(style.width), height = Number.parseFloat(style.height);
-    if (!(width > 0 && height > 0)) throw Error('The document page size is not available.');
-    return { width, height };
+async function waitForPage(pages: HTMLElement, pageIndex: number): Promise<HTMLElement> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const page = pages.querySelector<HTMLElement>(`.docx-page[data-page-index="${pageIndex}"]`);
+    if (page?.querySelector('.docx-page-content')) return page;
+    await new Promise(resolve => window.setTimeout(resolve, 25));
+  }
+  throw Error(`Page ${pageIndex + 1} was not ready to print.`);
+}
+
+function snapshotPage(page: HTMLElement, pageNumber: number): PageSnapshot {
+  const style = getComputedStyle(page);
+  const width = Number.parseFloat(style.width), height = Number.parseFloat(style.height);
+  if (!(width > 0 && height > 0)) throw Error(`The size of page ${pageNumber} is not available.`);
+  const element = page.cloneNode(true) as HTMLElement;
+  page.querySelectorAll('canvas').forEach((original, index) => {
+    const canvas = element.querySelectorAll('canvas')[index];
+    if (canvas) canvas.getContext('2d')?.drawImage(original, 0, 0);
   });
+  return { element, width, height };
+}
+
+export async function printDocxPages(pages: HTMLElement, source: PrintPageSource): Promise<void> {
+  if (!Number.isInteger(source.pageCount) || source.pageCount < 1) throw Error('The document pages are not ready to print.');
+  if (!(source.zoom > 0)) throw Error('The document zoom is not available for printing.');
+  releaseEditorFocus();
+
+  const pageSnapshots: PageSnapshot[] = [];
+  for (let index = 0; index < source.pageCount; index++) {
+    if (!source.revealPage(index + 1)) throw Error(`Page ${index + 1} could not be prepared for printing.`);
+    pageSnapshots.push(snapshotPage(await waitForPage(pages, index), index + 1));
+  }
+  if (pageSnapshots.length !== source.currentPageCount()) throw Error('The document page count changed while preparing the print view.');
+  const sizes = pageSnapshots.map(({ width, height }) => ({ width, height }));
 
   const iframe = document.createElement('iframe');
   iframe.setAttribute('aria-hidden', 'true');
@@ -62,29 +104,44 @@ export async function printDocxPages(pages: HTMLElement): Promise<void> {
   const win = iframe.contentWindow;
   if (!doc || !win) { iframe.remove(); throw Error('The print view could not be created.'); }
 
-  const clone = pages.cloneNode(true) as HTMLElement;
-  clone.classList.add('docx-print-root');
-  clone.querySelectorAll('[contenteditable]').forEach(node => node.removeAttribute('contenteditable'));
-  clone.querySelectorAll<HTMLElement>('.docx-page').forEach((page, index) => page.classList.add(`docx-print-page-${index}`));
+  try {
+    const clone = pages.cloneNode(false) as HTMLElement;
+    clone.classList.add('docx-print-root');
+    pageSnapshots.forEach(({ element }, index) => {
+      element.classList.add(`docx-print-page-${index}`);
+      clone.append(element);
+    });
+    clone.querySelectorAll('[contenteditable]').forEach(node => node.removeAttribute('contenteditable'));
+    clone.querySelectorAll('.no-print,[data-no-print],.page-setup-warning,.navigation-pane').forEach(node => node.remove());
 
-  doc.open();
-  doc.write(`<!doctype html><html><head><meta charset="utf-8"><base href="${document.baseURI}">${copiedStyles()}<style>${printPageStyles(sizes)}</style></head><body></body></html>`);
-  doc.close();
-  doc.body.append(clone);
-  await waitForAssets(doc);
+    doc.open();
+    doc.write(`<!doctype html><html><head><meta charset="utf-8"><base href="${document.baseURI}">${copiedStyles()}<style>${printPageStyles(sizes, source.zoom)}</style></head><body></body></html>`);
+    doc.close();
+    doc.body.append(clone);
+    await waitForAssets(doc);
 
-  await new Promise<void>((resolve, reject) => {
-    let finished = false;
-    const cleanup = () => {
-      if (finished) return;
-      finished = true;
-      window.clearTimeout(timer);
-      iframe.remove();
-      resolve();
-    };
-    const timer = window.setTimeout(cleanup, 60_000);
-    win.addEventListener('afterprint', cleanup, { once: true });
-    try { win.focus(); win.print(); }
-    catch (error) { window.clearTimeout(timer); iframe.remove(); reject(error); }
-  });
+    await new Promise<void>((resolve, reject) => {
+      let finished = false;
+      const cleanup = () => {
+        if (finished) return;
+        finished = true;
+        window.clearTimeout(timer);
+        iframe.remove();
+        window.focus();
+        resolve();
+      };
+      const timer = window.setTimeout(() => {
+        if (finished) return;
+        finished = true;
+        iframe.remove();
+        reject(Error('The print dialog did not finish.'));
+      }, 600_000);
+      win.addEventListener('afterprint', cleanup, { once: true });
+      try { win.focus(); win.print(); }
+      catch (error) { window.clearTimeout(timer); iframe.remove(); reject(error); }
+    });
+  } catch (error) {
+    iframe.remove();
+    throw error;
+  }
 }

@@ -54,6 +54,7 @@ jobs:
         run: |
           $version = node -p "require('./package.json').version"
           Copy-Item "src-tauri/target/release/b6h.exe" "B6H-$version.exe"
+          "RELEASE_EXE=B6H-$version.exe" >> $env:GITHUB_ENV
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
@@ -61,4 +62,4 @@ jobs:
           tag_name: ${{ inputs.release_tag || github.ref_name }}
           name: B6H ${{ inputs.release_tag || github.ref_name }}
           generate_release_notes: true
-          files: B6H-*.exe
+          files: ${{ env.RELEASE_EXE }}

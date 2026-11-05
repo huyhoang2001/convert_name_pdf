@@ -465,5 +465,7 @@
   "wordNewFile": "Tệp mới",
   "wordOpenLocation": "Mở vị trí tệp",
   "wordTemplatePin": "Thêm vào yêu thích",
-  "wordTemplateUnpin": "Bỏ khỏi yêu thích"
+  "wordTemplateUnpin": "Bỏ khỏi yêu thích",
+  "wordShowDocxCompatibilityWarnings": "Hiển thị cảnh báo tương thích DOCX",
+  "wordDisableCompatibilityWarnings": "Tắt"
 }

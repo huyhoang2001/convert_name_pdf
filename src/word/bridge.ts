@@ -1,13 +1,14 @@
 import { invoke } from '@tauri-apps/api/core';
 import { open, save } from '@tauri-apps/plugin-dialog';
 
-export type WordSettings = { templatesDirectory: string; documentsDirectory: string; scanOnLaunch: boolean };
+export type WordSettings = { templatesDirectory: string; documentsDirectory: string; scanOnLaunch: boolean; showDocxCompatibilityWarnings: boolean };
 export type TemplateEntry = { id: string; name: string; path: string; size: number; modified: number; topic: string; kind: string; error: string | null; pinned: boolean };
 export type RecentDocument = { path: string; name: string; size: number; modified: number; managed?: boolean; hash?: string; templateName?: string; day?: string; month?: string; pinned?: boolean };
 export type WordPayload = { file: string; name: string; bytesBase64: string; hash?: string; source: 'template' | 'managed' | 'external'; templateName?: string; day?: string; month?: string };
 export type SaveWordInput = { bytesBase64: string; name: string; templateName: string; day: string; month: string; currentPath?: string; expectedHash?: string; targetPath?: string };
 export type SaveWordResult = { path: string; hash: string; size: number; modified: number };
 export type WordFont = { family: string; weight: number; style: 'normal' | 'italic'; bytesBase64: string };
+export type WordDraft = { id: string; name: string; bytesBase64: string; path?: string; sourceFile?: string; hash?: string; source: 'template' | 'managed' | 'external' | 'blank'; templateName: string; day: string; month: string; dirty: boolean; revision: number; order: number; active: boolean; split: boolean; externalChanged?: boolean };
 
 export const wordBridge = {
   openDevtools: () => invoke<void>('open_word_devtools'),
@@ -29,6 +30,9 @@ export const wordBridge = {
   },
   openRecent: (file: string) => invoke<WordPayload>('open_recent_word_document', { file }),
   saveDocument: (input: SaveWordInput) => invoke<SaveWordResult>('save_word_document', { input }),
+  saveDraft: (input: WordDraft) => invoke<void>('save_word_draft', { input }),
+  listDrafts: () => invoke<WordDraft[]>('list_word_drafts'),
+  removeDraft: (id: string) => invoke<void>('remove_word_draft', { id }),
   pickSavePath: async (directory: string, fileName: string, title: string) => {
     const path = await save({ title, defaultPath: `${directory.replace(/[\\/]+$/, '')}\\${fileName}`, filters: [{ name: 'Word document', extensions: ['docx'] }] });
     return path && !/\.docx$/i.test(path) ? `${path}.docx` : path;

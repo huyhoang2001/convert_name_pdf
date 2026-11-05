@@ -578,9 +578,92 @@ pub fn save_document(state: &State, input: Value) -> Result<Value, String> {
     save_library(&book)?;
     Ok(json!({"path":canonical,"hash":digest,"size":size,"modified":modified}))
 }
+
+fn draft_path(id: &str) -> Result<PathBuf, String> {
+    let id = Uuid::parse_str(id).map_err(|_| "Invalid draft ID.")?;
+    Ok(crate::storage::user_dir()?.join("word-drafts").join(format!("{id}.json")))
+}
+
+pub fn save_draft(input: Value) -> Result<(), String> {
+    let id = input["id"].as_str().ok_or("Missing draft ID.")?;
+    let path = draft_path(id)?;
+    if input["name"].as_str().is_none_or(|s| s.is_empty() || s.len() > 300)
+        || input["path"].as_str().is_some_and(|s| s.len() > 32768)
+        || input["sourceFile"].as_str().is_some_and(|s| s.len() > 32768)
+        || !matches!(input["source"].as_str(), Some("blank" | "template" | "managed" | "external"))
+    { return Err("Invalid draft metadata.".into()); }
+    let encoded = input["bytesBase64"].as_str().ok_or("Missing draft content.")?;
+    if encoded.len() > (MAX_FILE * 4 / 3 + 8) as usize { return Err("Draft exceeds the supported size.".into()); }
+    let bytes = STANDARD.decode(encoded).map_err(|_| "Invalid draft content.")?;
+    docx_bytes(&bytes)?;
+    let _write = WRITE_LOCK.lock().map_err(|e| e.to_string())?;
+    fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
+    let temp = path.with_extension(format!("{}.tmp", Uuid::new_v4()));
+    fs::write(&temp, serde_json::to_vec(&input).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    fs::rename(&temp, path).map_err(|e| e.to_string())
+}
+
+pub fn list_drafts() -> Result<Vec<Value>, String> {
+    let dir = crate::storage::user_dir()?.join("word-drafts");
+    if !dir.exists() { return Ok(Vec::new()); }
+    let mut drafts = Vec::new();
+    for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let kind = entry.file_type().map_err(|e| e.to_string())?;
+        if !kind.is_file() || kind.is_symlink() { continue; }
+        let path = entry.path();
+        if path.extension().is_none_or(|ext| ext != "json") { continue; }
+        if fs::metadata(&path).is_ok_and(|info| info.len() > MAX_FILE * 4 / 3 + 65536) { continue; }
+        let Ok(mut value) = fs::read(&path).map_err(|e| e.to_string()).and_then(|data| serde_json::from_slice::<Value>(&data).map_err(|e| e.to_string())) else { continue; };
+        let valid = value["bytesBase64"].as_str().and_then(|s| STANDARD.decode(s).ok()).is_some_and(|bytes| docx_bytes(&bytes).is_ok());
+        if !valid { continue; }
+        if let (Some(file), Some(expected)) = (value["path"].as_str(), value["hash"].as_str()) {
+            let changed = fs::read(file).map_or(true, |bytes| hash(&bytes) != expected);
+            value["externalChanged"] = json!(changed);
+        }
+        drafts.push(value);
+    }
+    Ok(drafts)
+}
+
+pub fn remove_draft(id: &str) -> Result<(), String> {
+    let path = draft_path(id)?;
+    if path.exists() { fs::remove_file(path).map_err(|e| e.to_string())?; }
+    Ok(())
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn draft_ids_cannot_escape_app_data() {
+        assert!(draft_path("../outside").is_err());
+        assert!(draft_path("not-a-uuid").is_err());
+        let id = Uuid::new_v4().to_string();
+        assert!(draft_path(&id).unwrap().ends_with(format!("{id}.json")));
+    }
+    #[test]
+    fn draft_replaces_atomically_and_reopens() {
+        let id = Uuid::new_v4().to_string();
+        let mut cursor = Cursor::new(Vec::new());
+        {
+            let mut zip = zip::ZipWriter::new(&mut cursor);
+            for name in ["[Content_Types].xml", "word/document.xml"] {
+                zip.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+                zip.write_all(b"<xml/>").unwrap();
+            }
+            zip.finish().unwrap();
+        }
+        let encoded = STANDARD.encode(cursor.into_inner());
+        let input = json!({"id": id, "name": "Draft", "source": "blank", "bytesBase64": encoded, "dirty": true});
+        save_draft(input.clone()).unwrap();
+        let mut clean = input;
+        clean["dirty"] = json!(false);
+        save_draft(clean).unwrap();
+        let recovered = list_drafts().unwrap();
+        assert_eq!(recovered.iter().find(|draft| draft["id"] == id).unwrap()["dirty"], false);
+        remove_draft(&id).unwrap();
+        assert!(!draft_path(&id).unwrap().exists());
+    }
     #[test]
     fn names_reject_paths() {
         assert!(safe_name("../bad").is_err());

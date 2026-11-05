@@ -160,7 +160,8 @@ pub fn word_settings() -> Result<Value, String> {
     Ok(json!({
         "templatesDirectory": templates,
         "documentsDirectory": documents,
-        "scanOnLaunch": saved.get("scanOnLaunch").and_then(Value::as_bool).unwrap_or(true)
+        "scanOnLaunch": saved.get("scanOnLaunch").and_then(Value::as_bool).unwrap_or(true),
+        "showDocxCompatibilityWarnings": saved.get("showDocxCompatibilityWarnings").and_then(Value::as_bool).unwrap_or(true)
     }))
 }
 pub fn save_word_settings(value: Value) -> Result<Value, String> {
@@ -200,6 +201,10 @@ pub fn save_word_settings(value: Value) -> Result<Value, String> {
                 .and_then(Value::as_bool)
                 .unwrap_or(true)
         ),
+    );
+    word.insert(
+        "showDocxCompatibilityWarnings".into(),
+        json!(value.get("showDocxCompatibilityWarnings").and_then(Value::as_bool).unwrap_or(true)),
     );
     data.insert("word".into(), Value::Object(word));
     write("settings.json", &Value::Object(data))?;

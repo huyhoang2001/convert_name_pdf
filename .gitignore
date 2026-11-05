@@ -6,6 +6,7 @@ portable-package-*/
 portable-release/
 release/
 graphify-out/
+wordcraft-upstream/
 *.tsbuildinfo
 .env*
 !.env.example

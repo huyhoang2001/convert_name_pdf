@@ -497,6 +497,18 @@ async fn save_word_document(
         .map_err(|e| e.to_string())?
 }
 #[tauri::command]
+async fn save_word_draft(input: serde_json::Value) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || word::save_draft(input)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn list_word_drafts() -> Result<Vec<serde_json::Value>, String> {
+    tauri::async_runtime::spawn_blocking(word::list_drafts).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn remove_word_draft(id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || word::remove_draft(&id)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
 async fn count_scan(root: String) -> Result<count::Scan, String> {
     tauri::async_runtime::spawn_blocking(move || count::scan(&root))
         .await
@@ -658,7 +670,10 @@ pub fn run() {
             open_recent_word_location,
             open_word_devtools,
             update_recent_word_document,
-            save_word_document
+            save_word_document,
+            save_word_draft,
+            list_word_drafts,
+            remove_word_draft
         ])
         .run(tauri::generate_context!())
         .expect("error while running B6H");

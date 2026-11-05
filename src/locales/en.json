@@ -465,5 +465,7 @@
   "wordNewFile": "New File",
   "wordOpenLocation": "Open file location",
   "wordTemplatePin": "Add to favorites",
-  "wordTemplateUnpin": "Remove from favorites"
+  "wordTemplateUnpin": "Remove from favorites",
+  "wordShowDocxCompatibilityWarnings": "Show DOCX compatibility warnings",
+  "wordDisableCompatibilityWarnings": "Disable"
 }

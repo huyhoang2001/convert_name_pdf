@@ -177,6 +177,7 @@
   "reportTitle": "Rename report",
   "reportDescription": "Review the results from this completed run.",
   "close": "Close",
+  "dismiss": "Dismiss",
   "reportSummary": "Numbering summary",
   "reportMin": "Smallest number",
   "reportMax": "Largest number",
@@ -467,5 +468,9 @@
   "wordTemplatePin": "Add to favorites",
   "wordTemplateUnpin": "Remove from favorites",
   "wordShowDocxCompatibilityWarnings": "Show DOCX compatibility warnings",
-  "wordDisableCompatibilityWarnings": "Disable"
+  "wordDisableCompatibilityWarnings": "Disable",
+  "copiesBusinessDetails": "Business details on Copies forms",
+  "copiesCompanyName": "Company Name",
+  "copiesBusinessAddress": "Address",
+  "copiesTaxId": "Tax ID"
 }

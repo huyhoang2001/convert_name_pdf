@@ -177,6 +177,7 @@
   "reportTitle": "Báo cáo đổi tên",
   "reportDescription": "Xem lại kết quả của lần thực hiện này.",
   "close": "Đóng",
+  "dismiss": "Bỏ qua",
   "reportSummary": "Tóm tắt đánh số",
   "reportMin": "Số nhỏ nhất",
   "reportMax": "Số lớn nhất",
@@ -467,5 +468,9 @@
   "wordTemplatePin": "Thêm vào yêu thích",
   "wordTemplateUnpin": "Bỏ khỏi yêu thích",
   "wordShowDocxCompatibilityWarnings": "Hiển thị cảnh báo tương thích DOCX",
-  "wordDisableCompatibilityWarnings": "Tắt"
+  "wordDisableCompatibilityWarnings": "Tắt",
+  "copiesBusinessDetails": "Thông tin doanh nghiệp trên biểu mẫu sao y",
+  "copiesCompanyName": "Tên doanh nghiệp",
+  "copiesBusinessAddress": "Địa chỉ",
+  "copiesTaxId": "Mã số thuế"
 }

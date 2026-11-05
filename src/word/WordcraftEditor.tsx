@@ -129,7 +129,7 @@ export const WordcraftEditor = memo(function WordcraftEditor({ tab, active, lang
     iframe?.addEventListener('load', onLoad);
     log(stage);
     timeout(90000, 'Wordcraft did not start within 90 seconds.');
-    setFrameUrl('./wordcraft/index.html?host=parent');
+    setFrameUrl(`./wordcraft/index.html?host=parent&v=${Date.now()}`);
     return () => {
       window.clearTimeout(timer);
       window.removeEventListener('message', receive);

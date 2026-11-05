@@ -1,6 +1,6 @@
-import { egui_text_agent_activate } from './snippets/eframe-d31a8450ea12dfc1/inline0.js';
-import * as import1 from "./snippets/eframe-d31a8450ea12dfc1/inline0.js"
-import * as import2 from "./snippets/eframe-d31a8450ea12dfc1/inline0.js"
+import { egui_text_agent_activate } from './snippets/eframe-d31a8450ea12dfc1/inline0.js?v=adfbb20da91e2c1424d0';
+import * as import1 from "./snippets/eframe-d31a8450ea12dfc1/inline0.js?v=adfbb20da91e2c1424d0"
+import * as import2 from "./snippets/eframe-d31a8450ea12dfc1/inline0.js?v=adfbb20da91e2c1424d0"
 
 function __wbg_get_imports() {
     const import0 = {

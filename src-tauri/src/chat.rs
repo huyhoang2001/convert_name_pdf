@@ -190,10 +190,24 @@ fn request_body(messages: &[Message], language: &str) -> Value {
     json!({"models":MODELS,"messages":all,"max_tokens":2048,"temperature":0.2,"stream":true})
 }
 fn response_error(status: reqwest::StatusCode, body: &str) -> String {
-    let detail = serde_json::from_str::<Value>(body).ok()
-        .and_then(|value| value.pointer("/error/message").and_then(Value::as_str).map(str::to_owned));
-    let detail = detail.map(|text| Regex::new(r"sk-or-v1-[A-Za-z0-9]+").unwrap().replace_all(&text, "[redacted]").chars().take(180).collect::<String>());
-    format!("OpenRouter request failed (HTTP {status}){}.", detail.map(|text| format!(": {text}")).unwrap_or_default())
+    let detail = serde_json::from_str::<Value>(body).ok().and_then(|value| {
+        value
+            .pointer("/error/message")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    });
+    let detail = detail.map(|text| {
+        Regex::new(r"sk-or-v1-[A-Za-z0-9]+")
+            .unwrap()
+            .replace_all(&text, "[redacted]")
+            .chars()
+            .take(180)
+            .collect::<String>()
+    });
+    format!(
+        "OpenRouter request failed (HTTP {status}){}.",
+        detail.map(|text| format!(": {text}")).unwrap_or_default()
+    )
 }
 #[cfg(test)]
 mod tests {
@@ -220,7 +234,9 @@ mod tests {
             .output();
         credential.delete_credential().unwrap();
         let result = result.unwrap();
-        assert!(result.status.success() && String::from_utf8_lossy(&result.stdout).contains("1 passed"));
+        assert!(
+            result.status.success() && String::from_utf8_lossy(&result.stdout).contains("1 passed")
+        );
     }
 
     #[test]
@@ -259,23 +275,38 @@ mod tests {
 
     #[test]
     fn requests_nemotron_fallbacks_with_streaming_and_reports_safe_provider_errors() {
-        let messages = vec![Message { role: "user".into(), content: "How do I use Settings?".into() }];
+        let messages = vec![Message {
+            role: "user".into(),
+            content: "How do I use Settings?".into(),
+        }];
         let body = request_body(&messages, "EN");
-        assert_eq!(body["models"], json!([
-            "nvidia/nemotron-3-ultra-550b-a55b",
-            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
-            "nvidia/nemotron-3.5-super-vl",
-        ]));
+        assert_eq!(
+            body["models"],
+            json!([
+                "nvidia/nemotron-3-ultra-550b-a55b",
+                "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+                "nvidia/nemotron-3.5-super-vl",
+            ])
+        );
         assert!(body.get("model").is_none());
         assert_eq!(body["stream"], true);
         assert_eq!(body["messages"][1]["content"], messages[0].content);
         let prompt = body["messages"][0]["content"].as_str().unwrap();
         assert!(prompt.contains("word-multiple-files"));
-        assert!(prompt.to_ascii_lowercase().contains("no application-level limit on open documents".to_ascii_lowercase().as_str()));
+        assert!(
+            prompt.to_ascii_lowercase().contains(
+                "no application-level limit on open documents"
+                    .to_ascii_lowercase()
+                    .as_str()
+            )
+        );
         assert!(prompt.contains("never reject a Word question as unrelated"));
 
         let status = reqwest::StatusCode::UNAUTHORIZED;
-        let error = response_error(status, r#"{"error":{"message":"Invalid key sk-or-v1-private"}}"#);
+        let error = response_error(
+            status,
+            r#"{"error":{"message":"Invalid key sk-or-v1-private"}}"#,
+        );
         assert!(error.contains("HTTP 401"));
         assert!(error.contains("Invalid key [redacted]"));
         assert!(!error.contains("sk-or-v1-private"));
@@ -293,13 +324,22 @@ pub async fn ask(
     }
     let key = resolve()?;
     if key.is_empty() {
-        return Err("OpenRouter API key is not configured. Enter it and Save in this app's Settings.".into());
+        return Err(
+            "OpenRouter API key is not configured. Enter it and Save in this app's Settings."
+                .into(),
+        );
     }
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(60))
         .build()
         .map_err(|e| e.to_string())?;
-    let response=client.post("https://openrouter.ai/api/v1/chat/completions").bearer_auth(key).json(&request_body(&messages, &language)).send().await.map_err(|_|"Online help is unavailable. Check your internet connection.".to_string())?;
+    let response = client
+        .post("https://openrouter.ai/api/v1/chat/completions")
+        .bearer_auth(key)
+        .json(&request_body(&messages, &language))
+        .send()
+        .await
+        .map_err(|_| "Online help is unavailable. Check your internet connection.".to_string())?;
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
@@ -332,10 +372,13 @@ pub async fn ask(
                 let event: Value = serde_json::from_str(data)
                     .map_err(|_| "Online help returned an invalid response.".to_string())?;
                 if !event["error"].is_null() {
-                    return Err(response_error(reqwest::StatusCode::BAD_GATEWAY, &event.to_string()));
+                    return Err(response_error(
+                        reqwest::StatusCode::BAD_GATEWAY,
+                        &event.to_string(),
+                    ));
                 }
                 if ["error", "length"]
-                        .contains(&event["choices"][0]["finish_reason"].as_str().unwrap_or(""))
+                    .contains(&event["choices"][0]["finish_reason"].as_str().unwrap_or(""))
                 {
                     return Err("Online help was interrupted.".into());
                 }

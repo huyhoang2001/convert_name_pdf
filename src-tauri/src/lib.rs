@@ -27,9 +27,15 @@ fn install_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
         .paste()
         .select_all()
         .build()?;
-    let view = SubmenuBuilder::new(app, label("View", "Xem"))
-        .text("reload", label("Reload", "Tải lại"));
-    let devtools = MenuItem::with_id(app, "devtools", label("Developer tools", "Công cụ phát triển"), true, Some("Ctrl+F12"))?;
+    let view =
+        SubmenuBuilder::new(app, label("View", "Xem")).text("reload", label("Reload", "Tải lại"));
+    let devtools = MenuItem::with_id(
+        app,
+        "devtools",
+        label("Developer tools", "Công cụ phát triển"),
+        true,
+        Some("Ctrl+F12"),
+    )?;
     let view = view.item(&devtools);
     let view = view
         .separator()
@@ -479,11 +485,17 @@ fn open_recent_word_location(file: String) -> Result<(), String> {
 #[tauri::command]
 fn open_word_devtools(app: tauri::AppHandle) -> Result<(), String> {
     #[cfg(debug_assertions)]
-    app.get_webview_window("main").ok_or("Main window is unavailable.")?.open_devtools();
+    app.get_webview_window("main")
+        .ok_or("Main window is unavailable.")?
+        .open_devtools();
     Ok(())
 }
 #[tauri::command]
-fn update_recent_word_document(file: String, action: String, name: Option<String>) -> Result<(), String> {
+fn update_recent_word_document(
+    file: String,
+    action: String,
+    name: Option<String>,
+) -> Result<(), String> {
     word::update_recent(&file, &action, name.as_deref())
 }
 #[tauri::command]
@@ -498,15 +510,21 @@ async fn save_word_document(
 }
 #[tauri::command]
 async fn save_word_draft(input: serde_json::Value) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || word::save_draft(input)).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || word::save_draft(input))
+        .await
+        .map_err(|e| e.to_string())?
 }
 #[tauri::command]
 async fn list_word_drafts() -> Result<Vec<serde_json::Value>, String> {
-    tauri::async_runtime::spawn_blocking(word::list_drafts).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(word::list_drafts)
+        .await
+        .map_err(|e| e.to_string())?
 }
 #[tauri::command]
 async fn remove_word_draft(id: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || word::remove_draft(&id)).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || word::remove_draft(&id))
+        .await
+        .map_err(|e| e.to_string())?
 }
 #[tauri::command]
 async fn count_scan(root: String) -> Result<count::Scan, String> {

@@ -21,11 +21,11 @@
       window.addEventListener('unhandledrejection', event => report('wasm-initialization', event.reason || 'Wordcraft WASM initialization failed.'));
     })();
   </script>
-  <link rel="icon" href="./wordcraft-fa59e09a3f921e03.ico" integrity="sha384-99DzWb82rFgkdw7hjKziyDQaHbMTklb9MWeLKF7LcVUnq80H4nDrc/pjHJtAj/AA"/>
+  <link rel="icon" href="./wordcraft-fa59e09a3f921e03.ico?v=adfbb20da91e2c1424d0" integrity="sha384-99DzWb82rFgkdw7hjKziyDQaHbMTklb9MWeLKF7LcVUnq80H4nDrc/pjHJtAj/AA"/>
   
 <script type="module">
-import init, * as bindings from './wordcraft-web-481e7f4e00a43446.js';
-const wasm = await init({ module_or_path: './wordcraft-web-1cfcff0cda5fb3c3_bg.wasm' });
+import init, * as bindings from './wordcraft-web-481e7f4e00a43446.js?v=adfbb20da91e2c1424d0';
+const wasm = await init({ module_or_path: './wordcraft-web-1cfcff0cda5fb3c3_bg.wasm?v=adfbb20da91e2c1424d0' });
 
 
 window.wasmBindings = bindings;
@@ -40,7 +40,7 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
     #wordcraft_loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
       color: #555; font: 14px system-ui, sans-serif; pointer-events: none; }
   </style>
-<link rel="modulepreload" href="./wordcraft-web-481e7f4e00a43446.js" crossorigin="anonymous" integrity="sha384-qFFavpDLsODRmpgkWwPpQo70M9uZL2LySY5qGATHi9QbloVtp0c3ItreeZBoD0SZ"><link rel="modulepreload" href="./snippets/eframe-d31a8450ea12dfc1/inline0.js" crossorigin="anonymous" integrity="sha384-uPZQ72BwgZ4v7Km6+UIFbkDDlt7ShGEsAVEHVN/+wZSGFhItJZB83iKMFQXauTSs"><link rel="preload" href="./wordcraft-web-1cfcff0cda5fb3c3_bg.wasm" crossorigin="anonymous" integrity="sha384-cplu9l9aCbQTfWa2PUJVsIuSCzTyA4n6nfcSKxw37yVgejOV+zKav9otYv2u/GmE" as="fetch" type="application/wasm"></head>
+<link rel="modulepreload" href="./wordcraft-web-481e7f4e00a43446.js?v=adfbb20da91e2c1424d0" crossorigin="anonymous" integrity="sha384-PRUUmNYw4xjGoaHLdx1vVFYu8f4Px7qU5JwQ7scPcmlnyyOATV3UlY6xSD365C0s"><link rel="modulepreload" href="./snippets/eframe-d31a8450ea12dfc1/inline0.js?v=adfbb20da91e2c1424d0" crossorigin="anonymous" integrity="sha384-uPZQ72BwgZ4v7Km6+UIFbkDDlt7ShGEsAVEHVN/+wZSGFhItJZB83iKMFQXauTSs"><link rel="preload" href="./wordcraft-web-1cfcff0cda5fb3c3_bg.wasm?v=adfbb20da91e2c1424d0" crossorigin="anonymous" integrity="sha384-cplu9l9aCbQTfWa2PUJVsIuSCzTyA4n6nfcSKxw37yVgejOV+zKav9otYv2u/GmE" as="fetch" type="application/wasm"></head>
 <body>
   <canvas id="wordcraft_canvas"></canvas>
   <div id="wordcraft_loading">Loading WordCraft&hellip;</div>

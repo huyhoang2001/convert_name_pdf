@@ -3,6 +3,7 @@ use serde_json::{Map, Value, json};
 use std::{
     collections::{HashMap, HashSet},
     fs,
+    io::Cursor,
     path::{Path, PathBuf},
     sync::Mutex,
 };
@@ -464,7 +465,13 @@ fn parse_copies(sheet: &Worksheet, settings: &Value) -> Option<Value> {
         .captures(&first)
         .map(|m| format!("{}-{:0>2}-{:0>2}", &m[3], &m[2], &m[1]))
         .unwrap_or_else(|| chrono::Local::now().format("%Y-%m-%d").to_string());
-        let address = cell(sheet, 1, 3)
+        let address_row =
+            if normalize(&cell(sheet, 1, 3)).starts_with(&normalize("Tên doanh nghiệp:")) {
+                4
+            } else {
+                3
+            };
+        let address = cell(sheet, 1, address_row)
             .trim_start_matches("Địa chỉ: ")
             .to_string();
         return Some(
@@ -1009,27 +1016,122 @@ mod tests {
         );
     }
     #[test]
-    fn copies_template_contains_total_and_words() {
+    fn copies_template_uses_sample_layout_settings_and_grows_rows() {
         let root = std::env::temp_dir().join(format!("b6h-copies-{}", Uuid::new_v4()));
         fs::create_dir(&root).unwrap();
         let file = root.join("copies.xlsx");
         let state = State::default();
-        let title = "BẢNG KÊ ".repeat(1_000);
-        create(
-            &state,
-            "copies",
-            &file.to_string_lossy(),
-            &json!([{"id":"one","name":"August","title":title,"address":"Address","date":"2026-08-15","rows":[{"id":"row","refNo":"3487","customer":"A","description":"B","quantity":"5","unitPrice":"1"}]}]),
-            &json!({}),
-            "VI",
-        )
-        .unwrap();
+        let id = "00000000-0000-4000-8000-000000000001";
+        let mut settings =
+            json!({"companyName":"Example Co","businessAddress":"1 Main St","taxId":"000 123"});
+        settings[format!("custom:{id}:label")] = json!("Case note");
+        settings[format!("custom:{id}:header")] = json!("Case note");
+        create(&state,"copies",&file.to_string_lossy(),&json!([
+            {"id":"empty","name":"Empty","date":"2026-08-15","rows":[]},
+            {"id":"single","name":"Single","date":"2026-08-15","rows":[
+                {"id":"only","refNo":"1","customer":"Single row","description":"Document","quantity":"1","unitPrice":"1"}
+            ]},
+            {"id":"many","name":"Many","date":"2026-08-15","rows":[
+                {"id":"a","refNo":"3487","customer":"A","description":"B","quantity":"5","unitPrice":"1","custom:00000000-0000-4000-8000-000000000001":"first"},
+                {"id":"b","refNo":"3488","customer":"C","description":"D","quantity":"2","unitPrice":"3","custom:00000000-0000-4000-8000-000000000001":"second"}
+            ]}
+        ]),&settings,"VI").unwrap();
         let book = load(&file).unwrap();
-        let sheet = book.get_sheet_by_name("August").unwrap();
-        assert_eq!(sheet.get_value("G6"), "30000");
-        assert_eq!(sheet.get_value("A8"), "Bằng chữ: Ba mươi ngàn đồng");
-        assert!(*sheet.get_row_dimension(&1).unwrap().get_height() > 30.0);
-        assert!(sheet.get_tables().is_empty());
+        let empty = book.get_sheet_by_name("Empty").unwrap();
+        assert_eq!(empty.get_value("G9"), "0");
+        assert!(empty.get_value("A10").starts_with("B"));
+        let single = book.get_sheet_by_name("Single").unwrap();
+        assert_eq!(single.get_value("A8"), "1");
+        assert_eq!(single.get_value("G9"), "10000");
+        assert_eq!(single.get_cell("G9").unwrap().get_formula(), "SUM(G8:G8)");
+        let sheet = book.get_sheet_by_name("Many").unwrap();
+        assert!(sheet.get_value("A1").starts_with("B"));
+        assert!(sheet.get_value("A3").contains("Example Co"));
+        assert!(sheet.get_value("A4").contains("1 Main St"));
+        assert!(sheet.get_value("A5").contains("000 123"));
+        assert_eq!(sheet.get_value("H7"), "Case note");
+        assert_eq!(sheet.get_value("H8"), "first");
+        assert_eq!(sheet.get_value("G10"), "60000");
+        assert_eq!(sheet.get_cell("G10").unwrap().get_formula(), "SUM(G8:G9)");
+        assert!(sheet.get_value("A11").starts_with("B"));
+        assert!(
+            sheet
+                .get_merge_cells()
+                .iter()
+                .any(|range| range.get_range() == "A1:H1")
+        );
+        assert!(
+            sheet
+                .get_merge_cells()
+                .iter()
+                .any(|range| range.get_range() == "A10:F10")
+        );
+        let title_font = sheet
+            .get_cell("A1")
+            .unwrap()
+            .get_style()
+            .get_font()
+            .unwrap();
+        assert_eq!(title_font.get_font_name().get_val(), "Times New Roman");
+        assert!(*title_font.get_font_bold().get_val());
+        let body_font = sheet
+            .get_cell("A8")
+            .unwrap()
+            .get_style()
+            .get_font()
+            .unwrap();
+        assert_eq!(body_font.get_font_name().get_val(), "Times New Roman");
+        let added_body_font = sheet
+            .get_cell("A9")
+            .unwrap()
+            .get_style()
+            .get_font()
+            .unwrap();
+        assert_eq!(added_body_font.get_font_name().get_val(), "Times New Roman");
+        assert_eq!(*sheet.get_row_dimension(&8).unwrap().get_height(), 18.0);
+        let imported = import(&state, "copies", &file.to_string_lossy(), &settings).unwrap();
+        assert_eq!(imported["sheets"][2]["address"], "1 Main St");
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn copies_import_supports_old_address_row_and_save_keeps_other_sheets() {
+        let root = std::env::temp_dir().join(format!("b6h-copies-save-{}", Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let file = root.join("copies.xlsx");
+        let settings = json!({});
+        let mut book = xlsx::new_file_empty_worksheet();
+        book.new_sheet("Cover")
+            .unwrap()
+            .get_cell_mut("A1")
+            .set_value("Keep me");
+        let old = book.new_sheet("Old").unwrap();
+        old.get_cell_mut("A1").set_value("Old title");
+        old.get_cell_mut("A3").set_value("Địa chỉ: Old addr");
+        for (index, header) in header_candidates("copies", &settings, "VI")
+            .iter()
+            .enumerate()
+        {
+            old.get_cell_mut(((index + 1) as u32, 5)).set_value(header);
+        }
+        old.get_cell_mut("A6").set_value_number(1);
+        old.get_cell_mut("C6").set_value("A person");
+        xlsx::writer::xlsx::write(&book, &file).unwrap();
+        let state = State::default();
+        let imported = import(&state, "copies", &file.to_string_lossy(), &settings).unwrap();
+        assert_eq!(imported["sheets"][0]["address"], "Old addr");
+        save(&state, "copies", &imported, &settings, "VI").unwrap();
+        let saved = load(&file).unwrap();
+        assert_eq!(
+            saved.get_sheet_by_name("Cover").unwrap().get_value("A1"),
+            "Keep me"
+        );
+        assert!(
+            saved
+                .get_sheet_by_name("Old")
+                .unwrap()
+                .get_value("A4")
+                .contains(crate::storage::COPIES_ADDRESS)
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }
@@ -1257,24 +1359,56 @@ fn append_copies(
         if rows.len() > 100000 {
             return Err("Invalid copies register rows".into());
         }
-        let sheet = book.new_sheet(&name).map_err(|e| e.to_string())?;
+        let template = xlsx::reader::xlsx::read_reader(
+            &mut Cursor::new(include_bytes!("../resources/copies-template.xlsx")),
+            true,
+        )
+        .map_err(|e| e.to_string())?;
+        let mut sheet = template
+            .get_sheet(&0)
+            .ok_or("Copies template has no worksheet")?
+            .clone();
+        sheet.set_name(&name);
+        book.add_sheet(sheet).map_err(|e| e.to_string())?;
+        let sheet = book
+            .get_sheet_by_name_mut(&name)
+            .ok_or("Could not add Copies worksheet")?;
         let last_col =
             xlsx::helper::coordinate::string_from_column_index(&headers.len().try_into().unwrap());
-        for row in 1..=4 {
+        let data_rows = rows.len().max(1) as u32;
+        if data_rows > 1 {
+            sheet.insert_new_row(&9, &(data_rows - 1));
+        }
+        let total_row = 8 + data_rows;
+        let words_row = total_row + 1;
+        let invoice_row = words_row + 1;
+        let signature_row = invoice_row + 1;
+        for row in 9..=(7 + rows.len() as u32) {
+            if !rows.is_empty() {
+                sheet.copy_row_styling(&8, &row, Some(&1), Some(&(headers.len() as u32)));
+            }
+        }
+        for col in 8..=headers.len() as u32 {
+            if headers.len() > 7 {
+                sheet.copy_col_styling(&7, &col, Some(&1), Some(&signature_row));
+            }
+        }
+        sheet.get_merge_cells_mut().retain(|range| {
+            let (_, row, _, _) = xlsx::helper::coordinate::index_from_coordinate(
+                range.get_range().split(':').next().unwrap_or(""),
+            );
+            let Some(row) = row else {
+                return true;
+            };
+            !(row <= 6 || [total_row, words_row, invoice_row, signature_row].contains(&row))
+        });
+        for row in 1..=6 {
             sheet.add_merge_cells(format!("A{row}:{last_col}{row}"));
         }
         let title = string(register, "title");
-        set_cell(
-            sheet,
-            1,
-            1,
-            if title.is_empty() {
-                "BẢNG KÊ CHỨNG THỰC BẢN SAO TỪ BẢN CHÍNH - KHÁCH LẺ"
-            } else {
-                &title
-            },
-            false,
-        );
+        if !title.is_empty() {
+            set_cell(sheet, 1, 1, &title, false);
+        }
         let date = string(register, "date");
         let pieces: Vec<_> = date.split('-').collect();
         if pieces.len() != 3 {
@@ -1287,28 +1421,40 @@ fn append_copies(
             &format!("Ngày {} tháng {} năm {}", pieces[2], pieces[1], pieces[0]),
             false,
         );
-        let address = string(register, "address");
-        set_cell(
+        set_business_detail(
             sheet,
-            1,
             3,
-            &format!(
-                "Địa chỉ: {}",
-                if address.is_empty() {
-                    "Số 105, Đường Hưng Đạo Vương, Kp. Nam Hà, Phường Trấn Biên, Tp. Đồng Nai"
-                } else {
-                    &address
-                }
-            ),
-            false,
+            "Tên doanh nghiệp: ",
+            settings
+                .get("companyName")
+                .and_then(Value::as_str)
+                .unwrap_or(crate::storage::COPIES_COMPANY_NAME),
         );
-        set_cell(sheet, 1, 4, "Đơn vị tính: VNĐ", false);
+        set_business_detail(
+            sheet,
+            4,
+            "Địa chỉ: ",
+            settings
+                .get("businessAddress")
+                .and_then(Value::as_str)
+                .unwrap_or(crate::storage::COPIES_ADDRESS),
+        );
+        set_business_detail(
+            sheet,
+            5,
+            "Mã số thuế: ",
+            settings
+                .get("taxId")
+                .and_then(Value::as_str)
+                .unwrap_or(crate::storage::COPIES_TAX_ID),
+        );
+        set_cell(sheet, 1, 6, "Đơn vị tính: VNĐ", false);
         for (col, header) in headers.iter().enumerate() {
-            set_cell(sheet, col as u32 + 1, 5, header, false)
+            set_cell(sheet, col as u32 + 1, 7, header, false);
         }
         let mut totals = Vec::new();
         for (offset, record) in rows.iter().enumerate() {
-            let row = (offset + 6) as u32;
+            let row = (offset + 8) as u32;
             set_cell(sheet, 1, row, &(offset + 1).to_string(), true);
             let ref_no = string(record, "refNo");
             let fallback = (offset + 1).to_string();
@@ -1327,7 +1473,7 @@ fn append_copies(
                 .iter()
                 .enumerate()
             {
-                set_cell(sheet, col as u32 + 3, row, &string(record, key), col >= 2)
+                set_cell(sheet, col as u32 + 3, row, &string(record, key), col >= 2);
             }
             let total = copy_total(record)?;
             totals.push(total);
@@ -1335,7 +1481,7 @@ fn append_copies(
                 || (!string(record, "quantity").is_empty()
                     && !string(record, "unitPrice").is_empty())
             {
-                set_cell(sheet, 7, row, &total.to_string(), true)
+                set_cell(sheet, 7, row, &total.to_string(), true);
             }
             for (j, (id, _)) in custom.iter().enumerate() {
                 set_cell(
@@ -1344,7 +1490,7 @@ fn append_copies(
                     row,
                     &string(record, &format!("custom:{id}")),
                     false,
-                )
+                );
             }
         }
         let total_amount = totals
@@ -1354,16 +1500,12 @@ fn append_copies(
         if total_amount > 9_007_199_254_740_991 {
             return Err("Total amount is outside the supported number range.".into());
         }
-        let total_row = rows.len() as u32 + 6;
-        let words_row = total_row + 1;
-        let invoice_row = words_row + 1;
-        let signature_row = invoice_row + 1;
         sheet.add_merge_cells(format!("A{total_row}:F{total_row}"));
         set_cell(sheet, 1, total_row, "Tổng cộng chứng thực bản sao", false);
         let formula = if rows.is_empty() {
             "0".to_string()
         } else {
-            format!("SUM(G6:G{})", rows.len() + 5)
+            format!("SUM(G8:G{})", rows.len() + 7)
         };
         sheet
             .get_cell_mut((7, total_row))
@@ -1389,26 +1531,9 @@ fn append_copies(
         );
         sheet.add_merge_cells(format!("D{signature_row}:{last_col}{signature_row}"));
         set_cell(sheet, 4, signature_row, "(Ký, ghi rõ họ tên)", false);
-        let mut widths = vec![12.0_f64; headers.len()];
-        for (col, header) in headers.iter().enumerate() {
-            widths[col] = (header.chars().count() + 2).min(40) as f64;
-            for row in 6..total_row {
-                widths[col] = widths[col].max(
-                    cell(sheet, col as u32 + 1, row)
-                        .lines()
-                        .map(|l| l.chars().count() + 2)
-                        .max()
-                        .unwrap_or(0) as f64,
-                )
-            }
-            widths[col] = widths[col]
-                .min(255.0)
-                .max(if col < 2 || col == 4 { 8.0 } else { 12.0 })
-        }
-        decorate(sheet, signature_row, headers.len(), &widths, true);
         for col in [2, 5, 6, 7] {
             let format = if col == 2 || col == 5 { "0" } else { "#,##0" };
-            for row in 6..=total_row {
+            for row in 8..=total_row {
                 sheet
                     .get_style_mut((col, row))
                     .get_number_format_mut()
@@ -1417,4 +1542,19 @@ fn append_copies(
         }
     }
     Ok(())
+}
+fn set_business_detail(sheet: &mut Worksheet, row: u32, label: &str, value: &str) {
+    let mut rich = xlsx::structs::RichText::default();
+    let mut label_run = xlsx::structs::TextElement::default();
+    label_run.set_text(label);
+    rich.add_rich_text_elements(label_run);
+    let mut value_run = xlsx::structs::TextElement::default();
+    value_run.set_text(value);
+    value_run
+        .get_font_mut()
+        .set_name("Times New Roman")
+        .set_size(14.0)
+        .set_bold(true);
+    rich.add_rich_text_elements(value_run);
+    sheet.get_cell_mut((1, row)).set_rich_text(rich);
 }

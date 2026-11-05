@@ -6,6 +6,22 @@ use std::{
 };
 use uuid::Uuid;
 
+pub const COPIES_COMPANY_NAME: &str = "Văn phòng công chứng Biên Hùng";
+pub const COPIES_ADDRESS: &str =
+    "Số 105, Đường Hưng Đạo Vương, Kp. Nam Hà, Phường Trấn Biên, Tp. Đồng Nai";
+pub const COPIES_TAX_ID: &str = "3 6 0 3 6 6 1 5 7 3";
+
+fn copies_defaults(value: &mut Value) {
+    let Some(obj) = value.as_object_mut() else {
+        return;
+    };
+    obj.entry("companyName")
+        .or_insert_with(|| json!(COPIES_COMPANY_NAME));
+    obj.entry("businessAddress")
+        .or_insert_with(|| json!(COPIES_ADDRESS));
+    obj.entry("taxId").or_insert_with(|| json!(COPIES_TAX_ID));
+}
+
 pub fn user_dir() -> Result<PathBuf, String> {
     Ok(
         PathBuf::from(std::env::var_os("APPDATA").ok_or("APPDATA is unavailable")?)
@@ -46,6 +62,29 @@ fn write_at(path: &Path, value: &Value) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn copies_defaults_fill_legacy_settings_but_keep_explicit_blanks() {
+        let mut legacy = json!({"header:number":"Entry"});
+        copies_defaults(&mut legacy);
+        assert_eq!(legacy["companyName"], COPIES_COMPANY_NAME);
+        assert_eq!(legacy["businessAddress"], COPIES_ADDRESS);
+        assert_eq!(legacy["taxId"], COPIES_TAX_ID);
+        let mut cleared = json!({"companyName":"", "businessAddress":"", "taxId":""});
+        copies_defaults(&mut cleared);
+        assert_eq!(cleared["companyName"], "");
+        assert_eq!(cleared["businessAddress"], "");
+        assert_eq!(cleared["taxId"], "");
+    }
+    #[test]
+    fn copies_business_settings_are_validated_as_bounded_strings() {
+        validate_labels(
+            &json!({"companyName":"", "businessAddress":"A", "taxId":"000 123"}),
+            Some("copies"),
+        )
+        .unwrap();
+        assert!(validate_labels(&json!({"taxId":"x".repeat(1001)}), Some("copies")).is_err());
+        assert!(validate_labels(&json!({"companyName":"name"}), Some("translation")).is_err());
+    }
     #[test]
     fn legacy_json_is_backed_up_before_first_write() {
         let dir = std::env::temp_dir().join(format!("b6h-settings-{}", Uuid::new_v4()));
@@ -204,7 +243,12 @@ pub fn save_word_settings(value: Value) -> Result<Value, String> {
     );
     word.insert(
         "showDocxCompatibilityWarnings".into(),
-        json!(value.get("showDocxCompatibilityWarnings").and_then(Value::as_bool).unwrap_or(true)),
+        json!(
+            value
+                .get("showDocxCompatibilityWarnings")
+                .and_then(Value::as_bool)
+                .unwrap_or(true)
+        ),
     );
     data.insert("word".into(), Value::Object(word));
     write("settings.json", &Value::Object(data))?;
@@ -237,6 +281,11 @@ fn validate_labels(value: &Value, selector: Option<&str>) -> Result<(), String> 
             }
             ids.insert(id.to_string());
         } else {
+            if selector == Some("copies")
+                && ["companyName", "businessAddress", "taxId"].contains(&key.as_str())
+            {
+                continue;
+            }
             let Some((kind, field)) = key.split_once(':') else {
                 return Err("Invalid selector settings.".into());
             };
@@ -273,11 +322,18 @@ pub fn selector_settings(selector: &str) -> Result<Value, String> {
     if !["translation", "copies"].contains(&selector) {
         return Err("Invalid selector".into());
     }
-    let value = read(&format!("{selector}-settings.json"))?;
+    let mut value = read(&format!("{selector}-settings.json"))?;
+    if selector == "copies" {
+        copies_defaults(&mut value);
+    }
     validate_labels(&value, Some(selector))?;
     Ok(value)
 }
 pub fn save_selector_settings(selector: &str, value: Value) -> Result<Value, String> {
+    let mut value = value;
+    if selector == "copies" {
+        copies_defaults(&mut value);
+    }
     validate_labels(&value, Some(selector))?;
     write(&format!("{selector}-settings.json"), &value)?;
     Ok(value)

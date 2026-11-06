@@ -24,6 +24,15 @@ export function inspectAdjacentReferenceNumbers(current: (string | number)[], ne
   };
 }
 
+export function inspectSheetReferenceNumbers<T extends { name: string; rows: { refNo: string | number }[] }>(sheets: T[]) {
+  const reports = sheets.map(({ name, rows }) => ({ name, ...inspectReferenceNumbers(rows.map(row => row.refNo)) }));
+  return {
+    checked: reports.reduce((sum, sheet) => sum + sheet.checked, 0),
+    missingCount: reports.reduce((sum, sheet) => sum + sheet.missingCount, 0),
+    sheets: reports
+  };
+}
+
 export function nextReferenceNumber(rows: ReferenceRow[], previousLast = 0) {
   const highest = rows.reduce((max, row) => Math.max(max, Number(row.refNo) || 0), previousLast);
   return String(highest + 1);

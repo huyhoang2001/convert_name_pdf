@@ -1,13 +1,14 @@
 import { memo, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import customerNameDescriptionData from '../customer_name_description_data.json';
-import { compactReferenceNumbers, compactSortedReferenceNumbers, distributeRows, insertReferenceNumber, inspectAdjacentReferenceNumbers, nextReferenceNumber } from './copiesSequence';
+import { compactReferenceNumbers, compactSortedReferenceNumbers, distributeRows, insertReferenceNumber, inspectSheetReferenceNumbers, nextReferenceNumber } from './copiesSequence';
 import { randomCopiesDetails } from './copiesRandom';
 import { useUndoHistory } from './undoHistory';
 import { amountInWords } from './copiesWords';
 import SheetPager from './SheetPager';
 import { blankCopiesRow as blankRow, copiesSuggestions, decrementCopiesCount, isCopiesSaveShortcut } from './copiesForm';
 import RegisterFolderDropTarget from './RegisterFolderDropTarget';
+import { adjacentTabId, isSheetNavigationShortcut } from './word/tabNavigation';
 
 export type CopiesRow = { id: string; refNo: string; customer: string; description: string; quantity: string; unitPrice: string; totalAmount?: string; manualTotal?: boolean; manualRefNo?: boolean; [key: string]: string | boolean | undefined };
 export type CopiesSheet = { id: string; name: string; title: string; address: string; date: string; rows: CopiesRow[] };
@@ -37,7 +38,7 @@ function CopiesPage({ api, t, labels = {}, isVisible, language }: { api: CopiesA
   const [activeId, setActiveId] = useState(sheets[0]?.id ?? '');
   const [form, setForm] = useState<CopiesRow>(blankRow());
   const [autocomplete, setAutocomplete] = useState<{ field: 'customer' | 'description'; sheetId: string; index: number } | null>(null);
-  const [refAudit, setRefAudit] = useState<(ReturnType<typeof inspectAdjacentReferenceNumbers> & { currentSheet: string; nextSheet?: string }) | null>(null);
+  const [refAudit, setRefAudit] = useState<ReturnType<typeof inspectSheetReferenceNumbers> | null>(null);
   const [sheetDialog, setSheetDialog] = useState<{ action: 'add' | 'rename'; name: string } | null>(null);
   const [sheetDialogError, setSheetDialogError] = useState('');
   const [query, setQuery] = useState(''), [file, setFile] = useState(''), [sourceMap, setSourceMap] = useState<Record<string, string>>({}), [dirty, setDirty] = useState(false), [message, setMessage] = useState(''), [error, setError] = useState('');
@@ -52,11 +53,11 @@ function CopiesPage({ api, t, labels = {}, isVisible, language }: { api: CopiesA
   };
   useEffect(() => setAutocomplete(null), [activeId]);
   const sheetTotal = useMemo(() => rows.reduce((sum, row) => sum + BigInt(rowTotal(row)), 0n), [rows]);
-  const nextSheet = sheets[sheets.findIndex(sheet => sheet.id === activeId) + 1];
   const label = (key: string, fallback: string) => labels[key]?.trim() || t(fallback);
   const customFields = [...new Set(Object.keys(labels).map(key => key.match(/^custom:([a-f0-9-]{36}):label$/)?.[1]).filter((id): id is string => Boolean(id)))];
   const visibleRows = useMemo(() => rows.map((row, index) => ({ row, index })).filter(({ row }) => Object.values(row).join(' ').toLocaleLowerCase().includes(query.toLocaleLowerCase())), [rows, query]);
   const tableWrapRef = useRef<HTMLDivElement>(null);
+  const sheetTablistRef = useRef<HTMLDivElement>(null);
   const saveButtonRef = useRef<HTMLButtonElement>(null);
   const rowVirtualizer = useVirtualizer({ count: visibleRows.length, getScrollElement: () => tableWrapRef.current, estimateSize: () => 58, overscan: 8, getItemKey: index => visibleRows[index].row.id, enabled: isVisible });
   const virtualRows = rowVirtualizer.getVirtualItems();
@@ -102,7 +103,8 @@ function CopiesPage({ api, t, labels = {}, isVisible, language }: { api: CopiesA
   const refresh = async () => { if (!file) return; try { if (dirty && !(await window.confirm(t('copiesRefreshConfirm')))) return; const refreshed = await api.refreshCopiesWorkbook(file); const updated = compactWorkbookSheets(refreshed.sheets); await api.saveCopiesWorkbook({ file, sheets: updated, sourceMap: refreshed.sourceMap }); setSheets(updated); setActiveId(updated[0]?.id ?? ''); setSourceMap(Object.fromEntries(updated.map(sheet => [sheet.id, sheet.name]))); setForm(blankRow()); setDirty(false); setMessage(t('copiesRefreshed')); setError(''); } catch (reason) { readError(reason); } };
   const clearCache = async () => { try { if (!(await window.confirm(t('copiesClearCacheConfirm')))) return; await api.clearCopiesCache(); undo.clear(); setSheets([]); setActiveId(''); setFile(''); setSourceMap({}); setForm(blankRow()); setDirty(false); setQuery(''); setMessage(t('copiesCacheCleared')); setError(''); } catch (reason) { readError(reason); } };
   const save = async () => { if (!sheets.length) return; try { if (file) { await api.saveCopiesWorkbook({ file, sheets, sourceMap }); setSourceMap(Object.fromEntries(sheets.map(sheet => [sheet.id, sheet.name]))); } else { const created = await api.newCopiesWorkbook(sheets); if (!created) return; undo.clear(); setFile(created.file); setSourceMap(created.sourceMap); } setDirty(false); setMessage(t('copiesSaved')); setError(''); } catch (reason) { readError(reason); } };
-  useEffect(() => { if (!isVisible) return; const onKeyDown = (event: KeyboardEvent) => { if (!isCopiesSaveShortcut(event)) return; event.preventDefault(); saveButtonRef.current?.click(); }; window.addEventListener('keydown', onKeyDown); return () => window.removeEventListener('keydown', onKeyDown); }, [isVisible]);
+  useEffect(() => { if (!isVisible) return; sheetTablistRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }, [activeId, isVisible]);
+  useEffect(() => { if (!isVisible) return; const onKeyDown = (event: KeyboardEvent) => { const target = event.target; const isEditing = target instanceof HTMLElement && (target.matches('input, textarea, select') || target.isContentEditable || target.closest('.translation-form') !== null); if (isSheetNavigationShortcut(event, isVisible, isEditing)) { const next = adjacentTabId(sheets.map(sheet => sheet.id), activeId, event.key === 'PageDown' ? 1 : -1); if (next) { event.preventDefault(); setActiveId(next); setForm(blankRow()); } return; } if (!isCopiesSaveShortcut(event)) return; event.preventDefault(); saveButtonRef.current?.click(); }; window.addEventListener('keydown', onKeyDown); return () => window.removeEventListener('keydown', onKeyDown); }, [isVisible, sheets, activeId]);
   const createFile = async () => { try { const created = await api.newCopiesWorkbook(sheets); if (!created) return; undo.clear(); setFile(created.file); setSourceMap(created.sourceMap); setDirty(false); setMessage(t('copiesSaved')); setError(''); } catch (reason) { readError(reason); } };
   const exportFile = async () => { try { const exported = await api.exportCopiesWorkbook(sheets); if (exported) { setMessage(`${t('copiesExported')} ${exported}`); setError(''); } } catch (reason) { readError(reason); } };
   const submit = (event: FormEvent) => {
@@ -122,7 +124,7 @@ function CopiesPage({ api, t, labels = {}, isVisible, language }: { api: CopiesA
     <div className="page-heading"><div><h1>{t('copies')}</h1><p className="intro">{t('copiesIntro')}</p></div></div>
     <section className="panel translation-panel signature-panel copies-panel">
       <div className="translation-sheetbar">
-        <div role="tablist" aria-label={t('copies')}>{sheets.map(sheet => <button type="button" role="tab" aria-selected={sheet.id === activeId} className={sheet.id === activeId ? 'active' : ''} key={sheet.id} onClick={() => { setActiveId(sheet.id); setForm(blankRow()); }}>{sheet.name}</button>)}</div>
+        <div ref={sheetTablistRef} role="tablist" aria-label={t('copies')}>{sheets.map(sheet => <button type="button" role="tab" aria-selected={sheet.id === activeId} className={sheet.id === activeId ? 'active' : ''} key={sheet.id} onClick={() => { setActiveId(sheet.id); setForm(blankRow()); }}>{sheet.name}</button>)}</div>
         <button className="page-button" type="button" onClick={addSheet}>{t('sheetAdd')}</button>
         <button className="page-button" type="button" disabled={!active} onClick={renameSheet}>{t('sheetRename')}</button>
         <button className="page-button" type="button" disabled={sheets.length < 2} onClick={deleteSheet}>{t('sheetDelete')}</button>
@@ -146,7 +148,7 @@ function CopiesPage({ api, t, labels = {}, isVisible, language }: { api: CopiesA
               <button type="button" className="page-button" onClick={() => void importFile()}>{t('translationImport')}</button>
               <button type="button" className="page-button" disabled={!sheets.length} onClick={() => void createFile()}>{t('translationNewWorkbook')}</button>
               <button type="button" className="page-button" onClick={() => setForm(current => ({ ...current, ...randomCopiesDetails(customerNameDescriptionData) }))}>{t('copiesRandomFill')}</button>
-              <button type="button" className="page-button" disabled={!rows.length && !nextSheet?.rows.length} onClick={() => setRefAudit({ ...inspectAdjacentReferenceNumbers(rows.map(row => row.refNo), nextSheet ? nextSheet.rows.map(row => row.refNo) : undefined), currentSheet: active.name, ...(nextSheet && { nextSheet: nextSheet.name }) })}>{t('copiesCheckRefNumbers')}</button>
+              <button type="button" className="page-button" disabled={!sheets.length} onClick={() => setRefAudit(inspectSheetReferenceNumbers(sheets))}>{t('copiesCheckRefNumbers')}</button>
             </div>
           </div>
           <div className="copies-number-fields">
@@ -183,19 +185,20 @@ function CopiesPage({ api, t, labels = {}, isVisible, language }: { api: CopiesA
       <div className="report-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setRefAudit(null); }}>
         <section className="report-dialog" role="dialog" aria-modal="true" aria-labelledby="copies-ref-audit-title">
           <header>
-            <div><span className="report-success" aria-hidden="true">&#10003;</span><div><h2 id="copies-ref-audit-title">{t('copiesRefAuditTitle')}</h2><p>{active?.name}</p></div></div>
+            <div><span className="report-success" aria-hidden="true">&#10003;</span><div><h2 id="copies-ref-audit-title">{t('copiesRefAuditTitle')}</h2><p>{t('copiesRefAuditChecked')}: {refAudit.checked} · {t('copiesRefAuditMissingCount')}: {refAudit.missingCount}</p></div></div>
             <button className="report-close-icon" type="button" aria-label={t('close')} onClick={() => setRefAudit(null)}>&#10005;</button>
           </header>
           <div className="copies-audit-content">
-            <dl className="report-table">
-            <div><dt>{t('copiesRefAuditSheet')}</dt><dd>{refAudit.currentSheet}</dd></div>
-            <div><dt>{t('copiesRefAuditNextSheet')}</dt><dd>{refAudit.nextSheet ?? t('copiesRefAuditNoNextSheet')}</dd></div>
-            <div><dt>{t('copiesRefAuditBoundary')}</dt><dd>{refAudit.boundarySequential === null ? t(refAudit.hasNextSheet ? 'copiesRefAuditBoundaryUnknown' : 'copiesRefAuditNoNextSheet') : <>{t(refAudit.boundarySequential ? 'copiesRefAuditBoundarySequential' : 'copiesRefAuditBoundaryGap')} ({refAudit.currentLast} → {refAudit.nextFirst})</>}</dd></div>
-              <div><dt>{t('copiesRefAuditChecked')}</dt><dd>{refAudit.checked}</dd></div>
-              {refAudit.min !== null && <div><dt>{t('copiesRefAuditRange')}</dt><dd>{refAudit.min} - {refAudit.max}</dd></div>}
-              <div><dt>{t('copiesRefAuditMissingCount')}</dt><dd>{refAudit.missingCount}</dd></div>
-            </dl>
-            {refAudit.checked === 0 ? <p className="copies-audit-result">{t('copiesRefAuditNoNumbers')}</p> : refAudit.missingCount === 0 ? <p className="copies-audit-result">{t('copiesRefAuditNoGaps')}</p> : <section className="report-section"><h3>{t('copiesRefAuditMissing')}</h3><div className="report-number-list">{refAudit.ranges.map(({ start, end }) => <span key={`${start}-${end}`}>{start === end ? start : `${start}-${end}`}</span>)}</div></section>}
+            {refAudit.checked === 0 ? <p className="copies-audit-result">{t('copiesRefAuditNoNumbers')}</p> : refAudit.missingCount === 0 ? <p className="copies-audit-result">{t('copiesRefAuditNoGaps')}</p> : null}
+            {refAudit.sheets.map(sheet => <section className={`report-section copies-audit-sheet ${sheet.missingCount ? 'copies-audit-sheet--gap' : sheet.checked ? 'copies-audit-sheet--clear' : ''}`} key={sheet.name}>
+              <h3>{sheet.name}</h3>
+              <dl className="report-table">
+                <div><dt>{t('copiesRefAuditChecked')}</dt><dd>{sheet.checked}</dd></div>
+                {sheet.min !== null && <div><dt>{t('copiesRefAuditRange')}</dt><dd>{sheet.min} - {sheet.max}</dd></div>}
+                <div><dt>{t('copiesRefAuditMissingCount')}</dt><dd>{sheet.missingCount}</dd></div>
+              </dl>
+              {sheet.checked === 0 ? <p className="copies-audit-result">{t('copiesRefAuditSheetNoNumbers')}</p> : sheet.missingCount === 0 ? <p className="copies-audit-result">{t('copiesRefAuditSheetNoGaps')}</p> : <><h4>{t('copiesRefAuditMissing')}</h4><div className="report-number-list">{sheet.ranges.map(({ start, end }) => <span key={`${start}-${end}`}>{start === end ? start : `${start}-${end}`}</span>)}</div></>}
+            </section>)}
           </div>
           <footer><button className="primary-button" type="button" onClick={() => setRefAudit(null)}>{t('close')}</button></footer>
         </section>

@@ -212,175 +212,228 @@ async fn ask_online_chat(
 ) -> Result<String, String> {
     chat::ask(app, messages, language, id).await
 }
-#[tauri::command]
-fn import_translation_workbook(
-    file: String,
-    state: State<'_, workbook::State>,
-) -> Result<serde_json::Value, String> {
-    workbook::import(
-        &state,
-        "translation",
-        &file,
-        &storage::selector_settings("translation")?,
-    )
+async fn run_workbook<T: Send + 'static>(
+    app: tauri::AppHandle,
+    operation: impl FnOnce(&workbook::State) -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    let lock = app.state::<workbook::State>().operation_lock();
+    let guard = lock.lock_owned().await;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = guard;
+        let state = app.state::<workbook::State>();
+        operation(&state)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 #[tauri::command]
-fn refresh_translation_workbook(
+async fn import_translation_workbook(
     file: String,
-    state: State<'_, workbook::State>,
+    app: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
-    workbook::import(
-        &state,
-        "translation",
-        &file,
-        &storage::selector_settings("translation")?,
-    )
+    run_workbook(app, move |state| {
+        workbook::import(
+            state,
+            "translation",
+            &file,
+            &storage::selector_settings("translation")?,
+        )
+    })
+    .await
 }
 #[tauri::command]
-fn save_translation_workbook(
+async fn refresh_translation_workbook(
+    file: String,
+    app: tauri::AppHandle,
+) -> Result<serde_json::Value, String> {
+    run_workbook(app, move |state| {
+        workbook::import(
+            state,
+            "translation",
+            &file,
+            &storage::selector_settings("translation")?,
+        )
+    })
+    .await
+}
+#[tauri::command]
+async fn save_translation_workbook(
     input: serde_json::Value,
-    state: State<'_, workbook::State>,
+    app: tauri::AppHandle,
 ) -> Result<usize, String> {
-    workbook::save(
-        &state,
-        "translation",
-        &input,
-        &storage::selector_settings("translation")?,
-        "VI",
-    )
+    run_workbook(app, move |state| {
+        workbook::save(
+            state,
+            "translation",
+            &input,
+            &storage::selector_settings("translation")?,
+            "VI",
+        )
+    })
+    .await
 }
 #[tauri::command]
-fn new_translation_workbook(
+async fn new_translation_workbook(
     file: String,
     sheets: serde_json::Value,
-    state: State<'_, workbook::State>,
+    app: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
-    workbook::create(
-        &state,
-        "translation",
-        &file,
-        &sheets,
-        &storage::selector_settings("translation")?,
-        "VI",
-    )
+    run_workbook(app, move |state| {
+        workbook::create(
+            state,
+            "translation",
+            &file,
+            &sheets,
+            &storage::selector_settings("translation")?,
+            "VI",
+        )
+    })
+    .await
 }
 #[tauri::command]
-fn import_signature_workbook(
+async fn import_signature_workbook(
     file: String,
-    state: State<'_, workbook::State>,
+    app: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
-    workbook::import(&state, "signature", &file, &storage::signature_settings()?)
+    run_workbook(app, move |state| {
+        workbook::import(state, "signature", &file, &storage::signature_settings()?)
+    })
+    .await
 }
 #[tauri::command]
-fn refresh_signature_workbook(
+async fn refresh_signature_workbook(
     file: String,
-    state: State<'_, workbook::State>,
+    app: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
-    workbook::import(&state, "signature", &file, &storage::signature_settings()?)
+    run_workbook(app, move |state| {
+        workbook::import(state, "signature", &file, &storage::signature_settings()?)
+    })
+    .await
 }
 #[tauri::command]
-fn save_signature_workbook(
+async fn save_signature_workbook(
     input: serde_json::Value,
-    state: State<'_, workbook::State>,
+    app: tauri::AppHandle,
 ) -> Result<usize, String> {
-    workbook::save(
-        &state,
-        "signature",
-        &input,
-        &storage::signature_settings()?,
-        "VI",
-    )
+    run_workbook(app, move |state| {
+        workbook::save(
+            state,
+            "signature",
+            &input,
+            &storage::signature_settings()?,
+            "VI",
+        )
+    })
+    .await
 }
 #[tauri::command]
-fn new_signature_workbook(
+async fn new_signature_workbook(
     file: String,
     sheets: serde_json::Value,
-    state: State<'_, workbook::State>,
+    app: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
-    workbook::create(
-        &state,
-        "signature",
-        &file,
-        &sheets,
-        &storage::signature_settings()?,
-        "VI",
-    )
+    run_workbook(app, move |state| {
+        workbook::create(
+            state,
+            "signature",
+            &file,
+            &sheets,
+            &storage::signature_settings()?,
+            "VI",
+        )
+    })
+    .await
 }
 #[tauri::command]
-fn clear_signature_cache(state: State<'_, workbook::State>) -> Result<bool, String> {
-    state.clear("signature")
+async fn clear_signature_cache(app: tauri::AppHandle) -> Result<bool, String> {
+    run_workbook(app, |state| state.clear("signature")).await
 }
 #[tauri::command]
-fn import_copies_workbook(
+async fn import_copies_workbook(
     file: String,
-    state: State<'_, workbook::State>,
+    app: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
-    workbook::import(
-        &state,
-        "copies",
-        &file,
-        &storage::selector_settings("copies")?,
-    )
+    run_workbook(app, move |state| {
+        workbook::import(
+            state,
+            "copies",
+            &file,
+            &storage::selector_settings("copies")?,
+        )
+    })
+    .await
 }
 #[tauri::command]
-fn refresh_copies_workbook(
+async fn refresh_copies_workbook(
     file: String,
-    state: State<'_, workbook::State>,
+    app: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
-    workbook::import(
-        &state,
-        "copies",
-        &file,
-        &storage::selector_settings("copies")?,
-    )
+    run_workbook(app, move |state| {
+        workbook::import(
+            state,
+            "copies",
+            &file,
+            &storage::selector_settings("copies")?,
+        )
+    })
+    .await
 }
 #[tauri::command]
-fn save_copies_workbook(
+async fn save_copies_workbook(
     input: serde_json::Value,
-    state: State<'_, workbook::State>,
+    app: tauri::AppHandle,
 ) -> Result<usize, String> {
-    workbook::save(
-        &state,
-        "copies",
-        &input,
-        &storage::selector_settings("copies")?,
-        "VI",
-    )
+    run_workbook(app, move |state| {
+        workbook::save(
+            state,
+            "copies",
+            &input,
+            &storage::selector_settings("copies")?,
+            "VI",
+        )
+    })
+    .await
 }
 #[tauri::command]
-fn new_copies_workbook(
+async fn new_copies_workbook(
     file: String,
     sheets: serde_json::Value,
-    state: State<'_, workbook::State>,
+    app: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
-    workbook::create(
-        &state,
-        "copies",
-        &file,
-        &sheets,
-        &storage::selector_settings("copies")?,
-        "VI",
-    )
+    run_workbook(app, move |state| {
+        workbook::create(
+            state,
+            "copies",
+            &file,
+            &sheets,
+            &storage::selector_settings("copies")?,
+            "VI",
+        )
+    })
+    .await
 }
 #[tauri::command]
-fn export_copies_workbook(
+async fn export_copies_workbook(
     file: String,
     sheets: serde_json::Value,
-    state: State<'_, workbook::State>,
+    app: tauri::AppHandle,
 ) -> Result<String, String> {
-    workbook::create(
-        &state,
-        "copies",
-        &file,
-        &sheets,
-        &storage::selector_settings("copies")?,
-        "VI",
-    )?;
-    Ok(file)
+    run_workbook(app, move |state| {
+        workbook::create(
+            state,
+            "copies",
+            &file,
+            &sheets,
+            &storage::selector_settings("copies")?,
+            "VI",
+        )?;
+        Ok(file)
+    })
+    .await
 }
 #[tauri::command]
-fn clear_copies_cache(state: State<'_, workbook::State>) -> Result<bool, String> {
-    state.clear("copies")
+async fn clear_copies_cache(app: tauri::AppHandle) -> Result<bool, String> {
+    run_workbook(app, |state| state.clear("copies")).await
 }
 #[tauri::command]
 fn parse_translation_rows(rows: Vec<Vec<String>>) -> Result<Option<serde_json::Value>, String> {

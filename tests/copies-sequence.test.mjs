@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compactReferenceNumbers, compactSortedReferenceNumbers, distributeRows, insertReferenceNumber, inspectAdjacentReferenceNumbers, inspectReferenceNumbers, nextReferenceNumber } from '../src/copiesSequence.ts';
+import { compactReferenceNumbers, compactSortedReferenceNumbers, distributeRows, insertReferenceNumber, inspectAdjacentReferenceNumbers, inspectReferenceNumbers, inspectSheetReferenceNumbers, nextReferenceNumber } from '../src/copiesSequence.ts';
 
 test('Copies reference numbers continue from the previous sheet and insert custom numbers without replacing rows', () => {
   const priorSheet = [{ refNo: '01' }, { refNo: '10' }];
@@ -33,6 +33,24 @@ test('Copies Ref. No. audit reports compact gaps and ignores invalid values', ()
   assert.deepEqual(inspectReferenceNumbers(['3', '4', '5']), { checked: 3, min: 3, max: 5, ranges: [], missingCount: 0 });
   assert.deepEqual(inspectReferenceNumbers(['1', '', '4', 'bad', '8', '0', '2.5']), { checked: 3, min: 1, max: 8, ranges: [{ start: 2, end: 3 }, { start: 5, end: 7 }], missingCount: 5 });
   assert.deepEqual(inspectReferenceNumbers(['1', '900000000000000']), { checked: 2, min: 1, max: 900000000000000, ranges: [{ start: 2, end: 899999999999999 }], missingCount: 899999999999998 });
+});
+
+test('Copies Ref. No. workbook audit reports gaps independently for every sheet', () => {
+  assert.deepEqual(inspectSheetReferenceNumbers([
+    { name: 'First', rows: [{ refNo: '1' }, { refNo: '3' }, { refNo: '3' }, { refNo: 'bad' }] },
+    { name: 'No gaps', rows: [{ refNo: '4' }, { refNo: '5' }] },
+    { name: 'Empty', rows: [] },
+    { name: 'Second gap', rows: [{ refNo: '10' }, { refNo: '12' }] }
+  ]), {
+    checked: 6,
+    missingCount: 2,
+    sheets: [
+      { name: 'First', checked: 2, min: 1, max: 3, ranges: [{ start: 2, end: 2 }], missingCount: 1 },
+      { name: 'No gaps', checked: 2, min: 4, max: 5, ranges: [], missingCount: 0 },
+      { name: 'Empty', checked: 0, min: null, max: null, ranges: [], missingCount: 0 },
+      { name: 'Second gap', checked: 2, min: 10, max: 12, ranges: [{ start: 11, end: 11 }], missingCount: 1 }
+    ]
+  });
 });
 
 test('Copies adjacent-sheet Ref. No. audit checks pair gaps and the row-order boundary', () => {

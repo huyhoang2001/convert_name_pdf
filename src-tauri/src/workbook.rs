@@ -5,7 +5,7 @@ use std::{
     fs,
     io::Cursor,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{Arc, Mutex},
 };
 use umya_spreadsheet::{
     self as xlsx,
@@ -136,8 +136,13 @@ const C_ALIASES: [&[&str]; 7] = [
 #[derive(Default)]
 pub struct State {
     imported: Mutex<HashMap<PathBuf, (String, HashMap<String, String>)>>,
+    operation: Arc<tokio::sync::Mutex<()>>,
 }
 impl State {
+    pub fn operation_lock(&self) -> Arc<tokio::sync::Mutex<()>> {
+        self.operation.clone()
+    }
+
     pub fn clear(&self, kind: &str) -> Result<bool, String> {
         self.imported
             .lock()
@@ -813,6 +818,17 @@ fn append_register(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn workbook_operations_share_an_exclusive_lock() {
+        let state = State::default();
+        let first = state.operation_lock();
+        let second = state.operation_lock();
+        let guard = first.clone().try_lock_owned().unwrap();
+        assert!(second.try_lock_owned().is_err());
+        drop(guard);
+        assert!(first.try_lock_owned().is_ok());
+    }
+
     #[test]
     fn date_text_parses_excel_serial_times_and_day_first_dates() {
         assert_eq!(date_text("46026.7083333333"), "2026-01-04");

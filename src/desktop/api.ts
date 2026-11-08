@@ -15,11 +15,13 @@ const newWorkbook = async <T>(command: string, sheets: unknown, name: string): P
   return file ? invoke<T>(command, { file, sheets }) : null;
 };
 
-export const desktopApi: Window['pdfApp'] = {
+export const desktopApi: Window['pdfApp'] & { getCalendarRebuildStatus: () => Promise<{ completed: number; total: number } | null>; cancelCalendarRebuild: () => Promise<void> } = {
   getCalendarData: () => invoke('get_calendar_data'),
   saveCalendarData: value => invoke('save_calendar_data', { value }),
   queryCalendarData: (startDate, endDate, boardView) => invoke('query_calendar_data', { startDate, endDate, boardView }),
   saveCalendarChanges: (value, expectedUpdatedAt, deletedIds) => invoke('save_calendar_changes', { value, expectedUpdatedAt, deletedIds }),
+  getCalendarRebuildStatus: () => invoke('calendar_rebuild_status'),
+  cancelCalendarRebuild: () => invoke('cancel_calendar_rebuild'),
   pickFolder: folder,
   pickDestination: async () => folder(),
   getDestinations: () => invoke('get_destinations'),

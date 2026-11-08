@@ -1,4 +1,4 @@
-use chrono::{DateTime, Duration, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, Duration, Months, NaiveDate, Utc};
 use serde_json::{Map, Value, json};
 use std::{
     collections::{HashMap, HashSet},
@@ -34,29 +34,20 @@ pub fn user_dir() -> Result<PathBuf, String> {
 static CALENDAR_LOCK: Mutex<()> = Mutex::new(());
 const CALENDAR_FILE: &str = "calendar.json";
 const BOARD_DONE_MS: i64 = 72 * 60 * 60 * 1000;
+mod calendar_shards;
 
 pub fn calendar_data() -> Result<Value, String> {
     let _guard = CALENDAR_LOCK.lock().map_err(|_| "Calendar storage is busy.")?;
-    let path = file(CALENDAR_FILE)?;
-    let mut data = read_calendar_at(&path)?;
-    if normalize_legacy_completions(&mut data, &Utc::now().to_rfc3339()) {
-        validate_calendar(&data)?;
-        write_at(&path, &data)?;
-    }
-    Ok(data)
+    let base = user_dir()?;
+    let _process_guard = calendar_shards::process_lock(&base)?;
+    calendar_shards::full(&base)
 }
 
 pub fn save_calendar_data(value: Value) -> Result<Value, String> {
     let _guard = CALENDAR_LOCK.lock().map_err(|_| "Calendar storage is busy.")?;
-    let path = file(CALENDAR_FILE)?;
-    let mut data = value;
-    validate_calendar(&data)?;
-    let existing = read_calendar_at(&path)?;
-    preserve_locked_starts(&existing, &mut data);
-    normalize_legacy_completions(&mut data, &Utc::now().to_rfc3339());
-    validate_calendar(&data)?;
-    write_at(&path, &data)?;
-    Ok(data)
+    let base = user_dir()?;
+    let _process_guard = calendar_shards::process_lock(&base)?;
+    calendar_shards::replace(&base, value)
 }
 
 pub fn query_calendar_data(start_date: String, end_date: String, board_view: bool) -> Result<Value, String> {
@@ -64,10 +55,12 @@ pub fn query_calendar_data(start_date: String, end_date: String, board_view: boo
     let end = NaiveDate::parse_from_str(&end_date, "%Y-%m-%d").map_err(|_| "Calendar date range is invalid.")?;
     if start > end { return Err("Calendar date range is invalid.".into()); }
     let _guard = CALENDAR_LOCK.lock().map_err(|_| "Calendar storage is busy.")?;
-    let path = file(CALENDAR_FILE)?;
-    query_calendar_at(&path, &start_date, &end_date, board_view)
+    let base = user_dir()?;
+    let _process_guard = calendar_shards::process_lock(&base)?;
+    calendar_shards::query(&base, &start_date, &end_date, board_view)
 }
 
+#[cfg(test)]
 fn query_calendar_at(path: &Path, start_date: &str, end_date: &str, board_view: bool) -> Result<Value, String> {
     let start = NaiveDate::parse_from_str(start_date, "%Y-%m-%d").map_err(|_| "Calendar date range is invalid.")?;
     let end = NaiveDate::parse_from_str(end_date, "%Y-%m-%d").map_err(|_| "Calendar date range is invalid.")?;
@@ -75,24 +68,21 @@ fn query_calendar_at(path: &Path, start_date: &str, end_date: &str, board_view: 
     let mut data = read_calendar_at(&path)?;
     if normalize_legacy_completions(&mut data, &Utc::now().to_rfc3339()) {
         validate_calendar(&data)?;
-        write_at(path, &data)?;
+        write_calendar_at(path, &data)?;
     }
     let now = Utc::now();
     let range_start = start.format("%Y-%m-%d").to_string();
     let range_end = end.format("%Y-%m-%d").to_string();
-    let all_items = data["items"].as_array().cloned().unwrap_or_default();
-    let category_counts = calendar_category_counts(&all_items, &data["categories"]);
-    let mut seen = HashSet::new();
-    let items = all_items.into_iter().filter(|item| {
-        let id = item["id"].as_str().unwrap_or("");
-        if !seen.insert(id.to_string()) { return false; }
+    let all_items = data["items"].as_array().map(Vec::as_slice).unwrap_or_default();
+    let category_counts = calendar_category_counts(all_items, &data["categories"]);
+    let items = all_items.iter().filter(|item| {
         let status = item["status"].as_str().unwrap_or("todo");
         if board_view && item["kind"] == "task" {
             return status != "done" || board_done_visible(item, &now);
         }
         if overlaps_range(item, &range_start, &range_end) { return true; }
         if item["recurrence"].as_str().is_some_and(|value| !value.is_empty()) {
-            return calendar_date(item, "originalStart", "start") <= range_end;
+            if recurrence_overlaps_range(item, start, end) { return true; }
         }
         // Reminders only need near-term active records; old history stays out of the UI payload.
         if status != "done" && item["reminder"].as_i64().unwrap_or(0) != 0 {
@@ -101,7 +91,7 @@ fn query_calendar_at(path: &Path, start_date: &str, end_date: &str, board_view: 
             return due >= today && due <= (now + Duration::days(1)).format("%Y-%m-%d").to_string();
         }
         false
-    }).collect::<Vec<_>>();
+    }).cloned().collect::<Vec<_>>();
     let mut result = data;
     result["items"] = json!(items);
     result["categoryCounts"] = category_counts;
@@ -114,17 +104,38 @@ pub fn save_calendar_changes(
     deleted_ids: Vec<String>,
 ) -> Result<(), String> {
     let _guard = CALENDAR_LOCK.lock().map_err(|_| "Calendar storage is busy.")?;
-    let path = file(CALENDAR_FILE)?;
-    save_calendar_changes_at(&path, value, expected_updated_at, deleted_ids)
+    let base = user_dir()?;
+    let _process_guard = calendar_shards::process_lock(&base)?;
+    calendar_shards::changes(&base, value, expected_updated_at, deleted_ids)
 }
 
+pub fn calendar_rebuild_status() -> Option<Value> { calendar_shards::rebuild_status(&user_dir().ok()?) }
+pub fn cancel_calendar_rebuild() -> Result<(), String> { calendar_shards::cancel_rebuild(&user_dir()?) }
+
+#[cfg(test)]
 fn save_calendar_changes_at(path: &Path, value: Value, expected_updated_at: HashMap<String, Option<String>>, deleted_ids: Vec<String>) -> Result<(), String> {
     validate_calendar(&value)?;
     if deleted_ids.len() > 10_000 || deleted_ids.iter().any(|id| id.is_empty() || id.len() > 100) {
         return Err("Calendar delete request is invalid.".into());
     }
+    let incoming = value["items"].as_array().ok_or("Calendar data has no items.")?;
+    let incoming_ids = incoming.iter().filter_map(|item| item["id"].as_str()).collect::<HashSet<_>>();
+    let delete_set = deleted_ids.iter().map(String::as_str).collect::<HashSet<_>>();
+    if delete_set.len() != deleted_ids.len() || incoming_ids.iter().any(|id| delete_set.contains(id)) {
+        return Err("Calendar change request contains duplicate or conflicting item IDs.".into());
+    }
     let mut data = read_calendar_at(&path)?;
     normalize_legacy_completions(&mut data, &Utc::now().to_rfc3339());
+    let item_indexes = {
+        let original_items = data["items"].as_array().ok_or("Calendar data has no items.")?;
+        let indexes = original_items.iter().enumerate().filter_map(|(index, item)| item["id"].as_str().map(|id| (id.to_string(), index))).collect::<HashMap<_, _>>();
+        for id in incoming_ids.iter().chain(delete_set.iter()) {
+            let expected = expected_updated_at.get(*id).ok_or("Calendar changed elsewhere. Reload and try again.")?;
+            let actual = indexes.get(*id).and_then(|index| original_items[*index]["updatedAt"].as_str());
+            if actual != expected.as_deref() { return Err("Calendar changed elsewhere. Reload and try again.".into()); }
+        }
+        indexes
+    };
     let old_categories = data["categories"].as_array().cloned().unwrap_or_default();
     let new_categories = value["categories"].as_array().cloned().unwrap_or_default();
     apply_category_changes(&mut data, &old_categories, &new_categories);
@@ -133,30 +144,18 @@ fn save_calendar_changes_at(path: &Path, value: Value, expected_updated_at: Hash
 
     let now = Utc::now().to_rfc3339();
     let items = data["items"].as_array_mut().ok_or("Calendar data has no items.")?;
-    for incoming in value["items"].as_array().ok_or("Calendar data has no items.")? {
+    for incoming in incoming {
         let id = incoming["id"].as_str().ok_or("Calendar item has an invalid ID.")?;
-        let existing_index = items.iter().position(|item| item["id"] == id);
+        let existing_index = item_indexes.get(id).copied();
         let existing = existing_index.map(|index| items[index].clone());
-        let expected = expected_updated_at.get(id).ok_or("Calendar changed elsewhere. Reload and try again.")?;
-        if existing.as_ref().and_then(|item| item["updatedAt"].as_str()) != expected.as_deref() {
-            return Err("Calendar changed elsewhere. Reload and try again.".into());
-        }
         let mut item = merge_item(existing.as_ref(), incoming);
         apply_completion_transition(existing.as_ref(), &mut item, &now);
-        validate_calendar_item(&item)?;
         if let Some(index) = existing_index { items[index] = item; } else { items.push(item); }
     }
-    for id in &deleted_ids {
-        let expected = expected_updated_at.get(id).ok_or("Calendar changed elsewhere. Reload and try again.")?;
-        let index = items.iter().position(|item| item["id"].as_str() == Some(id));
-        if index.and_then(|i| items[i]["updatedAt"].as_str()) != expected.as_deref() {
-            return Err("Calendar changed elsewhere. Reload and try again.".into());
-        }
-        if let Some(index) = index { items.remove(index); }
-    }
+    items.retain(|item| !delete_set.contains(item["id"].as_str().unwrap_or("")));
     data["schemaVersion"] = json!(1);
     validate_calendar(&data)?;
-    write_at(path, &data)
+    write_calendar_at(path, &data)
 }
 
 fn read_calendar_at(path: &Path) -> Result<Value, String> {
@@ -177,19 +176,50 @@ fn overlaps_range(item: &Value, start: &str, end: &str) -> bool {
     let item_end = date_part(item.get("due").unwrap_or(&Value::Null));
     !item_start.is_empty() && !item_end.is_empty() && item_start.as_str() <= end && item_end.as_str() >= start
 }
+fn recurrence_overlaps_range(item: &Value, start: NaiveDate, end: NaiveDate) -> bool {
+    let Some(base) = NaiveDate::parse_from_str(&calendar_date(item, "originalStart", "start"), "%Y-%m-%d").ok() else { return false; };
+    if base > end { return false; }
+    let recurrence = item["recurrence"].as_str().unwrap_or("");
+    let duration = if item["kind"] == "event" {
+        NaiveDate::parse_from_str(&date_part(item.get("due").unwrap_or(&Value::Null)), "%Y-%m-%d").ok().map(|due| due.signed_duration_since(base).num_days().max(0)).unwrap_or(0)
+    } else { 0 };
+    let continuous_gap = match recurrence { "daily" => 1, "weekly" => 7, "monthly" => 62, "yearly" => 1461, _ => return false };
+    if duration >= continuous_gap { return true; }
+    let lower = start.checked_sub_signed(Duration::days(duration)).unwrap_or(NaiveDate::MIN).max(base);
+    if lower > end { return false; }
+    match recurrence {
+        "daily" => true,
+        "weekly" => {
+            let elapsed = lower.signed_duration_since(base).num_days();
+            let offset = elapsed + (7 - elapsed % 7) % 7;
+            base.checked_add_signed(Duration::days(offset)).is_some_and(|date| date <= end)
+        }
+        "monthly" => {
+            let Some(mut month) = lower.with_day(1) else { return false; };
+            let last = end.with_day(1).unwrap_or(end);
+            while month <= last {
+                if month.with_day(base.day()).is_some_and(|date| date >= lower && date <= end) { return true; }
+                let Some(next) = month.checked_add_months(Months::new(1)) else { break; };
+                month = next;
+            }
+            false
+        }
+        "yearly" => (lower.year()..=end.year()).any(|year| NaiveDate::from_ymd_opt(year, base.month(), base.day()).is_some_and(|date| date >= lower && date <= end)),
+        _ => false,
+    }
+}
 fn board_done_visible(item: &Value, now: &DateTime<Utc>) -> bool {
     item.get("completedAt").or_else(|| item.get("completionObservedAt"))
         .and_then(Value::as_str).and_then(|stamp| DateTime::parse_from_rfc3339(stamp).ok())
         .is_some_and(|stamp| (0..BOARD_DONE_MS).contains(&now.signed_duration_since(stamp.with_timezone(&Utc)).num_milliseconds()))
 }
+#[cfg(test)]
 fn calendar_category_counts(items: &[Value], categories: &Value) -> Value {
-    let mut counts = serde_json::Map::new();
-    if let Some(categories) = categories.as_array() {
-        for category in categories.iter().filter_map(Value::as_str) {
-            counts.insert(category.to_string(), json!(items.iter().filter(|item| item["category"] == category).count()));
-        }
+    let mut totals = HashMap::<&str, usize>::new();
+    for item in items {
+        if let Some(category) = item["category"].as_str() { *totals.entry(category).or_default() += 1; }
     }
-    Value::Object(counts)
+    Value::Object(categories.as_array().into_iter().flatten().filter_map(Value::as_str).map(|category| (category.to_string(), json!(totals.get(category).copied().unwrap_or(0)))).collect())
 }
 fn normalize_legacy_completions(data: &mut Value, observed_at: &str) -> bool {
     let mut changed = false;
@@ -223,9 +253,10 @@ fn normalize_legacy_completions(data: &mut Value, observed_at: &str) -> bool {
 fn preserve_locked_starts(existing: &Value, replacement: &mut Value) {
     let Some(old_items) = existing["items"].as_array() else { return; };
     let Some(new_items) = replacement["items"].as_array_mut() else { return; };
+    let old_by_id = old_items.iter().filter_map(|item| item["id"].as_str().map(|id| (id, item))).collect::<HashMap<_, _>>();
     for item in new_items {
         let id = item["id"].as_str().unwrap_or("");
-        if let Some(old) = old_items.iter().find(|old| old["id"].as_str() == Some(id)) {
+        if let Some(old) = old_by_id.get(id) {
             let original = old.get("originalStart").or_else(|| {
                 (old["status"] == "done" || old.get("completedAt").is_some() || old.get("completionObservedAt").is_some()).then(|| old.get("start")).flatten()
             });
@@ -278,13 +309,16 @@ fn apply_completion_transition(existing: Option<&Value>, item: &mut Value, now: 
     item["updatedAt"] = json!(now);
 }
 fn apply_category_changes(data: &mut Value, old: &[Value], new: &[Value]) {
-    let removed = old.iter().filter(|value| !new.contains(value)).filter_map(Value::as_str).collect::<Vec<_>>();
-    let added = new.iter().filter(|value| !old.contains(value)).filter_map(Value::as_str).collect::<Vec<_>>();
+    let old_set = old.iter().filter_map(Value::as_str).collect::<HashSet<_>>();
+    let new_set = new.iter().filter_map(Value::as_str).collect::<HashSet<_>>();
+    let removed = old.iter().filter_map(Value::as_str).filter(|value| !new_set.contains(value)).collect::<Vec<_>>();
+    let added = new.iter().filter_map(Value::as_str).filter(|value| !old_set.contains(value)).collect::<Vec<_>>();
     let renamed = if removed.len() == 1 && added.len() == 1 { Some((removed[0], added[0])) } else { None };
+    let removed_set = removed.iter().copied().collect::<HashSet<_>>();
     if let Some(items) = data["items"].as_array_mut() {
         for item in items {
             if renamed.is_some_and(|(from, _)| item["category"] == from) { item["category"] = json!(renamed.unwrap().1); }
-            else if removed.iter().any(|from| item["category"] == *from) { item["category"] = json!(""); }
+            else if item["category"].as_str().is_some_and(|category| removed_set.contains(category)) { item["category"] = json!(""); }
         }
     }
     if let Some((from, to)) = renamed {
@@ -295,20 +329,15 @@ fn apply_category_changes(data: &mut Value, old: &[Value], new: &[Value]) {
         for category in removed { colors.remove(category); }
     }
 }
-fn validate_calendar_item(item: &Value) -> Result<(), String> {
-    let wrapper = json!({"schemaVersion":1,"categories":[],"items":[item]});
-    validate_calendar(&wrapper)
-}
-
 fn validate_calendar(value: &Value) -> Result<(), String> {
+    validate_calendar_limit(value, true)
+}
+fn validate_calendar_limit(value: &Value, limited: bool) -> Result<(), String> {
     if value["schemaVersion"] != 1 || !value["items"].is_array() || !value["categories"].is_array() {
         return Err("Calendar data has an unsupported or invalid format.".into());
     }
-    if value["items"].as_array().unwrap().len() > 10_000 || value["categories"].as_array().unwrap().len() > 100 {
+    if (limited && value["items"].as_array().unwrap().len() > 10_000) || value["categories"].as_array().unwrap().len() > 100 {
         return Err("Calendar data exceeds the record limit.".into());
-    }
-    if serde_json::to_vec(value).map_err(|e| e.to_string())?.len() > 10_000_000 {
-        return Err("Calendar data exceeds the 10 MB safety limit.".into());
     }
     let mut ids = HashSet::new();
     for item in value["items"].as_array().unwrap() {
@@ -372,10 +401,10 @@ fn validate_calendar(value: &Value) -> Result<(), String> {
 
 #[cfg(test)]
 mod calendar_tests {
-    use super::{apply_completion_transition, board_done_visible, normalize_legacy_completions, overlaps_range, preserve_locked_starts, query_calendar_at, read_calendar_at, save_calendar_changes_at, validate_calendar, write_at, Value, BOARD_DONE_MS};
+    use super::{apply_completion_transition, board_done_visible, calendar_category_counts, normalize_legacy_completions, overlaps_range, preserve_locked_starts, query_calendar_at, read_calendar_at, save_calendar_changes_at, validate_calendar, write_at, write_calendar_at, Value, BOARD_DONE_MS};
     use chrono::{DateTime, Duration, Utc};
     use serde_json::json;
-    use std::{collections::HashMap, fs, path::{Path, PathBuf}};
+    use std::{collections::{HashMap, HashSet}, fs, path::{Path, PathBuf}};
     use uuid::Uuid;
 
     fn temp_calendar() -> PathBuf {
@@ -461,6 +490,8 @@ mod calendar_tests {
         assert!(board_done_visible(&completed, &(instant + Duration::milliseconds(BOARD_DONE_MS - 1))));
         assert!(!board_done_visible(&completed, &(instant + Duration::milliseconds(BOARD_DONE_MS))));
         assert!(!board_done_visible(&completed, &(instant + Duration::hours(73))));
+        assert!(!board_done_visible(&completed, &(instant - Duration::milliseconds(1))));
+        assert!(!board_done_visible(&json!({"completedAt":"not-a-date"}), &instant));
     }
 
     #[test]
@@ -534,6 +565,101 @@ mod calendar_tests {
         assert!(!ids.contains(&"expired-task"));
         remove_temp(&path);
     }
+
+    #[test]
+    fn range_query_returns_only_recurrences_with_an_occurrence_in_view() {
+        let path = temp_calendar();
+        let data = json!({"schemaVersion":1,"categories":[],"items":[
+            {"id":"daily","kind":"task","title":"Daily","status":"todo","priority":"normal","start":"2020-01-01","due":"2020-01-01","recurrence":"daily","checklist":[],"progress":0},
+            {"id":"not-in-view","kind":"task","title":"Yearly other day","status":"todo","priority":"normal","start":"2020-11-07","due":"2020-11-07","recurrence":"yearly","checklist":[],"progress":0},
+            {"id":"multi-event","kind":"event","title":"Multi-day recurrence","status":"todo","priority":"normal","start":"2020-11-08T09:00:00-05:00","due":"2020-11-10","recurrence":"yearly","checklist":[],"progress":0,"endTime":"10:00"},
+            {"id":"old","kind":"task","title":"Old history","status":"done","priority":"normal","start":"2010-01-01","due":"2010-01-01","checklist":[],"progress":0}
+        ]});
+        write_at(&path, &data).unwrap();
+        let result = query_calendar_at(&path, "2026-11-09", "2026-11-09", false).unwrap();
+        let ids = result["items"].as_array().unwrap().iter().map(|item| item["id"].as_str().unwrap()).collect::<HashSet<_>>();
+        assert!(ids.contains("daily"));
+        assert!(ids.contains("multi-event"));
+        assert!(!ids.contains("not-in-view"));
+        assert!(!ids.contains("old"));
+        remove_temp(&path);
+    }
+
+    #[test]
+    fn category_counts_include_zeroes_and_count_items_in_one_result() {
+        let items = vec![json!({"category":"Work"}), json!({"category":"Home"}), json!({"category":"Work"})];
+        assert_eq!(calendar_category_counts(&items, &json!(["Work", "Home", "Empty"])), json!({"Work":2,"Home":1,"Empty":0}));
+    }
+
+    #[test]
+    fn category_rename_and_delete_include_records_outside_the_queried_range() {
+        let path = temp_calendar();
+        let original = json!({"schemaVersion":1,"categories":["Work","Home"],"categoryColors":{"Work":"#ef476f","Home":"#3a86ff"},"items":[
+            {"id":"visible","kind":"task","title":"Visible","category":"Work","status":"todo","priority":"normal","start":"2026-11-08","due":"2026-11-08","checklist":[],"progress":0,"updatedAt":"v1"},
+            {"id":"hidden","kind":"task","title":"Hidden history","category":"Work","status":"done","priority":"normal","start":"2010-01-01","due":"2010-01-01","checklist":[],"progress":0,"updatedAt":"v2","vendorField":{"kept":true}},
+            {"id":"home","kind":"task","title":"Other category","category":"Home","status":"todo","priority":"normal","start":"2026-11-08","due":"2026-11-08","checklist":[],"progress":0,"updatedAt":"v3"}
+        ]});
+        write_at(&path, &original).unwrap();
+        let narrow = query_calendar_at(&path, "2026-11-08", "2026-11-08", false).unwrap();
+        assert_eq!(narrow["items"].as_array().unwrap().len(), 2);
+        assert_eq!(narrow["categoryCounts"]["Work"], 2);
+        let mut visible = narrow["items"][0].clone(); visible["title"] = json!("Visible edited"); visible["category"] = json!("Office");
+        let mut expected = HashMap::new(); expected.insert("visible".into(), Some("v1".into()));
+        save_calendar_changes_at(&path, json!({"schemaVersion":1,"categories":["Office","Home"],"categoryColors":{"Office":"#ef476f","Home":"#3a86ff"},"items":[visible]}), expected, vec![]).unwrap();
+        let renamed = read_calendar_at(&path).unwrap();
+        assert_eq!(renamed["items"][0]["category"], "Office");
+        assert_eq!(renamed["items"][0]["title"], "Visible edited");
+        assert_eq!(renamed["items"][1]["category"], "Office");
+        assert_eq!(renamed["items"][1]["vendorField"]["kept"], true);
+        assert_eq!(renamed["items"][1]["id"], "hidden");
+        assert_eq!(renamed["categoryColors"]["Office"], "#ef476f");
+        save_calendar_changes_at(&path, json!({"schemaVersion":1,"categories":["Office"],"categoryColors":{"Office":"#ef476f"},"items":[]}), HashMap::new(), vec![]).unwrap();
+        let deleted = read_calendar_at(&path).unwrap();
+        assert_eq!(deleted["items"][0]["category"], "Office");
+        assert_eq!(deleted["items"][2]["category"], "");
+        assert!(deleted["categoryColors"].get("Home").is_none());
+        remove_temp(&path);
+    }
+
+    #[test]
+    fn indexed_changes_keep_order_append_new_items_and_validate_before_writing() {
+        let path = temp_calendar();
+        let original = json!({"schemaVersion":1,"categories":[],"items":[
+            {"id":"a","kind":"task","title":"A","status":"todo","priority":"normal","start":"2026-11-08","due":"2026-11-08","checklist":[],"progress":0,"updatedAt":"v1"},
+            {"id":"b","kind":"task","title":"B","status":"todo","priority":"normal","start":"2026-11-08","due":"2026-11-08","checklist":[],"progress":0,"updatedAt":"v2"},
+            {"id":"c","kind":"task","title":"C","status":"todo","priority":"normal","start":"2026-11-08","due":"2026-11-08","checklist":[],"progress":0,"updatedAt":"v3"}
+        ]});
+        write_at(&path, &original).unwrap();
+        let mut expected = HashMap::new(); expected.insert("c".into(), Some("v3".into())); expected.insert("d".into(), None); expected.insert("b".into(), Some("v2".into()));
+        let mut changed = original["items"][2].clone(); changed["title"] = json!("C edited");
+        let new_item = json!({"id":"d","kind":"task","title":"D","status":"todo","priority":"normal","start":"2026-11-08","due":"2026-11-08","checklist":[],"progress":0});
+        save_calendar_changes_at(&path, json!({"schemaVersion":1,"categories":[],"items":[changed, new_item]}), expected, vec!["b".into()]).unwrap();
+        let saved = read_calendar_at(&path).unwrap();
+        let ids = saved["items"].as_array().unwrap().iter().map(|item| item["id"].as_str().unwrap()).collect::<Vec<_>>();
+        assert_eq!(ids, ["a", "c", "d"]);
+        assert_eq!(saved["items"][1]["title"], "C edited");
+        let before = fs::read(&path).unwrap();
+        let mut expected = HashMap::new(); expected.insert("a".into(), Some("v1".into()));
+        let conflict = save_calendar_changes_at(&path, json!({"schemaVersion":1,"categories":[],"items":[saved["items"][0].clone()]}), expected.clone(), vec!["a".into()]);
+        assert!(conflict.is_err());
+        assert_eq!(fs::read(&path).unwrap(), before);
+        assert!(save_calendar_changes_at(&path, json!({"schemaVersion":1,"categories":[],"items":[]}), HashMap::new(), vec!["a".into(), "a".into()]).is_err());
+        remove_temp(&path);
+    }
+
+    #[test]
+    fn calendar_size_limit_checks_the_actual_pretty_bytes_before_replacing_file() {
+        let path = temp_calendar();
+        let original = json!({"schemaVersion":1,"categories":[],"items":[]});
+        write_at(&path, &original).unwrap();
+        let before = fs::read(&path).unwrap();
+        let too_large = json!({"schemaVersion":1,"categories":[],"items":[{"id":"large","kind":"task","title":"Large","description":"x".repeat(10_000_001),"status":"todo","priority":"normal","start":"2026-11-08","due":"2026-11-08","checklist":[],"progress":0}]});
+        assert!(write_calendar_at(&path, &too_large).is_err());
+        assert_eq!(fs::read(&path).unwrap(), before);
+        remove_temp(&path);
+    }
+
+
 }
 fn file(name: &str) -> Result<PathBuf, String> {
     Ok(user_dir()?.join(name))
@@ -551,6 +677,16 @@ fn write(name: &str, value: &Value) -> Result<(), String> {
     write_at(&path, value)
 }
 fn write_at(path: &Path, value: &Value) -> Result<(), String> {
+    let bytes = serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?;
+    write_bytes_at(path, &bytes)
+}
+#[cfg(test)]
+fn write_calendar_at(path: &Path, value: &Value) -> Result<(), String> {
+    let bytes = serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?;
+    if bytes.len() > 10_000_000 { return Err("Calendar data exceeds the 10 MB safety limit.".into()); }
+    write_bytes_at(path, &bytes)
+}
+fn write_bytes_at(path: &Path, bytes: &[u8]) -> Result<(), String> {
     fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
     if path.exists() {
         let backup = path.with_extension("json.b6h-electron-backup");
@@ -559,12 +695,15 @@ fn write_at(path: &Path, value: &Value) -> Result<(), String> {
         }
     }
     let temp = path.with_extension(format!("{}.tmp", Uuid::new_v4()));
-    fs::write(
-        &temp,
-        serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())?;
-    fs::rename(&temp, &path).map_err(|e| e.to_string())
+    if let Err(error) = fs::write(&temp, bytes) {
+        let _ = fs::remove_file(&temp);
+        return Err(error.to_string());
+    }
+    if let Err(error) = fs::rename(&temp, path) {
+        let _ = fs::remove_file(&temp);
+        return Err(error.to_string());
+    }
+    Ok(())
 }
 fn chat_path() -> Result<PathBuf, String> {
     Ok(user_dir()?.join("chat-session.json"))

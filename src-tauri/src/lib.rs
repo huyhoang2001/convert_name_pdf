@@ -476,13 +476,25 @@ fn save_word_settings(value: serde_json::Value) -> Result<serde_json::Value, Str
     storage::save_word_settings(value)
 }
 #[tauri::command]
-fn get_calendar_data() -> Result<serde_json::Value, String> { storage::calendar_data() }
+async fn get_calendar_data() -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(storage::calendar_data).await.map_err(|e| e.to_string())?
+}
 #[tauri::command]
-fn save_calendar_data(value: serde_json::Value) -> Result<serde_json::Value, String> { storage::save_calendar_data(value) }
+async fn save_calendar_data(value: serde_json::Value) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || storage::save_calendar_data(value)).await.map_err(|e| e.to_string())?
+}
 #[tauri::command]
-fn query_calendar_data(start_date: String, end_date: String, board_view: bool) -> Result<serde_json::Value, String> { storage::query_calendar_data(start_date, end_date, board_view) }
+async fn query_calendar_data(start_date: String, end_date: String, board_view: bool) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || storage::query_calendar_data(start_date, end_date, board_view)).await.map_err(|e| e.to_string())?
+}
 #[tauri::command]
-fn save_calendar_changes(value: serde_json::Value, expected_updated_at: std::collections::HashMap<String, Option<String>>, deleted_ids: Vec<String>) -> Result<(), String> { storage::save_calendar_changes(value, expected_updated_at, deleted_ids) }
+async fn save_calendar_changes(value: serde_json::Value, expected_updated_at: std::collections::HashMap<String, Option<String>>, deleted_ids: Vec<String>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || storage::save_calendar_changes(value, expected_updated_at, deleted_ids)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+fn calendar_rebuild_status() -> Option<serde_json::Value> { storage::calendar_rebuild_status() }
+#[tauri::command]
+fn cancel_calendar_rebuild() -> Result<(), String> { storage::cancel_calendar_rebuild() }
 #[tauri::command]
 async fn list_word_templates() -> Result<Vec<word::TemplateEntry>, String> {
     tauri::async_runtime::spawn_blocking(word::templates)
@@ -758,6 +770,8 @@ pub fn run() {
             save_calendar_data,
             query_calendar_data,
             save_calendar_changes,
+            calendar_rebuild_status,
+            cancel_calendar_rebuild,
             list_word_templates,
             read_word_template,
             import_word_template,

@@ -6,9 +6,9 @@
     "semantic_hash": ""
   },
   "package.json": {
-    "mtime": 1793974988.6433136,
-    "seen": 1794086019.8244667,
-    "ast_hash": "f09738796e05f1a03f4170b0e54b34af",
+    "mtime": 1794139874.0656612,
+    "seen": 1794140085.079809,
+    "ast_hash": "27bac85fe37aa52ee089e891d42cd74f",
     "semantic_hash": ""
   },
   "scripts/native-smoke.mjs": {
@@ -24,9 +24,9 @@
     "semantic_hash": ""
   },
   "src-tauri/Cargo.toml": {
-    "mtime": 1794083628.715122,
-    "seen": 1794086019.8244855,
-    "ast_hash": "f1fbb9e5176b0f3b832ee55579a8ef72",
+    "mtime": 1794137641.5964935,
+    "seen": 1794140085.0798268,
+    "ast_hash": "8596b738acbe27260b24e6edecaf4883",
     "semantic_hash": ""
   },
   "src-tauri/build.rs": {
@@ -60,9 +60,9 @@
     "semantic_hash": ""
   },
   "src-tauri/src/lib.rs": {
-    "mtime": 1794083694.3851004,
-    "seen": 1794086019.8244963,
-    "ast_hash": "11e1b3b063b866e7fa4c51f1254d35ec",
+    "mtime": 1794118249.8069131,
+    "seen": 1794140085.0798361,
+    "ast_hash": "dc2f3b22a7047cfe9f3cce8a94484086",
     "semantic_hash": ""
   },
   "src-tauri/src/main.rs": {
@@ -78,9 +78,9 @@
     "semantic_hash": ""
   },
   "src-tauri/src/storage.rs": {
-    "mtime": 1794085094.6635122,
-    "seen": 1794086019.824501,
-    "ast_hash": "f61adf7132876a795c4440e5a90d9152",
+    "mtime": 1794118240.9824593,
+    "seen": 1794140085.0798404,
+    "ast_hash": "28443cfbc2bc6e634eadb2fc53e210e5",
     "semantic_hash": ""
   },
   "src-tauri/src/update.rs": {
@@ -96,9 +96,9 @@
     "semantic_hash": ""
   },
   "src-tauri/tauri.conf.json": {
-    "mtime": 1793974981.1240966,
-    "seen": 1794086019.8245072,
-    "ast_hash": "a01e34002b521bc777d6a800552ca64b",
+    "mtime": 1794137641.5964935,
+    "seen": 1794140085.0798483,
+    "ast_hash": "5ebbc04008378eb6d96006075f2bee8e",
     "semantic_hash": ""
   },
   "src/ChatKeySettings.tsx": {
@@ -186,9 +186,9 @@
     "semantic_hash": ""
   },
   "src/desktop/api.ts": {
-    "mtime": 1794083704.049902,
-    "seen": 1794086019.824537,
-    "ast_hash": "32a161581787fd9ecea8a97402f4b273",
+    "mtime": 1794118344.5053382,
+    "seen": 1794140085.0798812,
+    "ast_hash": "5910fb83bcbec78cbfe79fbe74c085ac",
     "semantic_hash": ""
   },
   "src/footerDate.ts": {
@@ -306,9 +306,9 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1794086011.2640254,
-    "seen": 1794086019.8246374,
-    "ast_hash": "554757a2d54946d2274b6c56950a5b50",
+    "mtime": 1794086074.1062996,
+    "seen": 1794140085.0799716,
+    "ast_hash": "3171775dacce2989e540820680822d43",
     "semantic_hash": ""
   },
   "index.html": {
@@ -648,14 +648,14 @@
     "semantic_hash": ""
   },
   "public/wordcraft/snippets/eframe-d31a8450ea12dfc1/inline0.js": {
-    "mtime": 1793857157.4549835,
-    "seen": 1793974966.3739026,
+    "mtime": 1794138330.022923,
+    "seen": 1794140085.0798123,
     "ast_hash": "cb72a7195f5f3d1b1b31bb469e655caf",
     "semantic_hash": ""
   },
   "public/wordcraft/wordcraft-web-481e7f4e00a43446.js": {
-    "mtime": 1793857157.4549835,
-    "seen": 1793974966.3739047,
+    "mtime": 1794138330.022923,
+    "seen": 1794140085.0798144,
     "ast_hash": "930cd5c722bd0e20f0a3ec282d02b9a5",
     "semantic_hash": ""
   },
@@ -780,9 +780,9 @@
     "semantic_hash": ""
   },
   "public/wordcraft/index.html": {
-    "mtime": 1793857157.4549835,
-    "seen": 1793974966.374059,
-    "ast_hash": "73b4a00d9cf79b61a08f67ef9b4b502a",
+    "mtime": 1794139880.484867,
+    "seen": 1794140085.0799975,
+    "ast_hash": "fa87e1bd6505728874a9b816a2a3e8be",
     "semantic_hash": ""
   },
   "scripts/build-wordcraft.mjs": {
@@ -803,48 +803,6 @@
     "ast_hash": "234ea8e47d383c6b8da582ed2de24df8",
     "semantic_hash": ""
   },
-  "AGENT_TASK_PRINT_FIX.md": {
-    "mtime": 1793623243.5907784,
-    "seen": 1793974966.3740277,
-    "ast_hash": "0e737f19373dfdf492f399bffd933c3f",
-    "semantic_hash": ""
-  },
-  "B6H-Local-Performance-Optimization.en.md": {
-    "mtime": 1793971925.5077362,
-    "seen": 1793974966.3740287,
-    "ast_hash": "12c44f8e37af2f8cc15a53eb3f69df59",
-    "semantic_hash": ""
-  },
-  "docs/performance/AFTER.md": {
-    "mtime": 1793973082.3063586,
-    "seen": 1793974966.3740313,
-    "ast_hash": "0522ef35e154673d2fa874c28a381042",
-    "semantic_hash": ""
-  },
-  "docs/performance/BASELINE.md": {
-    "mtime": 1793972982.7667568,
-    "seen": 1793974966.3740325,
-    "ast_hash": "ee434637e89b5f760f16857f940f8cf4",
-    "semantic_hash": ""
-  },
-  "docs/performance/RESULTS.md": {
-    "mtime": 1793973082.3073575,
-    "seen": 1793974966.3740335,
-    "ast_hash": "32d308ea72ae0fdd5b4dea9710c2e9ad",
-    "semantic_hash": ""
-  },
-  "public/wordcraft/ATTRIBUTION.md": {
-    "mtime": 1793737774.0,
-    "seen": 1793974966.3740387,
-    "ast_hash": "0d656fb4703402784e7444917a55858c",
-    "semantic_hash": ""
-  },
-  "public/wordcraft/HOSTING.md": {
-    "mtime": 1793737774.0,
-    "seen": 1793974966.374041,
-    "ast_hash": "e97d346d9e93ea0e38d2e6067eb1a995",
-    "semantic_hash": ""
-  },
   "public/wordcraft/README.md": {
     "mtime": 1793737774.0,
     "seen": 1793974966.3740578,
@@ -858,9 +816,9 @@
     "semantic_hash": ""
   },
   "src/CalendarWorkspace.tsx": {
-    "mtime": 1794084768.6996477,
-    "seen": 1794086019.8245082,
-    "ast_hash": "6cda2dce5d4692416dc84e49bffbdb2f",
+    "mtime": 1794137058.0044982,
+    "seen": 1794140085.0798495,
+    "ast_hash": "7d9bc168f188d2b2a524fe96217ae17f",
     "semantic_hash": ""
   },
   "src/chatbotSession.ts": {
@@ -887,34 +845,40 @@
     "ast_hash": "3c949ecfbc1f21e9a905bbc1b499337f",
     "semantic_hash": ""
   },
-  "B6H-Calendar-Completion-History-JSON-Only.en.md": {
-    "mtime": 1794083034.7447462,
-    "seen": 1794086019.8246305,
-    "ast_hash": "3a30d2796508350851e6d565ebde7131",
-    "semantic_hash": ""
-  },
-  "B6H-Calendar-Todo-Implementation.en.md": {
-    "mtime": 1794058648.6616101,
-    "seen": 1794086019.8246317,
-    "ast_hash": "d8c320fc9be5819d2eab665b2647e07d",
-    "semantic_hash": ""
-  },
-  "B6H-Context-Aware-Chatbot-20-Question-Session.en.md": {
-    "mtime": 1794054422.1345026,
-    "seen": 1794086019.8246331,
-    "ast_hash": "b3a1c225eed038f0b1e89c745ff79523",
-    "semantic_hash": ""
-  },
-  "B6H-Performance-Optimization-Update-2026-11-06.en.md": {
-    "mtime": 1793979542.5691164,
-    "seen": 1794086019.824636,
-    "ast_hash": "bb51072a8d120003d3c6d389f892a413",
-    "semantic_hash": ""
-  },
   "calendar-local-check.png": {
     "mtime": 1794065255.906674,
     "seen": 1794086019.8246744,
     "ast_hash": "144f26eabee9e1c6121de3d30243f578",
+    "semantic_hash": ""
+  },
+  "src-tauri/src/storage/calendar_shards.rs": {
+    "mtime": 1794137053.381982,
+    "seen": 1794140085.0798423,
+    "ast_hash": "58460245c258c466002b68b19732608c",
+    "semantic_hash": ""
+  },
+  "src/calendarLogic.ts": {
+    "mtime": 1794108838.394802,
+    "seen": 1794140085.0798626,
+    "ast_hash": "12074f74ef2a28a2bf6efc9db584dfc2",
+    "semantic_hash": ""
+  },
+  "src/calendarNotifications.ts": {
+    "mtime": 1794133583.6674435,
+    "seen": 1794140085.0798638,
+    "ast_hash": "3cfd5b34e71d77358990bb00bcdb803a",
+    "semantic_hash": ""
+  },
+  "tests/calendarLogic.test.mjs": {
+    "mtime": 1794107755.251448,
+    "seen": 1794140085.0799284,
+    "ast_hash": "8decf117539074d7712795745726dcf7",
+    "semantic_hash": ""
+  },
+  "tests/calendarNotifications.test.mjs": {
+    "mtime": 1794133485.298214,
+    "seen": 1794140085.0799296,
+    "ast_hash": "c66bc3dee8743d65fe140d189a68bae5",
     "semantic_hash": ""
   }
 }

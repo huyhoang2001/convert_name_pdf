@@ -484,6 +484,14 @@ async fn save_calendar_data(value: serde_json::Value) -> Result<serde_json::Valu
     tauri::async_runtime::spawn_blocking(move || storage::save_calendar_data(value)).await.map_err(|e| e.to_string())?
 }
 #[tauri::command]
+async fn write_calendar_backup(file: String, contents: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        std::fs::write(file, contents).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
 async fn query_calendar_data(start_date: String, end_date: String, board_view: bool) -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(move || storage::query_calendar_data(start_date, end_date, board_view)).await.map_err(|e| e.to_string())?
 }
@@ -768,6 +776,7 @@ pub fn run() {
             save_word_settings,
             get_calendar_data,
             save_calendar_data,
+            write_calendar_backup,
             query_calendar_data,
             save_calendar_changes,
             calendar_rebuild_status,

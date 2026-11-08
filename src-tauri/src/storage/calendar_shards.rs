@@ -851,6 +851,19 @@ mod tests {
         commit
     }
     #[test]
+    fn new_profile_starts_with_an_empty_calendar() {
+        let base = base();
+        assert!(!base.join(CALENDAR_FILE).exists());
+
+        let calendar = full(&base).unwrap();
+
+        assert_eq!(calendar["schemaVersion"], 1);
+        assert_eq!(calendar["categories"], json!([]));
+        assert_eq!(calendar["items"], json!([]));
+        assert!(!base.join(CALENDAR_FILE).exists());
+        fs::remove_dir_all(base).unwrap();
+    }
+    #[test]
     fn migration_and_cross_year_query_preserve_legacy() {
         let base = base(); fs::create_dir_all(&base).unwrap();
         let original = data(vec![item("old", "2023-01-01"), item("new", "2028-01-01")]);

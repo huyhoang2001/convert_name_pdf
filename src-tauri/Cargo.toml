@@ -1,6 +1,6 @@
 [package]
 name = "b6h"
-version = "2.0.10"
+version = "2.0.12"
 description = "B6H desktop application"
 authors = ["Local"]
 license = ""
@@ -35,4 +35,3 @@ sha2 = "0.10"
 hex = "0.4"
 base64 = "0.22"
 zip = { version = "2.6", default-features = false, features = ["deflate"] }
-

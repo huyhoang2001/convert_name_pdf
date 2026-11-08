@@ -46,6 +46,9 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Run native tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+
       - name: Build Tauri app
         run: npm run tauri:build
 

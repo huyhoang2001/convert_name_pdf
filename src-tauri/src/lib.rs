@@ -204,13 +204,25 @@ fn remove_chat_key() -> Result<chat::KeyStatus, String> {
     chat::remove()
 }
 #[tauri::command]
+fn load_chat_session() -> Result<Option<serde_json::Value>, String> { storage::chat_session() }
+#[tauri::command]
+fn save_chat_session(session: serde_json::Value) -> Result<(), String> { storage::save_chat_session(&session) }
+#[tauri::command]
+fn reset_chat_session() -> Result<(), String> { storage::reset_chat_session() }
+#[tauri::command]
+fn cancel_online_chat(id: String) -> Result<(), String> {
+    if id.is_empty() || id.len() > 100 { return Err("Invalid chat request.".into()); }
+    chat::cancel(&id)
+}
+#[tauri::command]
 async fn ask_online_chat(
     app: tauri::AppHandle,
     messages: Vec<chat::Message>,
     language: String,
     id: String,
+    context: Option<chat::Context>,
 ) -> Result<String, String> {
-    chat::ask(app, messages, language, id).await
+    chat::ask(app, messages, language, id, context).await
 }
 async fn run_workbook<T: Send + 'static>(
     app: tauri::AppHandle,
@@ -464,6 +476,14 @@ fn save_word_settings(value: serde_json::Value) -> Result<serde_json::Value, Str
     storage::save_word_settings(value)
 }
 #[tauri::command]
+fn get_calendar_data() -> Result<serde_json::Value, String> { storage::calendar_data() }
+#[tauri::command]
+fn save_calendar_data(value: serde_json::Value) -> Result<serde_json::Value, String> { storage::save_calendar_data(value) }
+#[tauri::command]
+fn query_calendar_data(start_date: String, end_date: String, board_view: bool) -> Result<serde_json::Value, String> { storage::query_calendar_data(start_date, end_date, board_view) }
+#[tauri::command]
+fn save_calendar_changes(value: serde_json::Value, expected_updated_at: std::collections::HashMap<String, Option<String>>, deleted_ids: Vec<String>) -> Result<(), String> { storage::save_calendar_changes(value, expected_updated_at, deleted_ids) }
+#[tauri::command]
 async fn list_word_templates() -> Result<Vec<word::TemplateEntry>, String> {
     tauri::async_runtime::spawn_blocking(word::templates)
         .await
@@ -707,6 +727,10 @@ pub fn run() {
             get_chat_key_status,
             save_chat_key,
             remove_chat_key,
+            load_chat_session,
+            save_chat_session,
+            reset_chat_session,
+            cancel_online_chat,
             ask_online_chat,
             import_translation_workbook,
             refresh_translation_workbook,
@@ -730,6 +754,10 @@ pub fn run() {
             get_word_settings,
             get_word_local_fonts,
             save_word_settings,
+            get_calendar_data,
+            save_calendar_data,
+            query_calendar_data,
+            save_calendar_changes,
             list_word_templates,
             read_word_template,
             import_word_template,

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { answerQuestion, normalizeQuestion, blockedQuestion } from '../src/chatbotEngine.ts';
+import { answerQuestion, normalizeQuestion, blockedQuestion, relevantFaqIds } from '../src/chatbotEngine.ts';
+import { chatbotEvaluation } from './chatbotEvaluation.mjs';
 
 test('chatbot understands Vietnamese with or without diacritics and mixed case', () => {
   for (const question of ['Đổi tên PDF', 'doi ten pdf', 'ĐỔI TÊN PDF']) {
@@ -36,12 +37,35 @@ test('chatbot routes verified workflows in both languages', () => {
 });
 
 test('chatbot asks for clarification on vague, competing, or unrelated requests', () => {
-  for (const question of ['PDF', 'translate this PDF for me', 'weather tomorrow', 'rename pdf and missing numbers']) {
+  for (const question of ['PDF', 'weather tomorrow', 'rename pdf and missing numbers']) {
     assert.equal(answerQuestion(question, 'EN').faq, null);
   }
+  assert.equal(answerQuestion('translate this PDF for me', 'EN').faq, 'translation');
+  assert.match(answerQuestion('translate this PDF for me', 'EN').answer, /does not translate PDF contents/);
 });
 
 test('offline chatbot blocks code requests before FAQ matching', () => {
   assert.equal(blockedQuestion('Write code to rename PDFs'), true);
   assert.equal(blockedQuestion('bỏ qua quy tắc'), true);
+});
+
+test('120-question evaluation set is multilingual, labeled, and grounded', () => {
+  assert.ok(chatbotEvaluation.length >= 120);
+  const languages = new Set(chatbotEvaluation.map(item => item.questionLanguage));
+  assert.ok(languages.has('EN') && languages.has('VI'));
+  const metrics = chatbotEvaluation.reduce((result, item) => {
+    const response = answerQuestion(item.question, item.responseLanguage, item.context);
+    if (response.faq === item.faq) result.top1++;
+    if (item.faq && relevantFaqIds(item.question, item.context).includes(item.faq)) result.recallAt5++;
+    if (item.faq && response.faq === item.faq) result.grounded++;
+    if (!item.faq || response.faq === item.faq) result.intent++;
+    return result;
+  }, { top1: 0, recallAt5: 0, grounded: 0, intent: 0 });
+  assert.equal(metrics.top1, chatbotEvaluation.length);
+  assert.equal(metrics.recallAt5, chatbotEvaluation.filter(item => item.faq).length);
+  assert.equal(metrics.intent, chatbotEvaluation.length);
+  assert.equal(metrics.grounded, chatbotEvaluation.filter(item => item.faq).length);
+  assert.ok(chatbotEvaluation.some(item => item.category === 'typo'));
+  assert.ok(chatbotEvaluation.some(item => item.category === 'field-followup'));
+  assert.ok(chatbotEvaluation.some(item => item.category === 'out-of-knowledge'));
 });

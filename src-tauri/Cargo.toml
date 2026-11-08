@@ -1,6 +1,6 @@
 [package]
 name = "b6h"
-version = "2.0.8"
+version = "2.0.9"
 description = "B6H desktop application"
 authors = ["Local"]
 license = ""
@@ -30,7 +30,7 @@ num-bigint = "0.4"
 num-traits = "0.2"
 futures-util = "0.3"
 unicode-normalization = "0.1"
-tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", features = ["time", "macros", "sync"] }
 sha2 = "0.10"
 hex = "0.4"
 base64 = "0.22"

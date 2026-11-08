@@ -1,0 +1,30 @@
+export const chatbotEvaluation = [
+  ['rename', ['How do I rename PDFs?', 'rename pdf files', 'new filename for PDFs', 'doi ten pdf', 'doi ten tep', 'ten moi pdf', 'đổi tên PDF', 'Rename PDF files safely']],
+  ['scan', ['Why is my PDF missing from the scan?', 'PDF not found in scan', 'ignored PDF file', 'scan folder for PDFs', 'quet khong thay tep', 'tep pdf khong thay', 'bo qua pdf khi quet', 'Why was a PDF ignored?']],
+  ['count', ['How do I find missing numbers?', 'find number gaps', 'Count number files', 'check missing numbers', 'so con thieu', 'kiem tra so', 'dem so tep', 'Which numbers are missing?']],
+  ['merge', ['How do I merge numbered groups?', 'merge all groups', 'combine numbered groups', 'gop nhom so', 'gop tat ca nhom', 'merge groups in Rename PDFs', 'Can I merge PDF groups?', 'How to merge sequence groups']],
+  ['backup', ['Where are Backup and Output?', 'backup folder location', 'output folder location', 'thu muc backup', 'thu muc output', 'where does the copied PDF go', 'Where is the rename report saved?', 'find my backup output']],
+  ['translation', ['How do I use the Translation register?', 'translation Excel register', 'manage translated records', 'so dich thuat', 'dich thuat excel', 'ban ghi dich thuat', 'Does Translation translate PDFs?', 'Import a translation workbook']],
+  ['signature', ['How do I manage signature records?', 'signature authentication register', 'signature records Excel', 'chu ky', 'chung thuc chu ky', 'import signature workbook', 'export signature register', 'manage fingerprint records']],
+  ['copies', ['How do I manage certified copies?', 'Copies register', 'certified-copy records', 'ban sao', 'so ban sao', 'import Copies Excel workbook', 'check Copies reference gaps', 'add a Copies sheet']],
+  ['settings', ['How do I change language or theme?', 'change language settings', 'change theme', 'dark mode settings', 'doi ngon ngu', 'doi giao dien', 'che do toi', 'edit field labels in Settings']],
+  ['privacy', ['Does this chat work offline?', 'chat offline', 'chat privacy', 'chat internet', 'tro chuyen ngoai tuyen', 'bao mat chat', 'Does online mode send my files?', 'Are files sent to OpenRouter?']],
+  ['word-recent', ['How do I manage recent Word files?', 'favorite recent Word file', 'pin Word file', 'remove recent Word file', 'tep word gan day', 'yeu thich tep word gan day', 'show Word file location', 'Word recent menu']],
+  ['word-shortcuts', ['What are the Word keyboard shortcuts?', 'Word shortcuts', 'Ctrl S Word', 'Ctrl Shift S Word', 'Ctrl O Word', 'phim tat word', 'Ctrl N Word', 'new file shortcut Word']],
+  ['word-multiple-files', ['How do I open multiple Word files?', 'open multiple documents', 'open several Word files', 'Word file limit', 'gioi han tep word', 'mo nhieu tep word', 'open five Word files', 'too many open Word documents']],
+  ['word-documents', ['How do I create or open a Word document?', 'new Word document', 'open DOCX in Word', 'Word templates', 'save Word document', 'tao tai lieu word', 'mo tep docx', 'use a Word template']],
+  ['features', ['What can the B6H app help me with?', 'B6H app features', 'what can B6H do', 'help with B6H', 'tinh nang b6h', 'ung dung lam duoc gi', 'What features are available?', 'B6H help features']],
+].flatMap(([faq, questions]) => questions.map((question, index) => ({ faq, question, responseLanguage: index % 2 ? 'VI' : 'EN', questionLanguage: /[ăâđêôơưĂÂĐÊÔƠƯáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(question) || /\b(doi|ten|tep|so|thieu|kiem|tra|dem|gop|tat|thu|muc|dich|thuat|ban|ghi|quan|ly|chu|ky|chung|thuc|ngoai|tuyen|bao|mat|yeu|thich|tai|gan|day|phim|mo|nhieu|gioi|han|tao|mau|ung|dung|lam|duoc|gi)\b/i.test(question) ? 'VI' : 'EN', category: 'faq' })));
+
+chatbotEvaluation.push(
+  { faq: 'rename', question: 'renmae pdf', questionLanguage: 'EN', responseLanguage: 'EN', category: 'typo' },
+  { faq: 'count', question: 'find missng numbers', questionLanguage: 'EN', responseLanguage: 'EN', category: 'typo' },
+  { faq: 'merge', question: 'How do I merge groups in Rename PDFs?', questionLanguage: 'EN', responseLanguage: 'EN', category: 'paraphrase' },
+  { faq: 'copies', question: 'Why is this input invalid?', questionLanguage: 'EN', responseLanguage: 'EN', context: { selector: 'copies', fieldId: 'quantity' }, category: 'field-followup' },
+  { faq: 'copies', question: 'What should I enter here?', questionLanguage: 'EN', responseLanguage: 'EN', context: { selector: 'copies', fieldId: 'refNo' }, category: 'field-followup' },
+  { faq: 'copies', question: 'Why did adding this fail?', questionLanguage: 'EN', responseLanguage: 'EN', context: { selector: 'copies', validationCode: 'copiesNumbersInvalid' }, category: 'validation-error' },
+  { faq: 'copies', question: 'What about this field?', questionLanguage: 'EN', responseLanguage: 'EN', context: { selector: 'copies', fieldId: 'customer' }, category: 'multi-turn-followup' },
+  { faq: null, question: 'What should I enter here?', questionLanguage: 'EN', responseLanguage: 'EN', context: { selector: 'copies' }, category: 'missing-context' },
+  { faq: null, question: 'How do I save a register?', questionLanguage: 'EN', responseLanguage: 'EN', category: 'module-ambiguity' },
+  { faq: null, question: 'Will it rain tomorrow?', questionLanguage: 'EN', responseLanguage: 'EN', category: 'out-of-knowledge' },
+);

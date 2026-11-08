@@ -69,7 +69,9 @@
       "merge groups",
       "merge all",
       "gop nhom",
-      "gop tat ca"
+      "gop tat ca",
+      "combine numbered groups",
+      "merge groups in rename pdfs"
     ],
     "answer": {
       "EN": "In Rename PDFs, scan a folder with at least two numbered groups and select Merge all. Review the preview: groups are ordered by prefix and each group’s number range is shifted into the new sequence.",
@@ -87,7 +89,10 @@
       "backup folder",
       "output folder",
       "thu muc backup",
-      "thu muc output"
+      "thu muc output",
+      "copied pdf location",
+      "rename report saved",
+      "where does the copied pdf go"
     ],
     "answer": {
       "EN": "The Rename PDFs preview shows the Backup and Output destinations before you run. The app copies original filenames into Backup and new filenames into Output, then writes a report in Output. Use Open backup, Open output, or Open report after a run.",
@@ -106,7 +111,10 @@
       "translated records",
       "so dich thuat",
       "dich thuat excel",
-      "ban ghi dich thuat"
+      "ban ghi dich thuat",
+      "translate pdf",
+      "import translation workbook",
+      "translation translate pdfs"
     ],
     "answer": {
       "EN": "Open Translation to manage certified translation records. You can add or edit records, search, and import or export an Excel workbook. This register does not translate PDF contents.",
@@ -123,7 +131,10 @@
       "signature authentication",
       "signature records",
       "chu ky",
-      "chung thuc chu ky"
+      "chung thuc chu ky",
+      "import signature workbook",
+      "export signature register",
+      "fingerprint records"
     ],
     "answer": {
       "EN": "Open Signature authentication to add or edit signature and fingerprint authentication records. You can import an Excel workbook and export the register.",
@@ -140,7 +151,11 @@
       "certified copies",
       "copies register",
       "ban sao",
-      "so ban sao"
+      "so ban sao",
+      "certified-copy records",
+      "import copies excel workbook",
+      "copies reference gaps",
+      "add copies sheet"
     ],
     "answer": {
       "EN": "Open Copies to manage certified-copy records. Add a sheet or import an Excel workbook, then add or edit records. The page also provides a Ref. No. gap check.",
@@ -160,7 +175,8 @@
       "settings language",
       "doi ngon ngu",
       "doi giao dien",
-      "che do toi"
+      "che do toi",
+      "edit field labels"
     ],
     "answer": {
       "EN": "Open Settings to switch between English and Vietnamese or Light and Dark appearance. Settings also lets you edit available field labels.",
@@ -178,7 +194,9 @@
       "chat privacy",
       "chat internet",
       "tro chuyen ngoai tuyen",
-      "bao mat chat"
+      "bao mat chat",
+      "online mode send files",
+      "files sent openrouter"
     ],
     "answer": {
       "EN": "Offline mode uses built-in answers on this device. Online mode sends your typed chat messages to OpenRouter; it does not read or send your files. You choose the mode in the chat panel.",
@@ -210,7 +228,8 @@
       "open file location",
       "show in explorer",
       "word recent menu",
-      "vi tri tep word"
+      "vi tri tep word",
+      "show word file location"
     ],
     "answer": {
       "EN": "In Word, press F12 to save the active document as a new file; Ctrl+F12 opens Developer tools. In Recent files, click a document's star to add or remove it from Favorites. The Favorites tab shows starred recent documents, and the All, B6H files, and Other files filters still apply. Use the three-dot menu to quick edit, remove from Recent files, rename, delete after confirmation, or open the file location in Explorer. Remove only clears the recent list.",

@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react';
-import { checkDocxOpen, decodeDocx, encodeDocx } from './docx';
+import { checkDocxOpen } from './docx';
+import { decodeDocx, encodeDocx } from './docxCodec';
 import type { EditorAccess, Tab } from './editorTypes';
 import { advanceWordcraftStage, wordcraftBytes, wordcraftMessage, wordcraftTimeoutKind, type WordcraftStage } from './wordcraftProtocol';
 

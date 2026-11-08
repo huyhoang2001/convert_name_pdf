@@ -4,20 +4,8 @@ import { createFontSource, type FontConfigurationFragment } from '@docx-editor.d
 import type { FontSourceSubstitution } from '@docx-editor.dev/core/contracts/editor';
 import { serializeOoxmlPart } from '@docx-editor.dev/core/store';
 import type { WordFont } from './bridge';
-
-export function decodeDocx(encoded: string): Uint8Array {
-  const binary = atob(encoded);
-  return Uint8Array.from(binary, character => character.charCodeAt(0));
-}
-
-export function encodeDocx(buffer: ArrayBuffer | Uint8Array): string {
-  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-  let binary = '';
-  for (let offset = 0; offset < bytes.length; offset += 32768) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
-  }
-  return btoa(binary);
-}
+import { decodeDocx } from './docxCodec.ts';
+export { decodeDocx, encodeDocx } from './docxCodec.ts';
 
 export function blankWordDocument(): Uint8Array {
   const zip = readZip(blankDocumentBytes());

@@ -16,6 +16,10 @@ const newWorkbook = async <T>(command: string, sheets: unknown, name: string): P
 };
 
 export const desktopApi: Window['pdfApp'] = {
+  getCalendarData: () => invoke('get_calendar_data'),
+  saveCalendarData: value => invoke('save_calendar_data', { value }),
+  queryCalendarData: (startDate, endDate, boardView) => invoke('query_calendar_data', { startDate, endDate, boardView }),
+  saveCalendarChanges: (value, expectedUpdatedAt, deletedIds) => invoke('save_calendar_changes', { value, expectedUpdatedAt, deletedIds }),
   pickFolder: folder,
   pickDestination: async () => folder(),
   getDestinations: () => invoke('get_destinations'),
@@ -69,12 +73,16 @@ export const desktopApi: Window['pdfApp'] = {
   getChatKeyStatus: () => invoke('get_chat_key_status'),
   saveChatKey: value => invoke('save_chat_key', { value }),
   removeChatKey: () => invoke('remove_chat_key'),
-  askOnlineChat: async (messages, language, onProgress) => {
-    const id = crypto.randomUUID();
+  loadChatSession: () => invoke('load_chat_session'),
+  saveChatSession: session => invoke('save_chat_session', { session }),
+  resetChatSession: () => invoke('reset_chat_session'),
+  askOnlineChat: async (messages, language, onProgress, context, requestId) => {
+    const id = requestId ?? crypto.randomUUID();
     const unlisten = await listen<{ id: string; text: string }>('chat-online-progress', event => { if (event.payload.id === id) onProgress(event.payload.text); });
-    try { return await invoke('ask_online_chat', { messages, language, id }); }
+    try { return await invoke('ask_online_chat', { messages, language, id, context }); }
     finally { unlisten(); }
   },
+  cancelOnlineChat: id => invoke('cancel_online_chat', { id }),
 };
 
 export async function listenForFolderDrops() {

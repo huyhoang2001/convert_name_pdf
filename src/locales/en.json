@@ -211,6 +211,8 @@
   "countCardDescription": "Check numbered files and find gaps in each sequence.",
   "translationCardDescription": "Import and manage certified translation records in Excel.",
   "openTool": "Open tool",
+  "calendar": "Calendar & To-do",
+  "calendarCardDescription": "Plan tasks and events in Board, Calendar, and Timeline views.",
   "translation": "Translation",
   "translationIntro": "Manage certified translation records.",
   "signatureAuthentication": "Signature authentication",

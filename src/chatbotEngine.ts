@@ -5,6 +5,7 @@ import type { ChatContext } from './chatbotSession.ts';
 const moduleFaqs: Record<string, string[]> = {
   rename: ['rename', 'scan', 'merge', 'backup'], count: ['count'], translation: ['translation'],
   signature: ['signature'], copies: ['copies'], word: ['word-recent', 'word-shortcuts', 'word-multiple-files', 'word-documents'], settings: ['settings'],
+  home: ['features', 'workspaces'],
 };
 function oneEditAway(a: string, b: string) {
   if (Math.abs(a.length - b.length) > 1 || Math.min(a.length, b.length) < 4) return false;

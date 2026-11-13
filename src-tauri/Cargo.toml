@@ -1,6 +1,6 @@
 [package]
 name = "b6h"
-version = "2.0.13"
+version = "2.0.14"
 description = "B6H desktop application"
 authors = ["Local"]
 license = ""

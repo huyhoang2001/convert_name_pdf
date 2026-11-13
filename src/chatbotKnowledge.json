@@ -196,11 +196,51 @@
       "tro chuyen ngoai tuyen",
       "bao mat chat",
       "online mode send files",
-      "files sent openrouter"
+      "files sent openrouter",
+      "does offline chat need internet",
+      "offline questions internet",
+      "chat gui offline",
+      "chat co can mang khong",
+      "hoi dap ngoai tuyen",
+      "online chat openrouter",
+      "truc tuyen openrouter",
+      "online help api key",
+      "online mode unavailable",
+      "online chat needs api key",
+      "online mode openrouter key",
+      "online requires openrouter key",
+      "che do truc tuyen khong kha dung",
+      "truc tuyen can khoa openrouter",
+      "khoa openrouter"
     ],
     "answer": {
-      "EN": "Offline mode uses built-in answers on this device. Online mode sends your typed chat messages to OpenRouter; it does not read or send your files. You choose the mode in the chat panel.",
-      "VI": "Chế độ ngoại tuyến dùng câu trả lời có sẵn trên thiết bị. Chế độ trực tuyến gửi tin nhắn bạn nhập tới OpenRouter; không đọc hoặc gửi tệp của bạn. Bạn chọn chế độ trong khung chat."
+      "EN": "Offline mode uses built-in answers on this device. Online mode requires an OpenRouter key saved in Settings and sends your typed chat messages to OpenRouter; it does not read or send your files. Choose the mode in the chat panel.",
+      "VI": "Chế độ ngoại tuyến dùng câu trả lời có sẵn trên thiết bị. Chế độ trực tuyến cần khóa OpenRouter được lưu trong Cài đặt và gửi tin nhắn bạn nhập tới OpenRouter; ứng dụng không đọc hoặc gửi tệp của bạn. Chọn chế độ trong khung chat."
+    }
+  },
+  {
+    "id": "workspaces",
+    "prompts": {
+      "EN": "How do I choose an app feature or workspace?",
+      "VI": "Làm sao chọn tính năng hoặc khu vực làm việc trong ứng dụng?"
+    },
+    "terms": [
+      "choose app feature",
+      "select workspace",
+      "open a feature",
+      "workspace selector",
+      "feature selector",
+      "choose a workspace",
+      "chon tinh nang",
+      "chon khu vuc lam viec",
+      "mo tinh nang",
+      "danh sach tinh nang",
+      "chuyen workspace",
+      "chon cong cu"
+    ],
+    "answer": {
+      "EN": "Choose a workspace from the Home cards or select it in the sidebar. Home returns to the workspace cards. The sidebar shows Home first, Calendar & To-do next, and the other workspaces alphabetically; use the control at the bottom to expand or collapse it.",
+      "VI": "Chọn khu vực làm việc từ các thẻ trên Trang chủ hoặc chọn trong thanh bên. Trang chủ đưa bạn về danh sách thẻ tính năng. Thanh bên hiển thị Trang chủ trước, Lịch & Việc cần làm tiếp theo, rồi các khu vực khác theo thứ tự bảng chữ cái; dùng nút phía dưới để mở rộng hoặc thu gọn thanh bên."
     }
   },
   {

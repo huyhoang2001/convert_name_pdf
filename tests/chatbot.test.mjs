@@ -34,6 +34,13 @@ test('chatbot routes verified workflows in both languages', () => {
   assert.match(answerQuestion('How do I save a new Word document?', 'EN').answer, /Word\\Templates\\dd_mm/);
   assert.match(normalizeQuestion(answerQuestion('mo nhieu tep word', 'VI').answer), /khong gioi han so luong tai lieu/);
   assert.equal(answerQuestion('What can the B6H app help me with?', 'EN').faq, 'features');
+  assert.equal(answerQuestion('How do I select a workspace?', 'EN', { selector: 'home' }).faq, 'workspaces');
+  assert.match(answerQuestion('How do I select a workspace?', 'EN').answer, /Home cards or select it in the sidebar/);
+  assert.equal(answerQuestion('chon khu vuc lam viec', 'VI', { selector: 'home' }).faq, 'workspaces');
+  assert.match(answerQuestion('Does offline chat need internet?', 'EN').answer, /built-in answers on this device/);
+  assert.equal(answerQuestion('online chat OpenRouter', 'EN').faq, 'privacy');
+  assert.match(answerQuestion('Does online mode need an OpenRouter key?', 'EN').answer, /key saved in Settings/);
+  assert.equal(answerQuestion('truc tuyen can khoa openrouter', 'VI').faq, 'privacy');
 });
 
 test('chatbot asks for clarification on vague, competing, or unrelated requests', () => {

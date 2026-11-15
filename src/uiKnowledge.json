@@ -600,53 +600,6 @@
       "marker": "t('storageReset')"
     },
     {
-      "id": "calendar-export",
-      "selector": "calendar",
-      "label": {
-        "EN": "Export backup",
-        "VI": "Xuất bản sao lưu"
-      },
-      "terms": [
-        "export backup",
-        "calendar backup",
-        "xuất bản sao lưu",
-        "sao lưu lịch"
-      ],
-      "path": {
-        "EN": "Calendar & To-do → toolbar → Export backup.",
-        "VI": "Lịch & Công việc → thanh công cụ → Xuất bản sao lưu."
-      },
-      "action": {
-        "EN": "Saves a local JSON backup of the calendar.",
-        "VI": "Lưu bản sao JSON cục bộ của lịch."
-      },
-      "source": "src/CalendarWorkspace.tsx",
-      "marker": "l.export"
-    },
-    {
-      "id": "calendar-import",
-      "selector": "calendar",
-      "label": {
-        "EN": "Import backup",
-        "VI": "Nhập bản sao lưu"
-      },
-      "terms": [
-        "import backup",
-        "restore calendar",
-        "nhập bản sao lưu"
-      ],
-      "path": {
-        "EN": "Calendar & To-do → toolbar → Import backup.",
-        "VI": "Lịch & Công việc → thanh công cụ → Nhập bản sao lưu."
-      },
-      "action": {
-        "EN": "Imports a validated calendar JSON backup after confirmation.",
-        "VI": "Nhập bản sao JSON lịch hợp lệ sau khi xác nhận."
-      },
-      "source": "src/CalendarWorkspace.tsx",
-      "marker": "l.import"
-    },
-    {
       "id": "calendar-save",
       "selector": "calendar",
       "label": {

@@ -21,15 +21,15 @@ test('UI guidance is versioned, bounded, bilingual, and anchored to current cont
     }
   }
   const calendar = readFileSync(new URL('../src/CalendarWorkspace.tsx', import.meta.url), 'utf8');
-  assert.ok(calendar.includes('onClick={() => void exportData()}'));
-  assert.ok(calendar.includes('onClick={() => backupInput.current?.click()}'));
+  assert.ok(!calendar.includes('exportData') && !calendar.includes('importData'));
   assert.ok(new TextEncoder().encode(JSON.stringify(manifest)).length < 40_000);
 });
 
 test('location retrieval follows active workspace and asks when Save is ambiguous', () => {
   assert.deepEqual(relevantUiEntries('Where is Save?', { selector: 'word', page: 'editor' }).map(entry => entry.id), ['word-save']);
   assert.deepEqual(relevantUiEntries('Where is Save As?', { selector: 'word', page: 'editor' }).map(entry => entry.id), ['word-save-as']);
-  assert.deepEqual(relevantUiEntries('Where is Export Backup?', { selector: 'calendar' }).map(entry => entry.id), ['calendar-export']);
+  assert.deepEqual(relevantUiEntries('Where is Export Backup?', { selector: 'calendar' }).map(entry => entry.id), []);
+  assert.deepEqual(relevantUiEntries('Where is Import Backup?', { selector: 'calendar' }).map(entry => entry.id), []);
   assert.deepEqual(relevantUiEntries('Where can I change the storage path?', { selector: 'settings', page: 'storage' }).map(entry => entry.id), ['settings-storage']);
   assert.deepEqual(relevantUiEntries('Where is the Word template folder?', { selector: 'word', page: 'home' }).map(entry => entry.id), ['word-folders']);
   assert.match(uiLocationAnswer('Where is Save?', 'EN', { selector: 'home' }), /Which workspace/);

@@ -776,9 +776,9 @@ button.word-read-tile:focus-visible{outline:3px solid #2879b9;outline-offset:3px
 .word-commandbar.dark .word-page-number-alignments button{border-color:#4a5d71;background:#27394b;color:#e6edf5}
 .word-commandbar.dark .word-page-number-alignments button:hover:not(:disabled),.word-commandbar.dark .word-page-number-wide-option:hover:not(:disabled){background:#354a60;border-color:#6c91b1}
 @media(max-width:800px){.word-commandbar .docx-toolbar{margin:6px 8px 10px;padding:5px 8px;min-height:44px}.word-commandbar .docx-toolbar__separator{margin:0 4px}}
-.shell:has(.word-workspace:not([hidden]) .word-editors:not([hidden])){grid-template-columns:minmax(0,1fr)}
-.shell:has(.word-workspace:not([hidden]) .word-editors:not([hidden]))>.sidebar{display:none}
-.shell:has(.word-workspace:not([hidden]) .word-editors:not([hidden])) .app-footer{display:none}
+.shell:has(.word-workspace:not([hidden]) .word-editors:not([hidden]):not(.is-prewarming)){grid-template-columns:minmax(0,1fr)}
+.shell:has(.word-workspace:not([hidden]) .word-editors:not([hidden]):not(.is-prewarming))>.sidebar{display:none}
+.shell:has(.word-workspace:not([hidden]) .word-editors:not([hidden]):not(.is-prewarming)) .app-footer{display:none}
 .word-tabs>div.secondary{outline:1px solid #7aa9ca}
 .word-editors{position:relative;display:flex;min-width:0;min-height:0;flex:1;overflow:hidden}
 .word-editors[hidden]{display:none!important}
@@ -837,6 +837,7 @@ button.word-read-tile:focus-visible{outline:3px solid #2879b9;outline-offset:3px
 :root[data-theme="dark"] .word-recent-modified{color:#b8c8d8}
 @media(max-width:800px){:root{--word-recent-file-grid:minmax(0,1fr) minmax(105px,.55fr) 38px minmax(90px,.45fr) 34px}.word-recent-columns,.word-recent .word-recent-row{gap:6px}}
 @media(max-width:480px){:root{--word-recent-file-grid:minmax(0,1fr) 36px minmax(80px,auto) 32px}.word-recent-columns,.word-recent .word-recent-row{gap:5px}.word-recent-columns span:nth-child(2),.word-recent-status-cell{display:none}.word-recent-open{padding-left:5px}.word-recent-modified{font-size:11px}}
+.word-template-pin svg path,.word-recent-favorite svg path{d:path("M12 2.8 L14.85 8.58 21.23 9.51 16.61 14.01 17.7 20.36 12 17.36 6.3 20.36 7.39 14.01 2.77 9.51 9.15 8.58 Z")}
 
 .storage-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:32px;align-items:start}
 .storage-sidebar{display:flex;flex-direction:column}

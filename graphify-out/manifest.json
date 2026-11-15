@@ -1,9 +1,9 @@
 {
   "package.json": {
-    "mtime": 1794742013.311744,
-    "seen": 1794742493.9137104,
-    "ast_hash": "c77b6e0f87711ac72f940f6b2b91ae3e",
-    "semantic_hash": "c77b6e0f87711ac72f940f6b2b91ae3e"
+    "mtime": 1794743357.7390044,
+    "seen": 1794743525.4266877,
+    "ast_hash": "12ac304b737681d28a9aa00a478aed77",
+    "semantic_hash": "12ac304b737681d28a9aa00a478aed77"
   },
   "scripts/native-smoke.mjs": {
     "mtime": 1794154310.2236598,
@@ -18,10 +18,10 @@
     "semantic_hash": "0654223933834a2c2cfe16fe40a0515d"
   },
   "src-tauri/Cargo.toml": {
-    "mtime": 1794741805.87458,
-    "seen": 1794742493.923456,
-    "ast_hash": "b6893173f6acfb82929d74384dc5ad38",
-    "semantic_hash": "b6893173f6acfb82929d74384dc5ad38"
+    "mtime": 1794743357.7440045,
+    "seen": 1794743525.4300258,
+    "ast_hash": "6f1e826f48db214cafb1c1b46bbdd34d",
+    "semantic_hash": "6f1e826f48db214cafb1c1b46bbdd34d"
   },
   "src-tauri/build.rs": {
     "mtime": 1794154311.1371026,
@@ -91,10 +91,10 @@
     "semantic_hash": "deddaa488d2b5cbb46b37b04cbb5b6f9"
   },
   "src-tauri/tauri.conf.json": {
-    "mtime": 1794741805.892199,
-    "seen": 1794742493.9390776,
-    "ast_hash": "0d5d032c1d65c4093360e7520ab0e9d9",
-    "semantic_hash": "0d5d032c1d65c4093360e7520ab0e9d9"
+    "mtime": 1794743357.7480114,
+    "seen": 1794743525.4358282,
+    "ast_hash": "0a9de820163e80c92262c90e9c42e842",
+    "semantic_hash": "0a9de820163e80c92262c90e9c42e842"
   },
   "src/ChatKeySettings.tsx": {
     "mtime": 1794154310.282953,
@@ -827,10 +827,10 @@
     "semantic_hash": "3bd46906b7182d21f2a18d59b68e0615"
   },
   "src/uiKnowledge.json": {
-    "mtime": 1794741805.894432,
-    "seen": 1794742493.9860125,
-    "ast_hash": "df10fdc2a9b15aa21778628f94e9bdd9",
-    "semantic_hash": "df10fdc2a9b15aa21778628f94e9bdd9",
+    "mtime": 1794743357.7500343,
+    "seen": 1794743525.4502149,
+    "ast_hash": "dda42cdbcf367ac67b649d9a2b82aa33",
+    "semantic_hash": "dda42cdbcf367ac67b649d9a2b82aa33",
     "ast_empty": true
   },
   "src/uiKnowledge.ts": {

@@ -1,7 +1,7 @@
-Generated: 2026-11-15T18:43:34+07:00
+Generated: 2026-11-15T18:52:07+07:00
 Command: python -m graphify extract . --code-only --cargo --force --mode deep --no-gitignore --out .
 Analyzed manifest files: 140
-Source SHA-256: b451b2ab4517c21938543af08028b2aa8328541fe689fd01ad2a0825c2213b68
+Source SHA-256: 4d74f8b22e74a4ad6b7609bf747351a347c5026f885e338d8144a8e137317ac6
 
 The fingerprint hashes sorted manifest-relative paths and each file's SHA-256 digest.
 The code-only scan skipped non-code extraction and retained Graphify's existing semantic layer.

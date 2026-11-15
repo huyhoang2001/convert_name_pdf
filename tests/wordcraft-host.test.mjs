@@ -54,7 +54,10 @@ test('Wordcraft web shell reports asset boot failure and ignores later unrelated
 
 test('Wordcraft owns native print controls while the React host only transports jobs', () => {
   const editor = readFileSync(new URL('../src/word/WordcraftEditor.tsx', import.meta.url), 'utf8');
-  const printPage = readFileSync(new URL('../wordcraft-upstream/crates/ui-egui/src/print_page.rs', import.meta.url), 'utf8');
+  const html = readFileSync(new URL('../public/wordcraft/index.html', import.meta.url), 'utf8');
+  const wasmName = html.match(/wordcraft-web-[a-f0-9]+_bg\.wasm/)?.[0];
+  assert.ok(wasmName);
+  const wasm = readFileSync(new URL(`../public/wordcraft/${wasmName}`, import.meta.url));
   assert.match(editor, /wordcraft:print-discover/);
   assert.match(editor, /wordcraft:print-submit/);
   assert.doesNotMatch(editor, /WordPrintDialog|word-print-backdrop|window\.print/);
@@ -65,5 +68,5 @@ test('Wordcraft owns native print controls while the React host only transports 
     'Flip on Long Edge',
     'Flip on Short Edge',
     'Manually Print on Both Sides',
-  ]) assert.match(printPage, new RegExp(label));
+  ]) assert.ok(wasm.includes(Buffer.from(label)), label);
 });

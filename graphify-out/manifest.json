@@ -1,9 +1,9 @@
 {
   "package.json": {
-    "mtime": 1794743357.7390044,
-    "seen": 1794743525.4266877,
-    "ast_hash": "12ac304b737681d28a9aa00a478aed77",
-    "semantic_hash": "12ac304b737681d28a9aa00a478aed77"
+    "mtime": 1794743940.7256289,
+    "seen": 1794744061.0488458,
+    "ast_hash": "a099641606de0d4a0dfef8b7d21cdc65",
+    "semantic_hash": "a099641606de0d4a0dfef8b7d21cdc65"
   },
   "scripts/native-smoke.mjs": {
     "mtime": 1794154310.2236598,
@@ -18,10 +18,10 @@
     "semantic_hash": "0654223933834a2c2cfe16fe40a0515d"
   },
   "src-tauri/Cargo.toml": {
-    "mtime": 1794743357.7440045,
-    "seen": 1794743525.4300258,
-    "ast_hash": "6f1e826f48db214cafb1c1b46bbdd34d",
-    "semantic_hash": "6f1e826f48db214cafb1c1b46bbdd34d"
+    "mtime": 1794743940.7316296,
+    "seen": 1794744061.0550163,
+    "ast_hash": "f0a30820852c656df6d6efae3995fc50",
+    "semantic_hash": "f0a30820852c656df6d6efae3995fc50"
   },
   "src-tauri/build.rs": {
     "mtime": 1794154311.1371026,
@@ -91,10 +91,10 @@
     "semantic_hash": "deddaa488d2b5cbb46b37b04cbb5b6f9"
   },
   "src-tauri/tauri.conf.json": {
-    "mtime": 1794743357.7480114,
-    "seen": 1794743525.4358282,
-    "ast_hash": "0a9de820163e80c92262c90e9c42e842",
-    "semantic_hash": "0a9de820163e80c92262c90e9c42e842"
+    "mtime": 1794743940.738629,
+    "seen": 1794744061.064581,
+    "ast_hash": "1b2a88e292485c719b6137018faf79c0",
+    "semantic_hash": "1b2a88e292485c719b6137018faf79c0"
   },
   "src/ChatKeySettings.tsx": {
     "mtime": 1794154310.282953,
@@ -664,10 +664,10 @@
     "semantic_hash": "f25255be44810ee6d90bb60d32e6d26d"
   },
   "tests/wordcraft-host.test.mjs": {
-    "mtime": 1794727190.1486835,
-    "seen": 1794741187.4248133,
-    "ast_hash": "58bc187063c551ac3b048323568733d5",
-    "semantic_hash": "58bc187063c551ac3b048323568733d5"
+    "mtime": 1794743888.647455,
+    "seen": 1794744061.1302083,
+    "ast_hash": "9559766b2dd676dc3d05cc66778fd608",
+    "semantic_hash": "9559766b2dd676dc3d05cc66778fd608"
   },
   "scripts/build-wordcraft.mjs": {
     "mtime": 1794714967.71947,
@@ -827,10 +827,10 @@
     "semantic_hash": "3bd46906b7182d21f2a18d59b68e0615"
   },
   "src/uiKnowledge.json": {
-    "mtime": 1794743357.7500343,
-    "seen": 1794743525.4502149,
-    "ast_hash": "dda42cdbcf367ac67b649d9a2b82aa33",
-    "semantic_hash": "dda42cdbcf367ac67b649d9a2b82aa33",
+    "mtime": 1794743940.744631,
+    "seen": 1794744061.0906348,
+    "ast_hash": "d382ee978582e369e7a90fa954901522",
+    "semantic_hash": "d382ee978582e369e7a90fa954901522",
     "ast_empty": true
   },
   "src/uiKnowledge.ts": {

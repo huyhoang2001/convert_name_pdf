@@ -11,3 +11,4 @@ wordcraft-upstream/
 .env*
 !.env.example
 *.log
+.b6h-state/

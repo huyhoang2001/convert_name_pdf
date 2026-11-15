@@ -47,7 +47,7 @@ jobs:
         run: npm test
 
       - name: Run native tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked -- --test-threads=1
 
       - name: Build Tauri app
         run: npm run tauri:build
@@ -57,12 +57,17 @@ jobs:
         run: |
           $version = node -p "require('./package.json').version"
           Copy-Item "src-tauri/target/release/b6h.exe" "B6H-$version.exe"
+          $hash = (Get-FileHash "B6H-$version.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content "B6H-$version.exe.sha256" "$hash  B6H-$version.exe"
           "RELEASE_EXE=B6H-$version.exe" >> $env:GITHUB_ENV
+          "RELEASE_SHA256=B6H-$version.exe.sha256" >> $env:GITHUB_ENV
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_tag || github.ref_name }}
           name: B6H ${{ inputs.release_tag || github.ref_name }}
-          generate_release_notes: true
-          files: ${{ env.RELEASE_EXE }}
+          body_path: RELEASE_NOTES.md
+          files: |
+            ${{ env.RELEASE_EXE }}
+            ${{ env.RELEASE_SHA256 }}

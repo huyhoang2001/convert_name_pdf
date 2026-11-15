@@ -122,7 +122,6 @@ function CopiesPage({ api, t, labels = {}, isVisible, language }: { api: CopiesA
   };
   const setDate = (date: string) => { if (!active) return; remember(); setSheets(current => current.map(sheet => sheet.id === active.id ? { ...sheet, date } : sheet)); markDirty(); };
   return <>
-    <div className="page-heading"><div><h1>{t('copies')}</h1><p className="intro">{t('copiesIntro')}</p></div></div>
     <section className="panel translation-panel signature-panel copies-panel">
       <div className="translation-sheetbar">
         <div ref={sheetTablistRef} role="tablist" aria-label={t('copies')}>{sheets.map(sheet => <button type="button" role="tab" aria-selected={sheet.id === activeId} className={sheet.id === activeId ? 'active' : ''} key={sheet.id} onClick={() => { setActiveId(sheet.id); setForm(blankRow()); }}>{sheet.name}</button>)}</div>

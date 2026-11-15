@@ -5,6 +5,7 @@ import { answerQuestion, blockedQuestion, relevantFaqIds } from './chatbotEngine
 import { faqs, type ChatLanguage } from './chatbotFaq';
 import { chatSize, clampChat, launcherAt, type Point } from './chatDock';
 import { formatChatText } from './chatText';
+import { relevantUiEntries, uiLocationAnswer } from './uiKnowledge';
 import { acceptChatQuestion, emptyChatSession, isChatSession, onlineChatHistory, restoreChatSession, settleChatReply, type ChatContext, type ChatMessage, type ChatSession } from './chatbotSession';
 
 function useChatDrag() {
@@ -36,7 +37,7 @@ function useChatDrag() {
 }
 
 type Diagnostic = { context: ChatContext; at: number };
-export default function HelpChatbot({ language, keyConfigured, selector }: { language: ChatLanguage; keyConfigured: boolean | null; selector: string }) {
+export default function HelpChatbot({ language, keyConfigured, selector, settingsTab }: { language: ChatLanguage; keyConfigured: boolean | null; selector: string; settingsTab: string }) {
   const [open, setOpen] = useState(false), [input, setInput] = useState('');
   const [session, setSession] = useState<ChatSession>(() => emptyChatSession());
   const [mode, setMode] = useState<'offline' | 'online'>('offline');
@@ -120,9 +121,12 @@ export default function HelpChatbot({ language, keyConfigured, selector }: { lan
     const currentEpoch = epoch.current;
     const recent = diagnostic.current && Date.now() - diagnostic.current.at < 60_000 ? diagnostic.current.context : undefined;
     const previousFaqId = [...sessionRef.current.messages].reverse().find(message => message.role === 'user')?.context?.faqIds?.[0];
-    const context: ChatContext = { selector, ...(recent?.selector === selector ? { fieldId: recent.fieldId, validationCode: recent.validationCode, errorCode: recent.errorCode } : {}), ...(previousFaqId ? { previousFaqId } : {}) };
+    const page = selector === 'settings' ? settingsTab : selector === 'word' ? (document.querySelector('.word-editors:not([hidden]):not([inert])') ? 'editor' : 'home') : undefined;
+    const context: ChatContext = { selector, ...(page ? { page } : {}), ...(recent?.selector === selector ? { fieldId: recent.fieldId, validationCode: recent.validationCode, errorCode: recent.errorCode } : {}), ...(previousFaqId ? { previousFaqId } : {}) };
     const faqIds = relevantFaqIds(trimmed, context);
     if (faqIds.length) context.faqIds = faqIds;
+    const uiIds = relevantUiEntries(trimmed, context).map(entry => entry.id);
+    if (uiIds.length) context.uiIds = uiIds;
     const accepted = acceptChatQuestion(sessionRef.current, trimmed, mode, context);
     if (!accepted) { busyRef.current = false; setBusy(false); return; }
     try { await persist(accepted.session, currentEpoch); }
@@ -139,7 +143,7 @@ export default function HelpChatbot({ language, keyConfigured, selector }: { lan
     if (blockedQuestion(trimmed)) {
       await finish(language === 'VI' ? 'Tôi chỉ hỗ trợ cách dùng B6H; không cung cấp mã hoặc hướng dẫn vượt quy tắc.' : 'I can help with B6H, but cannot provide code or instructions to bypass the rules.');
     } else if (mode === 'offline') {
-      await finish(answerQuestion(trimmed, language, context).answer);
+      await finish(uiLocationAnswer(trimmed, language, context) ?? answerQuestion(trimmed, language, context).answer);
     } else {
       let lastRender = 0;
       const history = onlineChatHistory(accepted.session, trimmed);

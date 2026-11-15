@@ -1,6 +1,6 @@
 {
   "name": "safe-pdf-rename",
-  "version": "2.0.15",
+  "version": "2.0.16",
   "description": "Safe Windows PDF renaming utility",
   "author": "Local",
   "private": true,
@@ -8,13 +8,14 @@
   "scripts": {
     "dev": "set \"PATH=%USERPROFILE%\\.cargo\\bin;%PATH%\" && tauri dev",
     "wordcraft:build": "node scripts/build-wordcraft.mjs",
-    "web:dev": "node scripts/build-wordcraft.mjs --check=public/wordcraft && vite",
-    "web:build": "node scripts/build-wordcraft.mjs --check=public/wordcraft && tsc -b && vite build && node scripts/build-wordcraft.mjs --check",
-    "build": "npm run wordcraft:build && npm run web:build",
+    "wordcraft:source-build": "node scripts/build-wordcraft.mjs --build",
+    "web:dev": "node scripts/build-wordcraft.mjs && vite",
+    "web:build": "node scripts/build-wordcraft.mjs && tsc -b && vite build && node scripts/build-wordcraft.mjs --check",
+    "build": "npm run web:build",
     "tauri:build": "tauri build",
     "native:smoke": "node scripts/native-smoke.mjs",
     "wordcraft:webview2-smoke": "node scripts/wordcraft-webview2-smoke.mjs",
-    "test": "node --test"
+    "test": "node --test tests"
   },
   "dependencies": {
     "@docx-editor.dev/core": "^2.33.0",

@@ -9,11 +9,19 @@ export type SaveWordInput = { bytesBase64: string; name: string; templateName: s
 export type SaveWordResult = { path: string; hash: string; size: number; modified: number };
 export type WordFont = { family: string; weight: number; style: 'normal' | 'italic'; bytesBase64: string };
 export type WordDraft = { id: string; name: string; bytesBase64: string; path?: string; sourceFile?: string; hash?: string; source: 'template' | 'managed' | 'external' | 'blank'; templateName: string; day: string; month: string; dirty: boolean; revision: number; order: number; active: boolean; split: boolean; externalChanged?: boolean };
+export type WordPrinter = { name: string; label: string; default: boolean; duplex: boolean | null; longEdge: boolean | null; shortEdge: boolean | null };
+export type WordRefeedPreference = { face: 'faceUp' | 'faceDown'; leadingEdge: 'top' | 'bottom' };
 
 export const wordBridge = {
   openDevtools: () => invoke<void>('open_word_devtools'),
   settings: () => invoke<WordSettings>('get_word_settings'),
   localFonts: () => invoke<WordFont[]>('get_word_local_fonts'),
+  printers: () => invoke<WordPrinter[]>('get_word_printers'),
+  openPrinterProperties: (printer: string) => invoke<void>('open_word_printer_properties', { printer }),
+  printPdf: (pdfBase64: string, printer: string, mode: string, copies: number, collate: boolean) => invoke<string>('print_word_pdf', { pdfBase64, printer, mode, copies, collate }),
+  printManualPass: (pdfBase64: string, printer: string, pass: 'front' | 'back') => invoke<string>('print_word_manual_pass', { pdfBase64, printer, pass }),
+  refeedPreferences: () => invoke<Record<string, WordRefeedPreference>>('get_word_refeed_preferences'),
+  saveRefeedPreference: (printer: string, face: WordRefeedPreference['face'], leadingEdge: WordRefeedPreference['leadingEdge']) => invoke<Record<string, WordRefeedPreference>>('save_word_refeed_preference', { printer, face, leadingEdge }),
   saveSettings: (value: WordSettings) => invoke<WordSettings>('save_word_settings', { value }),
   templates: () => invoke<TemplateEntry[]>('list_word_templates'),
   pinTemplate: (file: string, pinned: boolean) => invoke<void>('set_word_template_pinned', { file, pinned }),
@@ -26,8 +34,9 @@ export const wordBridge = {
   pickDocuments: async () => {
     const selected = await open({ multiple: true, filters: [{ name: 'Word document', extensions: ['docx'] }] });
     const files = selected ? Array.isArray(selected) ? selected : [selected] : [];
-    return Promise.all(files.map(file => invoke<WordPayload>('open_external_word_document', { file })));
+    return files;
   },
+  openExternal: (file: string) => invoke<WordPayload>('open_external_word_document', { file }),
   openRecent: (file: string) => invoke<WordPayload>('open_recent_word_document', { file }),
   saveDocument: (input: SaveWordInput) => invoke<SaveWordResult>('save_word_document', { input }),
   saveDraft: (input: WordDraft) => invoke<void>('save_word_draft', { input }),

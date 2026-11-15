@@ -1,7 +1,7 @@
 export const CHAT_QUESTION_LIMIT = 20;
 export const CHAT_SESSION_SCHEMA = 1;
 
-export type ChatContext = { selector: string; fieldId?: string; validationCode?: string; errorCode?: string; faqIds?: string[]; previousFaqId?: string };
+export type ChatContext = { selector: string; page?: string; fieldId?: string; validationCode?: string; errorCode?: string; faqIds?: string[]; uiIds?: string[]; previousFaqId?: string };
 export type ChatMessage = {
   id: string;
   requestId?: string;
@@ -48,12 +48,14 @@ export function isChatSession(value: unknown): value is ChatSession {
     session.messages.filter(message => message.role === 'user').length === session.userQuestionCount;
   const faqIds = ['rename', 'scan', 'count', 'merge', 'backup', 'translation', 'signature', 'copies', 'settings', 'privacy', 'word-recent', 'word-shortcuts', 'word-multiple-files', 'word-documents', 'features'];
   return valid && session.messages.every(message => !message.context || (
-    ['home', 'rename', 'count', 'translation', 'signature', 'copies', 'word', 'settings'].includes(message.context.selector) &&
+    ['home', 'rename', 'count', 'translation', 'signature', 'copies', 'word', 'calendar', 'settings'].includes(message.context.selector) &&
     (!message.context.fieldId || ['refNo', 'quantity', 'unitPrice', 'totalAmount', 'customer', 'description'].includes(message.context.fieldId)) &&
     (!message.context.validationCode || ['copiesNumbersInvalid', 'browser-invalid', 'signatureHeaderInvalid'].includes(message.context.validationCode)) &&
     (!message.context.errorCode || ['access_error', 'file_not_found', 'workbook_format_error', 'ipc_error', 'online_error', 'validation_error', 'operation_error'].includes(message.context.errorCode)) &&
     (!message.context.previousFaqId || faqIds.includes(message.context.previousFaqId)) &&
-    (!message.context.faqIds || Array.isArray(message.context.faqIds) && message.context.faqIds.length <= 3 && message.context.faqIds.every(id => faqIds.includes(id)))
+    (!message.context.faqIds || Array.isArray(message.context.faqIds) && message.context.faqIds.length <= 3 && message.context.faqIds.every(id => faqIds.includes(id))) &&
+    (!message.context.page || ['editor', 'home', 'storage', 'settings', 'translation', 'signature', 'copies'].includes(message.context.page)) &&
+    (!message.context.uiIds || Array.isArray(message.context.uiIds) && message.context.uiIds.length <= 3 && message.context.uiIds.every(id => typeof id === 'string' && id.length <= 50))
   ));
 }
 

@@ -1,4 +1,4 @@
-export const MAX_WORDCRAFT_DOCX_BYTES = 30 * 1024 * 1024;
+export const MAX_WORDCRAFT_DOCX_BYTES = 200 * 1024 * 1024;
 
 export type WordcraftStage = 'wasm-starting' | 'html-loaded' | 'renderer-ready' | 'document-opening' | 'snapshot-checking' | 'usable' | 'import-failed';
 

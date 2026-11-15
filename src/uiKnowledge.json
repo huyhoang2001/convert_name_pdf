@@ -1,0 +1,756 @@
+{
+  "appVersion": "2.0.16",
+  "entries": [
+    {
+      "id": "home-rename",
+      "selector": "home",
+      "label": {
+        "EN": "Rename PDFs",
+        "VI": "Đổi tên PDF"
+      },
+      "labelKey": "renamePdfs",
+      "terms": [
+        "rename",
+        "pdf",
+        "đổi tên"
+      ],
+      "path": {
+        "EN": "Home → Rename PDFs card",
+        "VI": "Trang chủ → thẻ Đổi tên PDF"
+      },
+      "action": {
+        "EN": "Opens the PDF renaming workspace.",
+        "VI": "Mở không gian đổi tên PDF."
+      },
+      "source": "src/ui.tsx",
+      "marker": "tool:'rename'"
+    },
+    {
+      "id": "home-count",
+      "selector": "home",
+      "label": {
+        "EN": "Count number",
+        "VI": "Đếm số"
+      },
+      "labelKey": "countNumber",
+      "terms": [
+        "count",
+        "number",
+        "đếm số"
+      ],
+      "path": {
+        "EN": "Home → Count number card",
+        "VI": "Trang chủ → thẻ Đếm số"
+      },
+      "action": {
+        "EN": "Opens the number counting workspace.",
+        "VI": "Mở không gian đếm số."
+      },
+      "source": "src/ui.tsx",
+      "marker": "tool:'count'"
+    },
+    {
+      "id": "home-translation",
+      "selector": "home",
+      "label": {
+        "EN": "Translation",
+        "VI": "Dịch thuật"
+      },
+      "labelKey": "translation",
+      "terms": [
+        "translation",
+        "dịch thuật"
+      ],
+      "path": {
+        "EN": "Home → Translation card",
+        "VI": "Trang chủ → thẻ Dịch thuật"
+      },
+      "action": {
+        "EN": "Opens the translation register.",
+        "VI": "Mở sổ dịch thuật."
+      },
+      "source": "src/ui.tsx",
+      "marker": "tool:'translation'"
+    },
+    {
+      "id": "home-signature",
+      "selector": "home",
+      "label": {
+        "EN": "Signature authentication",
+        "VI": "Chứng thực chữ ký"
+      },
+      "labelKey": "signatureAuthentication",
+      "terms": [
+        "signature",
+        "chữ ký"
+      ],
+      "path": {
+        "EN": "Home → Signature authentication card",
+        "VI": "Trang chủ → thẻ Chứng thực chữ ký"
+      },
+      "action": {
+        "EN": "Opens the signature register.",
+        "VI": "Mở sổ chứng thực chữ ký."
+      },
+      "source": "src/ui.tsx",
+      "marker": "tool:'signature'"
+    },
+    {
+      "id": "home-copies",
+      "selector": "home",
+      "label": {
+        "EN": "Copies",
+        "VI": "Bản sao"
+      },
+      "labelKey": "copies",
+      "terms": [
+        "copies",
+        "copy",
+        "bản sao"
+      ],
+      "path": {
+        "EN": "Home → Copies card",
+        "VI": "Trang chủ → thẻ Bản sao"
+      },
+      "action": {
+        "EN": "Opens the certified copies register.",
+        "VI": "Mở sổ bản sao chứng thực."
+      },
+      "source": "src/ui.tsx",
+      "marker": "tool:'copies'"
+    },
+    {
+      "id": "home-word",
+      "selector": "home",
+      "label": {
+        "EN": "Word & Templates",
+        "VI": "Word & Mẫu"
+      },
+      "labelKey": "wordTemplates",
+      "terms": [
+        "word",
+        "templates",
+        "mẫu"
+      ],
+      "path": {
+        "EN": "Home → Word & Templates card",
+        "VI": "Trang chủ → thẻ Word & Mẫu"
+      },
+      "action": {
+        "EN": "Opens the Word workspace.",
+        "VI": "Mở không gian Word."
+      },
+      "source": "src/ui.tsx",
+      "marker": "tool:'word'"
+    },
+    {
+      "id": "home-calendar",
+      "selector": "home",
+      "label": {
+        "EN": "Calendar & To-do",
+        "VI": "Lịch & Công việc"
+      },
+      "labelKey": "calendar",
+      "terms": [
+        "calendar",
+        "todo",
+        "lịch"
+      ],
+      "path": {
+        "EN": "Home → Calendar & To-do card",
+        "VI": "Trang chủ → thẻ Lịch & Công việc"
+      },
+      "action": {
+        "EN": "Opens the calendar.",
+        "VI": "Mở lịch."
+      },
+      "source": "src/ui.tsx",
+      "marker": "tool:'calendar'"
+    },
+    {
+      "id": "home-settings",
+      "selector": "home",
+      "label": {
+        "EN": "Settings",
+        "VI": "Cài đặt"
+      },
+      "labelKey": "settings",
+      "terms": [
+        "settings",
+        "cài đặt"
+      ],
+      "path": {
+        "EN": "Home → Settings card",
+        "VI": "Trang chủ → thẻ Cài đặt"
+      },
+      "action": {
+        "EN": "Opens application settings.",
+        "VI": "Mở cài đặt ứng dụng."
+      },
+      "source": "src/ui.tsx",
+      "marker": "tool:'settings'"
+    },
+    {
+      "id": "word-save",
+      "selector": "word",
+      "page": "editor",
+      "label": {
+        "EN": "Save",
+        "VI": "Lưu"
+      },
+      "labelKey": "wordSave",
+      "terms": [
+        "save",
+        "save document",
+        "lưu",
+        "lưu tài liệu"
+      ],
+      "path": {
+        "EN": "Word & Templates → open a document → Wordcraft File menu → Save; Ctrl+S also saves.",
+        "VI": "Word & Mẫu → mở tài liệu → menu Tệp của Wordcraft → Lưu; Ctrl+S cũng lưu."
+      },
+      "action": {
+        "EN": "Saves the active document; a new document may ask for a path.",
+        "VI": "Lưu tài liệu đang mở; tài liệu mới có thể yêu cầu chọn đường dẫn."
+      },
+      "source": "src/word/WordWorkspace.tsx",
+      "marker": "key==='s'"
+    },
+    {
+      "id": "word-save-as",
+      "selector": "word",
+      "page": "editor",
+      "label": {
+        "EN": "Save As",
+        "VI": "Lưu thành"
+      },
+      "labelKey": "wordSaveAs",
+      "terms": [
+        "save as",
+        "save a copy",
+        "lưu thành",
+        "f12"
+      ],
+      "path": {
+        "EN": "Word & Templates → open a document → Wordcraft File menu → Save As; F12 also opens Save As.",
+        "VI": "Word & Mẫu → mở tài liệu → menu Tệp của Wordcraft → Lưu thành; F12 cũng mở Lưu thành."
+      },
+      "action": {
+        "EN": "Chooses a new DOCX path for the active document.",
+        "VI": "Chọn đường dẫn DOCX mới cho tài liệu đang mở."
+      },
+      "source": "src/word/WordWorkspace.tsx",
+      "marker": "saveRef.current(active, true)"
+    },
+    {
+      "id": "word-print",
+      "selector": "word",
+      "page": "editor",
+      "label": {
+        "EN": "Print",
+        "VI": "In"
+      },
+      "terms": [
+        "print",
+        "print document",
+        "in tài liệu",
+        "duplex",
+        "two sides",
+        "hai mặt"
+      ],
+      "path": {
+        "EN": "Word & Templates → open a document → Wordcraft File menu → Print; Ctrl+P also opens printing.",
+        "VI": "Word & Mẫu → mở tài liệu → menu Tệp của Wordcraft → In; Ctrl+P cũng mở chức năng in."
+      },
+      "action": {
+        "EN": "Opens the document print workflow; available duplex modes depend on the selected printer.",
+        "VI": "Mở quy trình in tài liệu; chế độ in hai mặt tùy máy in đã chọn."
+      },
+      "source": "src/word/WordWorkspace.tsx",
+      "marker": "editors.current.get(active)?.print()"
+    },
+    {
+      "id": "word-create",
+      "selector": "word",
+      "page": "home",
+      "label": {
+        "EN": "Create document",
+        "VI": "Tạo tài liệu"
+      },
+      "labelKey": "wordCreate",
+      "terms": [
+        "create document",
+        "new document",
+        "tạo tài liệu"
+      ],
+      "path": {
+        "EN": "Word & Templates home → Create document, upper right.",
+        "VI": "Trang Word & Mẫu → Tạo tài liệu ở góc trên bên phải."
+      },
+      "action": {
+        "EN": "Creates a new Word document.",
+        "VI": "Tạo tài liệu Word mới."
+      },
+      "source": "src/word/WordWorkspace.tsx",
+      "marker": "t('wordCreate')"
+    },
+    {
+      "id": "word-open",
+      "selector": "word",
+      "page": "home",
+      "label": {
+        "EN": "Open DOCX",
+        "VI": "Mở DOCX"
+      },
+      "labelKey": "wordOpen",
+      "terms": [
+        "open docx",
+        "open document",
+        "mở docx"
+      ],
+      "path": {
+        "EN": "Word & Templates home → Open DOCX, upper right.",
+        "VI": "Trang Word & Mẫu → Mở DOCX ở góc trên bên phải."
+      },
+      "action": {
+        "EN": "Opens an existing DOCX file.",
+        "VI": "Mở tệp DOCX có sẵn."
+      },
+      "source": "src/word/WordWorkspace.tsx",
+      "marker": "t('wordOpen')"
+    },
+    {
+      "id": "word-import-template",
+      "selector": "word",
+      "page": "home",
+      "label": {
+        "EN": "Import template",
+        "VI": "Nhập mẫu"
+      },
+      "labelKey": "wordImport",
+      "terms": [
+        "import template",
+        "nhập mẫu"
+      ],
+      "path": {
+        "EN": "Word & Templates home → Import template, upper right.",
+        "VI": "Trang Word & Mẫu → Nhập mẫu ở góc trên bên phải."
+      },
+      "action": {
+        "EN": "Adds a DOCX template to the library.",
+        "VI": "Thêm mẫu DOCX vào thư viện."
+      },
+      "source": "src/word/WordWorkspace.tsx",
+      "marker": "t('wordImport')"
+    },
+    {
+      "id": "word-folders",
+      "selector": "settings",
+      "label": {
+        "EN": "Word folders",
+        "VI": "Thư mục Word"
+      },
+      "labelKey": "wordFolders",
+      "terms": [
+        "template folder",
+        "word folder",
+        "documents folder",
+        "thư mục mẫu",
+        "thư mục word"
+      ],
+      "path": {
+        "EN": "Settings → Storage Manager → Word & Templates → Word folders → Browse beside Templates or Documents → Save.",
+        "VI": "Cài đặt → Quản lý lưu trữ → Word & Mẫu → Thư mục Word → Chọn bên cạnh Mẫu hoặc Tài liệu → Lưu."
+      },
+      "action": {
+        "EN": "Changes Word template or document folder settings.",
+        "VI": "Đổi cài đặt thư mục mẫu hoặc tài liệu Word."
+      },
+      "source": "src/StorageManager.tsx",
+      "marker": "<WordSettingsPanel t={t} />",
+      "page": "storage"
+    },
+    {
+      "id": "translation-save",
+      "selector": "translation",
+      "label": {
+        "EN": "Save changes",
+        "VI": "Lưu thay đổi"
+      },
+      "labelKey": "translationSave",
+      "terms": [
+        "save",
+        "save translation",
+        "lưu",
+        "dịch thuật"
+      ],
+      "path": {
+        "EN": "Translation → action row below the entry form → Save changes.",
+        "VI": "Dịch thuật → hàng nút dưới biểu mẫu → Lưu thay đổi."
+      },
+      "action": {
+        "EN": "Saves the edited translation register.",
+        "VI": "Lưu sổ dịch thuật đã sửa."
+      },
+      "source": "src/ui.tsx",
+      "marker": "t('translationSave')"
+    },
+    {
+      "id": "translation-import",
+      "selector": "translation",
+      "label": {
+        "EN": "Import Excel",
+        "VI": "Nhập Excel"
+      },
+      "labelKey": "translationImport",
+      "terms": [
+        "import excel",
+        "import spreadsheet",
+        "nhập excel"
+      ],
+      "path": {
+        "EN": "Translation → action row below the entry form → Import Excel.",
+        "VI": "Dịch thuật → hàng nút dưới biểu mẫu → Nhập Excel."
+      },
+      "action": {
+        "EN": "Imports a translation workbook.",
+        "VI": "Nhập sổ dịch thuật từ Excel."
+      },
+      "source": "src/ui.tsx",
+      "marker": "t('translationImport')"
+    },
+    {
+      "id": "translation-export",
+      "selector": "translation",
+      "label": {
+        "EN": "Export Excel",
+        "VI": "Xuất Excel"
+      },
+      "labelKey": "translationExport",
+      "terms": [
+        "export excel",
+        "export spreadsheet",
+        "xuất excel"
+      ],
+      "path": {
+        "EN": "Translation → action row below the entry form → Export Excel.",
+        "VI": "Dịch thuật → hàng nút dưới biểu mẫu → Xuất Excel."
+      },
+      "action": {
+        "EN": "Exports the translation register.",
+        "VI": "Xuất sổ dịch thuật ra Excel."
+      },
+      "source": "src/ui.tsx",
+      "marker": "t('translationExport')"
+    },
+    {
+      "id": "signature-save",
+      "selector": "signature",
+      "label": {
+        "EN": "Save changes",
+        "VI": "Lưu thay đổi"
+      },
+      "labelKey": "translationSave",
+      "terms": [
+        "save",
+        "save signature",
+        "lưu",
+        "chữ ký"
+      ],
+      "path": {
+        "EN": "Signature authentication → action row under the register → Save changes.",
+        "VI": "Chứng thực chữ ký → hàng nút dưới sổ → Lưu thay đổi."
+      },
+      "action": {
+        "EN": "Saves signature register changes.",
+        "VI": "Lưu thay đổi sổ chứng thực chữ ký."
+      },
+      "source": "src/SignaturePage.tsx",
+      "marker": "t('translationSave')"
+    },
+    {
+      "id": "copies-save",
+      "selector": "copies",
+      "label": {
+        "EN": "Save changes",
+        "VI": "Lưu thay đổi"
+      },
+      "labelKey": "translationSave",
+      "terms": [
+        "save",
+        "save copies",
+        "lưu",
+        "bản sao"
+      ],
+      "path": {
+        "EN": "Copies → action row under the register → Save changes.",
+        "VI": "Bản sao → hàng nút dưới sổ → Lưu thay đổi."
+      },
+      "action": {
+        "EN": "Saves certified copies changes.",
+        "VI": "Lưu thay đổi sổ bản sao."
+      },
+      "source": "src/CopiesPage.tsx",
+      "marker": "t('translationSave')"
+    },
+    {
+      "id": "settings-storage",
+      "selector": "settings",
+      "page": "storage",
+      "label": {
+        "EN": "Storage Manager",
+        "VI": "Quản lý lưu trữ"
+      },
+      "labelKey": "storageManager",
+      "terms": [
+        "storage manager",
+        "storage path",
+        "backup folder",
+        "output folder",
+        "quản lý lưu trữ",
+        "đường dẫn lưu"
+      ],
+      "path": {
+        "EN": "Settings → Storage Manager tab.",
+        "VI": "Cài đặt → thẻ Quản lý lưu trữ."
+      },
+      "action": {
+        "EN": "Shows the configurable Backup and Output folders for Rename PDFs.",
+        "VI": "Hiển thị thư mục Sao lưu và Đầu ra có thể chỉnh cho Đổi tên PDF."
+      },
+      "source": "src/ui.tsx",
+      "marker": "['storage','storageManager']"
+    },
+    {
+      "id": "storage-choose",
+      "selector": "settings",
+      "page": "storage",
+      "label": {
+        "EN": "Choose Folder",
+        "VI": "Chọn thư mục"
+      },
+      "labelKey": "storageChoose",
+      "terms": [
+        "choose folder",
+        "browse storage",
+        "change storage path",
+        "chọn thư mục",
+        "đổi đường dẫn"
+      ],
+      "path": {
+        "EN": "Settings → Storage Manager → Rename PDFs → Backup or Output row → Choose Folder.",
+        "VI": "Cài đặt → Quản lý lưu trữ → Đổi tên PDF → hàng Sao lưu hoặc Đầu ra → Chọn thư mục."
+      },
+      "action": {
+        "EN": "Selects a custom folder for that path.",
+        "VI": "Chọn thư mục tùy chỉnh cho đường dẫn đó."
+      },
+      "source": "src/StorageManager.tsx",
+      "marker": "t('storageChoose')"
+    },
+    {
+      "id": "storage-check",
+      "selector": "settings",
+      "page": "storage",
+      "label": {
+        "EN": "Check Path",
+        "VI": "Kiểm tra đường dẫn"
+      },
+      "labelKey": "storageCheck",
+      "terms": [
+        "check path",
+        "validate folder",
+        "kiểm tra đường dẫn"
+      ],
+      "path": {
+        "EN": "Settings → Storage Manager → Rename PDFs → Backup or Output row → Check Path.",
+        "VI": "Cài đặt → Quản lý lưu trữ → Đổi tên PDF → hàng Sao lưu hoặc Đầu ra → Kiểm tra đường dẫn."
+      },
+      "action": {
+        "EN": "Checks whether the configured folder is available.",
+        "VI": "Kiểm tra thư mục đã cấu hình có khả dụng không."
+      },
+      "source": "src/StorageManager.tsx",
+      "marker": "t('storageCheck')"
+    },
+    {
+      "id": "storage-reset",
+      "selector": "settings",
+      "page": "storage",
+      "label": {
+        "EN": "Reset to Default",
+        "VI": "Đặt lại mặc định"
+      },
+      "labelKey": "storageReset",
+      "terms": [
+        "reset path",
+        "reset folder",
+        "default folder",
+        "đặt lại mặc định"
+      ],
+      "path": {
+        "EN": "Settings → Storage Manager → Rename PDFs → Backup or Output row → Reset to Default.",
+        "VI": "Cài đặt → Quản lý lưu trữ → Đổi tên PDF → hàng Sao lưu hoặc Đầu ra → Đặt lại mặc định."
+      },
+      "action": {
+        "EN": "Restores the default folder after confirmation.",
+        "VI": "Khôi phục thư mục mặc định sau khi xác nhận."
+      },
+      "source": "src/StorageManager.tsx",
+      "marker": "t('storageReset')"
+    },
+    {
+      "id": "calendar-export",
+      "selector": "calendar",
+      "label": {
+        "EN": "Export backup",
+        "VI": "Xuất bản sao lưu"
+      },
+      "terms": [
+        "export backup",
+        "calendar backup",
+        "xuất bản sao lưu",
+        "sao lưu lịch"
+      ],
+      "path": {
+        "EN": "Calendar & To-do → toolbar → Export backup.",
+        "VI": "Lịch & Công việc → thanh công cụ → Xuất bản sao lưu."
+      },
+      "action": {
+        "EN": "Saves a local JSON backup of the calendar.",
+        "VI": "Lưu bản sao JSON cục bộ của lịch."
+      },
+      "source": "src/CalendarWorkspace.tsx",
+      "marker": "l.export"
+    },
+    {
+      "id": "calendar-import",
+      "selector": "calendar",
+      "label": {
+        "EN": "Import backup",
+        "VI": "Nhập bản sao lưu"
+      },
+      "terms": [
+        "import backup",
+        "restore calendar",
+        "nhập bản sao lưu"
+      ],
+      "path": {
+        "EN": "Calendar & To-do → toolbar → Import backup.",
+        "VI": "Lịch & Công việc → thanh công cụ → Nhập bản sao lưu."
+      },
+      "action": {
+        "EN": "Imports a validated calendar JSON backup after confirmation.",
+        "VI": "Nhập bản sao JSON lịch hợp lệ sau khi xác nhận."
+      },
+      "source": "src/CalendarWorkspace.tsx",
+      "marker": "l.import"
+    },
+    {
+      "id": "calendar-save",
+      "selector": "calendar",
+      "label": {
+        "EN": "Save",
+        "VI": "Lưu"
+      },
+      "terms": [
+        "save",
+        "save task",
+        "save event",
+        "lưu lịch",
+        "lưu công việc"
+      ],
+      "path": {
+        "EN": "Calendar & To-do → open or create a task/event → Save at the bottom of its editor.",
+        "VI": "Lịch & Công việc → mở hoặc tạo công việc/sự kiện → Lưu ở cuối biểu mẫu."
+      },
+      "action": {
+        "EN": "Saves the task or event locally.",
+        "VI": "Lưu công việc hoặc sự kiện trên máy."
+      },
+      "source": "src/CalendarWorkspace.tsx",
+      "marker": "l.save"
+    },
+    {
+      "id": "signature-settings-save",
+      "selector": "settings",
+      "page": "signature",
+      "label": {
+        "EN": "Save",
+        "VI": "Lưu"
+      },
+      "labelKey": "settingsSave",
+      "terms": [
+        "save signature labels",
+        "save settings",
+        "lưu cài đặt",
+        "lưu nhãn"
+      ],
+      "path": {
+        "EN": "Settings → Signature authentication tab → Save below the field and header labels.",
+        "VI": "Cài đặt → thẻ Chứng thực chữ ký → Lưu bên dưới nhãn trường và tiêu đề."
+      },
+      "action": {
+        "EN": "Saves the edited signature labels.",
+        "VI": "Lưu các nhãn chứng thực chữ ký đã sửa."
+      },
+      "source": "src/ui.tsx",
+      "marker": "t('settingsSave')"
+    },
+    {
+      "id": "rename-choose",
+      "selector": "rename",
+      "label": {"EN": "Choose folder", "VI": "Chọn thư mục"},
+      "labelKey": "chooseFolder",
+      "terms": ["choose folder", "select pdf folder", "chọn thư mục pdf"],
+      "path": {"EN": "Rename PDFs → Source folder panel → Choose folder.", "VI": "Đổi tên PDF → bảng Thư mục nguồn → Chọn thư mục."},
+      "action": {"EN": "Selects the folder containing PDFs to scan.", "VI": "Chọn thư mục có tệp PDF để quét."},
+      "source": "src/ui.tsx",
+      "marker": "t('chooseFolder')"
+    },
+    {
+      "id": "rename-scan",
+      "selector": "rename",
+      "label": {"EN": "Scan folder", "VI": "Quét thư mục"},
+      "labelKey": "scanFolder",
+      "terms": ["scan folder", "refresh pdf scan", "quét thư mục"],
+      "path": {"EN": "Rename PDFs → Source folder panel → Scan folder.", "VI": "Đổi tên PDF → bảng Thư mục nguồn → Quét thư mục."},
+      "action": {"EN": "Scans PDF files directly inside the selected folder.", "VI": "Quét các tệp PDF trực tiếp trong thư mục đã chọn."},
+      "source": "src/ui.tsx",
+      "marker": "t('scanFolder')"
+    },
+    {
+      "id": "rename-run",
+      "selector": "rename",
+      "label": {"EN": "Run verified copy", "VI": "Chạy sao chép đã xác minh"},
+      "labelKey": "runVerifiedCopy",
+      "terms": ["run verified copy", "rename pdf files", "sao chép đã xác minh"],
+      "path": {"EN": "Rename PDFs → review the proposed names → final results panel → Run verified copy.", "VI": "Đổi tên PDF → xem tên đề xuất → bảng kết quả cuối → Chạy sao chép đã xác minh."},
+      "action": {"EN": "Creates verified output copies while preserving the source files.", "VI": "Tạo bản sao kết quả đã xác minh và giữ nguyên tệp nguồn."},
+      "source": "src/ui.tsx",
+      "marker": "t('runVerifiedCopy')"
+    },
+    {
+      "id": "count-choose",
+      "selector": "count",
+      "label": {"EN": "Choose folder", "VI": "Chọn thư mục"},
+      "labelKey": "chooseFolder",
+      "terms": ["choose folder", "count folder", "đếm số thư mục"],
+      "path": {"EN": "Count number → Folder to check → Choose folder.", "VI": "Đếm số → Thư mục cần kiểm tra → Chọn thư mục."},
+      "action": {"EN": "Selects a folder whose numbered files will be checked.", "VI": "Chọn thư mục có tệp đánh số để kiểm tra."},
+      "source": "src/ui.tsx",
+      "marker": "className=\"count-choose-button\""
+    },
+    {
+      "id": "translation-refresh",
+      "selector": "translation",
+      "label": {"EN": "Refresh", "VI": "Làm mới"},
+      "labelKey": "translationRefresh",
+      "terms": ["refresh translation", "reload spreadsheet", "làm mới dịch thuật"],
+      "path": {"EN": "Translation → toolbar above the register → Refresh.", "VI": "Dịch thuật → thanh công cụ phía trên sổ → Làm mới."},
+      "action": {"EN": "Reloads translation register data.", "VI": "Tải lại dữ liệu sổ dịch thuật."},
+      "source": "src/ui.tsx",
+      "marker": "t('translationRefresh')"
+    }
+  ]
+}

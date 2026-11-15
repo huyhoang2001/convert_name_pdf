@@ -51,3 +51,19 @@ test('Wordcraft web shell reports asset boot failure and ignores later unrelated
   listeners.get('unhandledrejection')({ reason: 'later app error' });
   assert.equal(sent.length, 1);
 });
+
+test('Wordcraft owns native print controls while the React host only transports jobs', () => {
+  const editor = readFileSync(new URL('../src/word/WordcraftEditor.tsx', import.meta.url), 'utf8');
+  const printPage = readFileSync(new URL('../wordcraft-upstream/crates/ui-egui/src/print_page.rs', import.meta.url), 'utf8');
+  assert.match(editor, /wordcraft:print-discover/);
+  assert.match(editor, /wordcraft:print-submit/);
+  assert.doesNotMatch(editor, /WordPrintDialog|word-print-backdrop|window\.print/);
+  for (const label of [
+    'Printer Properties',
+    'Printer Default',
+    'Print One Sided',
+    'Flip on Long Edge',
+    'Flip on Short Edge',
+    'Manually Print on Both Sides',
+  ]) assert.match(printPage, new RegExp(label));
+});

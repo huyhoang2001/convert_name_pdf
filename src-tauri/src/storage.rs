@@ -37,34 +37,57 @@ const BOARD_DONE_MS: i64 = 72 * 60 * 60 * 1000;
 mod calendar_shards;
 
 pub fn calendar_data() -> Result<Value, String> {
-    let _guard = CALENDAR_LOCK.lock().map_err(|_| "Calendar storage is busy.")?;
+    let _guard = CALENDAR_LOCK
+        .lock()
+        .map_err(|_| "Calendar storage is busy.")?;
     let base = user_dir()?;
     let _process_guard = calendar_shards::process_lock(&base)?;
     calendar_shards::full(&base)
 }
 
 pub fn save_calendar_data(value: Value) -> Result<Value, String> {
-    let _guard = CALENDAR_LOCK.lock().map_err(|_| "Calendar storage is busy.")?;
+    let _guard = CALENDAR_LOCK
+        .lock()
+        .map_err(|_| "Calendar storage is busy.")?;
     let base = user_dir()?;
     let _process_guard = calendar_shards::process_lock(&base)?;
     calendar_shards::replace(&base, value)
 }
 
-pub fn query_calendar_data(start_date: String, end_date: String, board_view: bool) -> Result<Value, String> {
-    let start = NaiveDate::parse_from_str(&start_date, "%Y-%m-%d").map_err(|_| "Calendar date range is invalid.")?;
-    let end = NaiveDate::parse_from_str(&end_date, "%Y-%m-%d").map_err(|_| "Calendar date range is invalid.")?;
-    if start > end { return Err("Calendar date range is invalid.".into()); }
-    let _guard = CALENDAR_LOCK.lock().map_err(|_| "Calendar storage is busy.")?;
+pub fn query_calendar_data(
+    start_date: String,
+    end_date: String,
+    board_view: bool,
+) -> Result<Value, String> {
+    let start = NaiveDate::parse_from_str(&start_date, "%Y-%m-%d")
+        .map_err(|_| "Calendar date range is invalid.")?;
+    let end = NaiveDate::parse_from_str(&end_date, "%Y-%m-%d")
+        .map_err(|_| "Calendar date range is invalid.")?;
+    if start > end {
+        return Err("Calendar date range is invalid.".into());
+    }
+    let _guard = CALENDAR_LOCK
+        .lock()
+        .map_err(|_| "Calendar storage is busy.")?;
     let base = user_dir()?;
     let _process_guard = calendar_shards::process_lock(&base)?;
     calendar_shards::query(&base, &start_date, &end_date, board_view)
 }
 
 #[cfg(test)]
-fn query_calendar_at(path: &Path, start_date: &str, end_date: &str, board_view: bool) -> Result<Value, String> {
-    let start = NaiveDate::parse_from_str(start_date, "%Y-%m-%d").map_err(|_| "Calendar date range is invalid.")?;
-    let end = NaiveDate::parse_from_str(end_date, "%Y-%m-%d").map_err(|_| "Calendar date range is invalid.")?;
-    if start > end { return Err("Calendar date range is invalid.".into()); }
+fn query_calendar_at(
+    path: &Path,
+    start_date: &str,
+    end_date: &str,
+    board_view: bool,
+) -> Result<Value, String> {
+    let start = NaiveDate::parse_from_str(start_date, "%Y-%m-%d")
+        .map_err(|_| "Calendar date range is invalid.")?;
+    let end = NaiveDate::parse_from_str(end_date, "%Y-%m-%d")
+        .map_err(|_| "Calendar date range is invalid.")?;
+    if start > end {
+        return Err("Calendar date range is invalid.".into());
+    }
     let mut data = read_calendar_at(&path)?;
     if normalize_legacy_completions(&mut data, &Utc::now().to_rfc3339()) {
         validate_calendar(&data)?;
@@ -73,25 +96,40 @@ fn query_calendar_at(path: &Path, start_date: &str, end_date: &str, board_view: 
     let now = Utc::now();
     let range_start = start.format("%Y-%m-%d").to_string();
     let range_end = end.format("%Y-%m-%d").to_string();
-    let all_items = data["items"].as_array().map(Vec::as_slice).unwrap_or_default();
+    let all_items = data["items"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
     let category_counts = calendar_category_counts(all_items, &data["categories"]);
-    let items = all_items.iter().filter(|item| {
-        let status = item["status"].as_str().unwrap_or("todo");
-        if board_view && item["kind"] == "task" {
-            return status != "done" || board_done_visible(item, &now);
-        }
-        if overlaps_range(item, &range_start, &range_end) { return true; }
-        if item["recurrence"].as_str().is_some_and(|value| !value.is_empty()) {
-            if recurrence_overlaps_range(item, start, end) { return true; }
-        }
-        // Reminders only need near-term active records; old history stays out of the UI payload.
-        if status != "done" && item["reminder"].as_i64().unwrap_or(0) != 0 {
-            let due = date_part(item.get("due").unwrap_or(&Value::Null));
-            let today = now.format("%Y-%m-%d").to_string();
-            return due >= today && due <= (now + Duration::days(1)).format("%Y-%m-%d").to_string();
-        }
-        false
-    }).cloned().collect::<Vec<_>>();
+    let items = all_items
+        .iter()
+        .filter(|item| {
+            let status = item["status"].as_str().unwrap_or("todo");
+            if board_view && item["kind"] == "task" {
+                return status != "done" || board_done_visible(item, &now);
+            }
+            if overlaps_range(item, &range_start, &range_end) {
+                return true;
+            }
+            if item["recurrence"]
+                .as_str()
+                .is_some_and(|value| !value.is_empty())
+            {
+                if recurrence_overlaps_range(item, start, end) {
+                    return true;
+                }
+            }
+            // Reminders only need near-term active records; old history stays out of the UI payload.
+            if status != "done" && item["reminder"].as_i64().unwrap_or(0) != 0 {
+                let due = date_part(item.get("due").unwrap_or(&Value::Null));
+                let today = now.format("%Y-%m-%d").to_string();
+                return due >= today
+                    && due <= (now + Duration::days(1)).format("%Y-%m-%d").to_string();
+            }
+            false
+        })
+        .cloned()
+        .collect::<Vec<_>>();
     let mut result = data;
     result["items"] = json!(items);
     result["categoryCounts"] = category_counts;
@@ -103,36 +141,69 @@ pub fn save_calendar_changes(
     expected_updated_at: HashMap<String, Option<String>>,
     deleted_ids: Vec<String>,
 ) -> Result<(), String> {
-    let _guard = CALENDAR_LOCK.lock().map_err(|_| "Calendar storage is busy.")?;
+    let _guard = CALENDAR_LOCK
+        .lock()
+        .map_err(|_| "Calendar storage is busy.")?;
     let base = user_dir()?;
     let _process_guard = calendar_shards::process_lock(&base)?;
     calendar_shards::changes(&base, value, expected_updated_at, deleted_ids)
 }
 
-pub fn calendar_rebuild_status() -> Option<Value> { calendar_shards::rebuild_status(&user_dir().ok()?) }
-pub fn cancel_calendar_rebuild() -> Result<(), String> { calendar_shards::cancel_rebuild(&user_dir()?) }
+pub fn calendar_rebuild_status() -> Option<Value> {
+    calendar_shards::rebuild_status(&user_dir().ok()?)
+}
+pub fn cancel_calendar_rebuild() -> Result<(), String> {
+    calendar_shards::cancel_rebuild(&user_dir()?)
+}
 
 #[cfg(test)]
-fn save_calendar_changes_at(path: &Path, value: Value, expected_updated_at: HashMap<String, Option<String>>, deleted_ids: Vec<String>) -> Result<(), String> {
+fn save_calendar_changes_at(
+    path: &Path,
+    value: Value,
+    expected_updated_at: HashMap<String, Option<String>>,
+    deleted_ids: Vec<String>,
+) -> Result<(), String> {
     validate_calendar(&value)?;
     if deleted_ids.len() > 10_000 || deleted_ids.iter().any(|id| id.is_empty() || id.len() > 100) {
         return Err("Calendar delete request is invalid.".into());
     }
-    let incoming = value["items"].as_array().ok_or("Calendar data has no items.")?;
-    let incoming_ids = incoming.iter().filter_map(|item| item["id"].as_str()).collect::<HashSet<_>>();
-    let delete_set = deleted_ids.iter().map(String::as_str).collect::<HashSet<_>>();
-    if delete_set.len() != deleted_ids.len() || incoming_ids.iter().any(|id| delete_set.contains(id)) {
+    let incoming = value["items"]
+        .as_array()
+        .ok_or("Calendar data has no items.")?;
+    let incoming_ids = incoming
+        .iter()
+        .filter_map(|item| item["id"].as_str())
+        .collect::<HashSet<_>>();
+    let delete_set = deleted_ids
+        .iter()
+        .map(String::as_str)
+        .collect::<HashSet<_>>();
+    if delete_set.len() != deleted_ids.len()
+        || incoming_ids.iter().any(|id| delete_set.contains(id))
+    {
         return Err("Calendar change request contains duplicate or conflicting item IDs.".into());
     }
     let mut data = read_calendar_at(&path)?;
     normalize_legacy_completions(&mut data, &Utc::now().to_rfc3339());
     let item_indexes = {
-        let original_items = data["items"].as_array().ok_or("Calendar data has no items.")?;
-        let indexes = original_items.iter().enumerate().filter_map(|(index, item)| item["id"].as_str().map(|id| (id.to_string(), index))).collect::<HashMap<_, _>>();
+        let original_items = data["items"]
+            .as_array()
+            .ok_or("Calendar data has no items.")?;
+        let indexes = original_items
+            .iter()
+            .enumerate()
+            .filter_map(|(index, item)| item["id"].as_str().map(|id| (id.to_string(), index)))
+            .collect::<HashMap<_, _>>();
         for id in incoming_ids.iter().chain(delete_set.iter()) {
-            let expected = expected_updated_at.get(*id).ok_or("Calendar changed elsewhere. Reload and try again.")?;
-            let actual = indexes.get(*id).and_then(|index| original_items[*index]["updatedAt"].as_str());
-            if actual != expected.as_deref() { return Err("Calendar changed elsewhere. Reload and try again.".into()); }
+            let expected = expected_updated_at
+                .get(*id)
+                .ok_or("Calendar changed elsewhere. Reload and try again.")?;
+            let actual = indexes
+                .get(*id)
+                .and_then(|index| original_items[*index]["updatedAt"].as_str());
+            if actual != expected.as_deref() {
+                return Err("Calendar changed elsewhere. Reload and try again.".into());
+            }
         }
         indexes
     };
@@ -140,17 +211,27 @@ fn save_calendar_changes_at(path: &Path, value: Value, expected_updated_at: Hash
     let new_categories = value["categories"].as_array().cloned().unwrap_or_default();
     apply_category_changes(&mut data, &old_categories, &new_categories);
     data["categories"] = json!(new_categories);
-    if let Some(colors) = value.get("categoryColors") { data["categoryColors"] = colors.clone(); }
+    if let Some(colors) = value.get("categoryColors") {
+        data["categoryColors"] = colors.clone();
+    }
 
     let now = Utc::now().to_rfc3339();
-    let items = data["items"].as_array_mut().ok_or("Calendar data has no items.")?;
+    let items = data["items"]
+        .as_array_mut()
+        .ok_or("Calendar data has no items.")?;
     for incoming in incoming {
-        let id = incoming["id"].as_str().ok_or("Calendar item has an invalid ID.")?;
+        let id = incoming["id"]
+            .as_str()
+            .ok_or("Calendar item has an invalid ID.")?;
         let existing_index = item_indexes.get(id).copied();
         let existing = existing_index.map(|index| items[index].clone());
         let mut item = merge_item(existing.as_ref(), incoming);
         apply_completion_transition(existing.as_ref(), &mut item, &now);
-        if let Some(index) = existing_index { items[index] = item; } else { items.push(item); }
+        if let Some(index) = existing_index {
+            items[index] = item;
+        } else {
+            items.push(item);
+        }
     }
     items.retain(|item| !delete_set.contains(item["id"].as_str().unwrap_or("")));
     data["schemaVersion"] = json!(1);
@@ -159,71 +240,154 @@ fn save_calendar_changes_at(path: &Path, value: Value, expected_updated_at: Hash
 }
 
 fn read_calendar_at(path: &Path) -> Result<Value, String> {
-    if !path.exists() { return Ok(json!({"schemaVersion":1,"categories":[],"items":[]})); }
+    if !path.exists() {
+        return Ok(json!({"schemaVersion":1,"categories":[],"items":[]}));
+    }
     let bytes = fs::read(path).map_err(|error| error.to_string())?;
-    if bytes.len() > 10_000_000 { return Err("Calendar data exceeds the 10 MB safety limit.".into()); }
-    let value: Value = serde_json::from_slice(&bytes).map_err(|error| format!("{}: {error}", path.display()))?;
+    if bytes.len() > 10_000_000 {
+        return Err("Calendar data exceeds the 10 MB safety limit.".into());
+    }
+    let value: Value =
+        serde_json::from_slice(&bytes).map_err(|error| format!("{}: {error}", path.display()))?;
     validate_calendar(&value)?;
     Ok(value)
 }
 
-fn date_part(value: &Value) -> String { value.as_str().unwrap_or("").get(..10).unwrap_or("").to_string() }
+fn date_part(value: &Value) -> String {
+    value
+        .as_str()
+        .unwrap_or("")
+        .get(..10)
+        .unwrap_or("")
+        .to_string()
+}
 fn calendar_date(item: &Value, preferred: &str, fallback: &str) -> String {
-    item.get(preferred).filter(|value| value.is_string()).or_else(|| item.get(fallback)).map(date_part).unwrap_or_default()
+    item.get(preferred)
+        .filter(|value| value.is_string())
+        .or_else(|| item.get(fallback))
+        .map(date_part)
+        .unwrap_or_default()
 }
 fn overlaps_range(item: &Value, start: &str, end: &str) -> bool {
     let item_start = calendar_date(item, "originalStart", "start");
     let item_end = date_part(item.get("due").unwrap_or(&Value::Null));
-    !item_start.is_empty() && !item_end.is_empty() && item_start.as_str() <= end && item_end.as_str() >= start
+    !item_start.is_empty()
+        && !item_end.is_empty()
+        && item_start.as_str() <= end
+        && item_end.as_str() >= start
 }
 fn recurrence_overlaps_range(item: &Value, start: NaiveDate, end: NaiveDate) -> bool {
-    let Some(base) = NaiveDate::parse_from_str(&calendar_date(item, "originalStart", "start"), "%Y-%m-%d").ok() else { return false; };
-    if base > end { return false; }
+    let Some(base) =
+        NaiveDate::parse_from_str(&calendar_date(item, "originalStart", "start"), "%Y-%m-%d").ok()
+    else {
+        return false;
+    };
+    if base > end {
+        return false;
+    }
     let recurrence = item["recurrence"].as_str().unwrap_or("");
     let duration = if item["kind"] == "event" {
-        NaiveDate::parse_from_str(&date_part(item.get("due").unwrap_or(&Value::Null)), "%Y-%m-%d").ok().map(|due| due.signed_duration_since(base).num_days().max(0)).unwrap_or(0)
-    } else { 0 };
-    let continuous_gap = match recurrence { "daily" => 1, "weekly" => 7, "monthly" => 62, "yearly" => 1461, _ => return false };
-    if duration >= continuous_gap { return true; }
-    let lower = start.checked_sub_signed(Duration::days(duration)).unwrap_or(NaiveDate::MIN).max(base);
-    if lower > end { return false; }
+        NaiveDate::parse_from_str(
+            &date_part(item.get("due").unwrap_or(&Value::Null)),
+            "%Y-%m-%d",
+        )
+        .ok()
+        .map(|due| due.signed_duration_since(base).num_days().max(0))
+        .unwrap_or(0)
+    } else {
+        0
+    };
+    let continuous_gap = match recurrence {
+        "daily" => 1,
+        "weekly" => 7,
+        "monthly" => 62,
+        "yearly" => 1461,
+        _ => return false,
+    };
+    if duration >= continuous_gap {
+        return true;
+    }
+    let lower = start
+        .checked_sub_signed(Duration::days(duration))
+        .unwrap_or(NaiveDate::MIN)
+        .max(base);
+    if lower > end {
+        return false;
+    }
     match recurrence {
         "daily" => true,
         "weekly" => {
             let elapsed = lower.signed_duration_since(base).num_days();
             let offset = elapsed + (7 - elapsed % 7) % 7;
-            base.checked_add_signed(Duration::days(offset)).is_some_and(|date| date <= end)
+            base.checked_add_signed(Duration::days(offset))
+                .is_some_and(|date| date <= end)
         }
         "monthly" => {
-            let Some(mut month) = lower.with_day(1) else { return false; };
+            let Some(mut month) = lower.with_day(1) else {
+                return false;
+            };
             let last = end.with_day(1).unwrap_or(end);
             while month <= last {
-                if month.with_day(base.day()).is_some_and(|date| date >= lower && date <= end) { return true; }
-                let Some(next) = month.checked_add_months(Months::new(1)) else { break; };
+                if month
+                    .with_day(base.day())
+                    .is_some_and(|date| date >= lower && date <= end)
+                {
+                    return true;
+                }
+                let Some(next) = month.checked_add_months(Months::new(1)) else {
+                    break;
+                };
                 month = next;
             }
             false
         }
-        "yearly" => (lower.year()..=end.year()).any(|year| NaiveDate::from_ymd_opt(year, base.month(), base.day()).is_some_and(|date| date >= lower && date <= end)),
+        "yearly" => (lower.year()..=end.year()).any(|year| {
+            NaiveDate::from_ymd_opt(year, base.month(), base.day())
+                .is_some_and(|date| date >= lower && date <= end)
+        }),
         _ => false,
     }
 }
 fn board_done_visible(item: &Value, now: &DateTime<Utc>) -> bool {
-    item.get("completedAt").or_else(|| item.get("completionObservedAt"))
-        .and_then(Value::as_str).and_then(|stamp| DateTime::parse_from_rfc3339(stamp).ok())
-        .is_some_and(|stamp| (0..BOARD_DONE_MS).contains(&now.signed_duration_since(stamp.with_timezone(&Utc)).num_milliseconds()))
+    item.get("completedAt")
+        .or_else(|| item.get("completionObservedAt"))
+        .and_then(Value::as_str)
+        .and_then(|stamp| DateTime::parse_from_rfc3339(stamp).ok())
+        .is_some_and(|stamp| {
+            (0..BOARD_DONE_MS).contains(
+                &now.signed_duration_since(stamp.with_timezone(&Utc))
+                    .num_milliseconds(),
+            )
+        })
 }
 #[cfg(test)]
 fn calendar_category_counts(items: &[Value], categories: &Value) -> Value {
     let mut totals = HashMap::<&str, usize>::new();
     for item in items {
-        if let Some(category) = item["category"].as_str() { *totals.entry(category).or_default() += 1; }
+        if let Some(category) = item["category"].as_str() {
+            *totals.entry(category).or_default() += 1;
+        }
     }
-    Value::Object(categories.as_array().into_iter().flatten().filter_map(Value::as_str).map(|category| (category.to_string(), json!(totals.get(category).copied().unwrap_or(0)))).collect())
+    Value::Object(
+        categories
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(|category| {
+                (
+                    category.to_string(),
+                    json!(totals.get(category).copied().unwrap_or(0)),
+                )
+            })
+            .collect(),
+    )
 }
 fn normalize_legacy_completions(data: &mut Value, observed_at: &str) -> bool {
     let mut changed = false;
-    let Some(items) = data["items"].as_array_mut() else { return false; };
+    let Some(items) = data["items"].as_array_mut() else {
+        return false;
+    };
     for item in items {
         if item.get("status").is_none() {
             item["status"] = json!("todo");
@@ -231,19 +395,34 @@ fn normalize_legacy_completions(data: &mut Value, observed_at: &str) -> bool {
         }
         let status = item["status"].as_str().unwrap_or("todo").to_string();
         if let Some(original) = item.get("originalStart").cloned() {
-            if item.get("start") != Some(&original) { item["start"] = original; changed = true; }
+            if item.get("start") != Some(&original) {
+                item["start"] = original;
+                changed = true;
+            }
         }
-        if item.get("originalStart").is_none() && (status == "done" || item.get("completedAt").is_some()) {
+        if item.get("originalStart").is_none()
+            && (status == "done" || item.get("completedAt").is_some())
+        {
             let start = item.get("start").cloned().unwrap_or(Value::Null);
             item["originalStart"] = start;
             changed = true;
         }
-        if status == "done" && item.get("completedAt").is_none() && item.get("completionObservedAt").is_none() {
+        if status == "done"
+            && item.get("completedAt").is_none()
+            && item.get("completionObservedAt").is_none()
+        {
             item["completionObservedAt"] = json!(observed_at);
             changed = true;
         }
-        if status == "done" && item.get("completedAt").is_some() && item.get("firstCompletedAt").is_none() {
-            let earliest_done = item["statusHistory"].as_array().and_then(|history| history.iter().find(|entry| entry["status"] == "done")).and_then(|entry| entry.get("changedAt")).cloned();
+        if status == "done"
+            && item.get("completedAt").is_some()
+            && item.get("firstCompletedAt").is_none()
+        {
+            let earliest_done = item["statusHistory"]
+                .as_array()
+                .and_then(|history| history.iter().find(|entry| entry["status"] == "done"))
+                .and_then(|entry| entry.get("changedAt"))
+                .cloned();
             item["firstCompletedAt"] = earliest_done.unwrap_or_else(|| item["completedAt"].clone());
             changed = true;
         }
@@ -251,42 +430,83 @@ fn normalize_legacy_completions(data: &mut Value, observed_at: &str) -> bool {
     changed
 }
 fn preserve_locked_starts(existing: &Value, replacement: &mut Value) {
-    let Some(old_items) = existing["items"].as_array() else { return; };
-    let Some(new_items) = replacement["items"].as_array_mut() else { return; };
-    let old_by_id = old_items.iter().filter_map(|item| item["id"].as_str().map(|id| (id, item))).collect::<HashMap<_, _>>();
+    let Some(old_items) = existing["items"].as_array() else {
+        return;
+    };
+    let Some(new_items) = replacement["items"].as_array_mut() else {
+        return;
+    };
+    let old_by_id = old_items
+        .iter()
+        .filter_map(|item| item["id"].as_str().map(|id| (id, item)))
+        .collect::<HashMap<_, _>>();
     for item in new_items {
         let id = item["id"].as_str().unwrap_or("");
         if let Some(old) = old_by_id.get(id) {
             let original = old.get("originalStart").or_else(|| {
-                (old["status"] == "done" || old.get("completedAt").is_some() || old.get("completionObservedAt").is_some()).then(|| old.get("start")).flatten()
+                (old["status"] == "done"
+                    || old.get("completedAt").is_some()
+                    || old.get("completionObservedAt").is_some())
+                .then(|| old.get("start"))
+                .flatten()
             });
             if let Some(original) = original {
                 item["originalStart"] = original.clone();
                 item["start"] = original.clone();
-                for key in ["firstCompletedAt", "completedAt", "completionObservedAt", "statusHistory"] {
-                    if item.get(key).is_none() { if let Some(value) = old.get(key) { item[key] = value.clone(); } }
+                for key in [
+                    "firstCompletedAt",
+                    "completedAt",
+                    "completionObservedAt",
+                    "statusHistory",
+                ] {
+                    if item.get(key).is_none() {
+                        if let Some(value) = old.get(key) {
+                            item[key] = value.clone();
+                        }
+                    }
                 }
             }
         }
     }
 }
 fn merge_item(existing: Option<&Value>, incoming: &Value) -> Value {
-    let mut item = existing.and_then(Value::as_object).cloned().unwrap_or_default();
-    if let Some(fields) = incoming.as_object() { item.extend(fields.clone()); }
+    let mut item = existing
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    if let Some(fields) = incoming.as_object() {
+        item.extend(fields.clone());
+    }
     Value::Object(item)
 }
 fn apply_completion_transition(existing: Option<&Value>, item: &mut Value, now: &str) {
-    let old_status = existing.and_then(|old| old["status"].as_str()).unwrap_or("todo").to_string();
+    let old_status = existing
+        .and_then(|old| old["status"].as_str())
+        .unwrap_or("todo")
+        .to_string();
     let status = item["status"].as_str().unwrap_or("todo").to_string();
     let changed = existing.is_some() && old_status != status;
     if let Some(old) = existing {
-        for key in ["originalStart", "firstCompletedAt", "completedAt", "completionObservedAt", "statusHistory"] {
-            if let Some(value) = old.get(key) { item[key] = value.clone(); }
-            else { item.as_object_mut().unwrap().remove(key); }
+        for key in [
+            "originalStart",
+            "firstCompletedAt",
+            "completedAt",
+            "completionObservedAt",
+            "statusHistory",
+        ] {
+            if let Some(value) = old.get(key) {
+                item[key] = value.clone();
+            } else {
+                item.as_object_mut().unwrap().remove(key);
+            }
         }
         let locked_start = old.get("originalStart").or_else(|| {
-            (old["status"] == "done" || old.get("completedAt").is_some() || old.get("completionObservedAt").is_some() || (changed && status == "done"))
-                .then(|| old.get("start")).flatten()
+            (old["status"] == "done"
+                || old.get("completedAt").is_some()
+                || old.get("completionObservedAt").is_some()
+                || (changed && status == "done"))
+                .then(|| old.get("start"))
+                .flatten()
         });
         if let Some(start) = locked_start {
             item["originalStart"] = start.clone();
@@ -295,14 +515,23 @@ fn apply_completion_transition(existing: Option<&Value>, item: &mut Value, now: 
     }
     if changed && status == "done" {
         if item.get("originalStart").is_none() {
-            item["originalStart"] = existing.and_then(|old| old.get("start")).or_else(|| item.get("start")).cloned().unwrap_or(Value::Null);
+            item["originalStart"] = existing
+                .and_then(|old| old.get("start"))
+                .or_else(|| item.get("start"))
+                .cloned()
+                .unwrap_or(Value::Null);
         }
-        if item.get("firstCompletedAt").is_none() { item["firstCompletedAt"] = json!(now); }
+        if item.get("firstCompletedAt").is_none() {
+            item["firstCompletedAt"] = json!(now);
+        }
         item["completedAt"] = json!(now);
         item.as_object_mut().unwrap().remove("completionObservedAt");
     }
     if changed {
-        let mut history = existing.and_then(|old| old["statusHistory"].as_array()).cloned().unwrap_or_default();
+        let mut history = existing
+            .and_then(|old| old["statusHistory"].as_array())
+            .cloned()
+            .unwrap_or_default();
         history.push(json!({"status":status,"changedAt":now}));
         item["statusHistory"] = json!(history);
     }
@@ -311,82 +540,173 @@ fn apply_completion_transition(existing: Option<&Value>, item: &mut Value, now: 
 fn apply_category_changes(data: &mut Value, old: &[Value], new: &[Value]) {
     let old_set = old.iter().filter_map(Value::as_str).collect::<HashSet<_>>();
     let new_set = new.iter().filter_map(Value::as_str).collect::<HashSet<_>>();
-    let removed = old.iter().filter_map(Value::as_str).filter(|value| !new_set.contains(value)).collect::<Vec<_>>();
-    let added = new.iter().filter_map(Value::as_str).filter(|value| !old_set.contains(value)).collect::<Vec<_>>();
-    let renamed = if removed.len() == 1 && added.len() == 1 { Some((removed[0], added[0])) } else { None };
+    let removed = old
+        .iter()
+        .filter_map(Value::as_str)
+        .filter(|value| !new_set.contains(value))
+        .collect::<Vec<_>>();
+    let added = new
+        .iter()
+        .filter_map(Value::as_str)
+        .filter(|value| !old_set.contains(value))
+        .collect::<Vec<_>>();
+    let renamed = if removed.len() == 1 && added.len() == 1 {
+        Some((removed[0], added[0]))
+    } else {
+        None
+    };
     let removed_set = removed.iter().copied().collect::<HashSet<_>>();
     if let Some(items) = data["items"].as_array_mut() {
         for item in items {
-            if renamed.is_some_and(|(from, _)| item["category"] == from) { item["category"] = json!(renamed.unwrap().1); }
-            else if item["category"].as_str().is_some_and(|category| removed_set.contains(category)) { item["category"] = json!(""); }
+            if renamed.is_some_and(|(from, _)| item["category"] == from) {
+                item["category"] = json!(renamed.unwrap().1);
+            } else if item["category"]
+                .as_str()
+                .is_some_and(|category| removed_set.contains(category))
+            {
+                item["category"] = json!("");
+            }
         }
     }
     if let Some((from, to)) = renamed {
-        if let Some(colors) = data.get_mut("categoryColors").and_then(Value::as_object_mut) {
-            if let Some(color) = colors.remove(from) { colors.insert(to.to_string(), color); }
+        if let Some(colors) = data
+            .get_mut("categoryColors")
+            .and_then(Value::as_object_mut)
+        {
+            if let Some(color) = colors.remove(from) {
+                colors.insert(to.to_string(), color);
+            }
         }
-    } else if let Some(colors) = data.get_mut("categoryColors").and_then(Value::as_object_mut) {
-        for category in removed { colors.remove(category); }
+    } else if let Some(colors) = data
+        .get_mut("categoryColors")
+        .and_then(Value::as_object_mut)
+    {
+        for category in removed {
+            colors.remove(category);
+        }
     }
 }
 fn validate_calendar(value: &Value) -> Result<(), String> {
     validate_calendar_limit(value, true)
 }
 fn validate_calendar_limit(value: &Value, limited: bool) -> Result<(), String> {
-    if value["schemaVersion"] != 1 || !value["items"].is_array() || !value["categories"].is_array() {
+    if value["schemaVersion"] != 1 || !value["items"].is_array() || !value["categories"].is_array()
+    {
         return Err("Calendar data has an unsupported or invalid format.".into());
     }
-    if (limited && value["items"].as_array().unwrap().len() > 10_000) || value["categories"].as_array().unwrap().len() > 100 {
+    if (limited && value["items"].as_array().unwrap().len() > 10_000)
+        || value["categories"].as_array().unwrap().len() > 100
+    {
         return Err("Calendar data exceeds the record limit.".into());
     }
     let mut ids = HashSet::new();
     for item in value["items"].as_array().unwrap() {
-        let id = item["id"].as_str().filter(|id| !id.is_empty() && id.len() <= 100).ok_or("Calendar item has an invalid ID.")?;
-        if !ids.insert(id) || item["title"].as_str().is_none_or(|s| s.trim().is_empty() || s.chars().count() > 500) {
-            return Err("Calendar items must have unique IDs and titles up to 500 characters.".into());
+        let id = item["id"]
+            .as_str()
+            .filter(|id| !id.is_empty() && id.len() <= 100)
+            .ok_or("Calendar item has an invalid ID.")?;
+        if !ids.insert(id)
+            || item["title"]
+                .as_str()
+                .is_none_or(|s| s.trim().is_empty() || s.chars().count() > 500)
+        {
+            return Err(
+                "Calendar items must have unique IDs and titles up to 500 characters.".into(),
+            );
         }
         if !["task", "event"].contains(&item["kind"].as_str().unwrap_or("")) {
             return Err("Calendar item type is invalid.".into());
         }
-        if !["todo", "in_progress", "in_review", "done"].contains(&item["status"].as_str().unwrap_or("todo"))
-            || !["normal", "medium", "high", "urgent"].contains(&item["priority"].as_str().unwrap_or(""))
-            || item["checklist"].as_array().is_none_or(|rows| rows.len() > 500)
-            || item["progress"].as_u64().is_none_or(|progress| progress > 100)
-        { return Err("Calendar item fields are invalid.".into()); }
+        if !["todo", "in_progress", "in_review", "done"]
+            .contains(&item["status"].as_str().unwrap_or("todo"))
+            || !["normal", "medium", "high", "urgent"]
+                .contains(&item["priority"].as_str().unwrap_or(""))
+            || item["checklist"]
+                .as_array()
+                .is_none_or(|rows| rows.len() > 500)
+            || item["progress"]
+                .as_u64()
+                .is_none_or(|progress| progress > 100)
+        {
+            return Err("Calendar item fields are invalid.".into());
+        }
         for key in ["firstCompletedAt", "completedAt", "completionObservedAt"] {
             if item.get(key).is_some_and(|value| {
-                value.as_str().is_none_or(|stamp| DateTime::parse_from_rfc3339(stamp).is_err())
-            }) { return Err("Calendar completion timestamp is invalid.".into()); }
+                value
+                    .as_str()
+                    .is_none_or(|stamp| DateTime::parse_from_rfc3339(stamp).is_err())
+            }) {
+                return Err("Calendar completion timestamp is invalid.".into());
+            }
         }
-        if item.get("originalStart").is_some_and(|value| value.as_str().is_none_or(|start| start.is_empty() || start.len() > 100)) {
+        if item.get("originalStart").is_some_and(|value| {
+            value
+                .as_str()
+                .is_none_or(|start| start.is_empty() || start.len() > 100)
+        }) {
             return Err("Calendar original start is invalid.".into());
         }
         if item.get("statusHistory").is_some_and(|value| {
-            value.as_array().is_none_or(|history| history.iter().any(|entry| {
-                !["todo", "in_progress", "in_review", "done"].contains(&entry["status"].as_str().unwrap_or(""))
-                    || entry["changedAt"].as_str().is_none_or(|stamp| DateTime::parse_from_rfc3339(stamp).is_err())
-            }))
-        }) { return Err("Calendar status history is invalid.".into()); }
-        let start = item.get("start").and_then(Value::as_str).map(|value| value.get(..10).unwrap_or("")).unwrap_or("");
-        let due = item.get("due").and_then(Value::as_str).map(|value| value.get(..10).unwrap_or("")).unwrap_or("");
+            value.as_array().is_none_or(|history| {
+                history.iter().any(|entry| {
+                    !["todo", "in_progress", "in_review", "done"]
+                        .contains(&entry["status"].as_str().unwrap_or(""))
+                        || entry["changedAt"]
+                            .as_str()
+                            .is_none_or(|stamp| DateTime::parse_from_rfc3339(stamp).is_err())
+                })
+            })
+        }) {
+            return Err("Calendar status history is invalid.".into());
+        }
+        let start = item
+            .get("start")
+            .and_then(Value::as_str)
+            .map(|value| value.get(..10).unwrap_or(""))
+            .unwrap_or("");
+        let due = item
+            .get("due")
+            .and_then(Value::as_str)
+            .map(|value| value.get(..10).unwrap_or(""))
+            .unwrap_or("");
         if !start.is_empty() && !due.is_empty() {
-            NaiveDate::parse_from_str(start, "%Y-%m-%d").map_err(|_| "Calendar start date is invalid.")?;
-            NaiveDate::parse_from_str(due, "%Y-%m-%d").map_err(|_| "Calendar end date is invalid.")?;
-            if due < start { return Err("Calendar end date cannot be before its start date.".into()); }
+            NaiveDate::parse_from_str(start, "%Y-%m-%d")
+                .map_err(|_| "Calendar start date is invalid.")?;
+            NaiveDate::parse_from_str(due, "%Y-%m-%d")
+                .map_err(|_| "Calendar end date is invalid.")?;
+            if due < start {
+                return Err("Calendar end date cannot be before its start date.".into());
+            }
             if item["kind"] == "event" && item["allDay"] != true && start == due {
-                if let (Some(start_time), Some(end_time)) = (item["start"].as_str().and_then(|value| value.get(11..16)), item["endTime"].as_str()) {
-                    if end_time < start_time { return Err("Calendar event end time cannot be before its start time.".into()); }
+                if let (Some(start_time), Some(end_time)) = (
+                    item["start"].as_str().and_then(|value| value.get(11..16)),
+                    item["endTime"].as_str(),
+                ) {
+                    if end_time < start_time {
+                        return Err(
+                            "Calendar event end time cannot be before its start time.".into()
+                        );
+                    }
                 }
             }
         }
     }
-    if value["categories"].as_array().unwrap().iter().any(|v| v.as_str().is_none_or(|s| s.trim().is_empty() || s.chars().count() > 100)) {
+    if value["categories"].as_array().unwrap().iter().any(|v| {
+        v.as_str()
+            .is_none_or(|s| s.trim().is_empty() || s.chars().count() > 100)
+    }) {
         return Err("Calendar category is invalid.".into());
     }
     if let Some(colors) = value.get("categoryColors") {
-        let colors = colors.as_object().ok_or("Calendar category colors are invalid.")?;
+        let colors = colors
+            .as_object()
+            .ok_or("Calendar category colors are invalid.")?;
         if colors.iter().any(|(category, color)| {
-            !value["categories"].as_array().unwrap().iter().any(|name| name.as_str() == Some(category))
+            !value["categories"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|name| name.as_str() == Some(category))
                 || color.as_str().is_none_or(|color| {
                     color.len() != 7
                         || !color.starts_with('#')
@@ -401,10 +721,19 @@ fn validate_calendar_limit(value: &Value, limited: bool) -> Result<(), String> {
 
 #[cfg(test)]
 mod calendar_tests {
-    use super::{apply_completion_transition, board_done_visible, calendar_category_counts, normalize_legacy_completions, overlaps_range, preserve_locked_starts, query_calendar_at, read_calendar_at, save_calendar_changes_at, validate_calendar, write_at, write_calendar_at, Value, BOARD_DONE_MS};
+    use super::{
+        BOARD_DONE_MS, Value, apply_completion_transition, board_done_visible,
+        calendar_category_counts, normalize_legacy_completions, overlaps_range,
+        preserve_locked_starts, query_calendar_at, read_calendar_at, save_calendar_changes_at,
+        validate_calendar, write_at, write_calendar_at,
+    };
     use chrono::{DateTime, Duration, Utc};
     use serde_json::json;
-    use std::{collections::{HashMap, HashSet}, fs, path::{Path, PathBuf}};
+    use std::{
+        collections::{HashMap, HashSet},
+        fs,
+        path::{Path, PathBuf},
+    };
     use uuid::Uuid;
 
     fn temp_calendar() -> PathBuf {
@@ -420,13 +749,18 @@ mod calendar_tests {
     }
 
     #[test]
-    fn calendar_accepts_unicode_and_valid_records() { assert!(validate_calendar(&valid()).is_ok()); }
+    fn calendar_accepts_unicode_and_valid_records() {
+        assert!(validate_calendar(&valid()).is_ok());
+    }
 
     #[test]
     fn calendar_rejects_duplicate_ids_and_invalid_status() {
-        let mut data = valid(); let duplicate = data["items"][0].clone(); data["items"].as_array_mut().unwrap().push(duplicate);
+        let mut data = valid();
+        let duplicate = data["items"][0].clone();
+        data["items"].as_array_mut().unwrap().push(duplicate);
         assert!(validate_calendar(&data).is_err());
-        let mut data = valid(); data["items"][0]["status"] = json!("not-a-status");
+        let mut data = valid();
+        data["items"][0]["status"] = json!("not-a-status");
         assert!(validate_calendar(&data).is_err());
     }
 
@@ -466,18 +800,23 @@ mod calendar_tests {
     #[test]
     fn reopening_and_recompletion_keep_one_record_and_only_record_real_transitions() {
         let first = json!({"id":"one","kind":"task","title":"Task","status":"todo","priority":"normal","start":"2026-11-07","due":"2026-11-08","checklist":[],"progress":0});
-        let mut done = first.clone(); done["status"] = json!("done");
+        let mut done = first.clone();
+        done["status"] = json!("done");
         apply_completion_transition(Some(&first), &mut done, "2026-11-08T04:00:00Z");
         let first_completed = done["firstCompletedAt"].clone();
-        let mut same_done = done.clone(); same_done["title"] = json!("Edited");
+        let mut same_done = done.clone();
+        same_done["title"] = json!("Edited");
         apply_completion_transition(Some(&done), &mut same_done, "2026-11-08T05:00:00Z");
         assert_eq!(same_done["completedAt"], "2026-11-08T04:00:00Z");
         assert_eq!(same_done["statusHistory"].as_array().unwrap().len(), 1);
-        let mut reopened = same_done.clone(); reopened["status"] = json!("in_review"); reopened["start"] = json!("2026-11-10");
+        let mut reopened = same_done.clone();
+        reopened["status"] = json!("in_review");
+        reopened["start"] = json!("2026-11-10");
         apply_completion_transition(Some(&same_done), &mut reopened, "2026-11-09T04:00:00Z");
         assert_eq!(reopened["start"], "2026-11-07");
         assert_eq!(reopened["firstCompletedAt"], first_completed);
-        let mut done_again = reopened.clone(); done_again["status"] = json!("done");
+        let mut done_again = reopened.clone();
+        done_again["status"] = json!("done");
         apply_completion_transition(Some(&reopened), &mut done_again, "2026-11-10T04:00:00Z");
         assert_eq!(done_again["completedAt"], "2026-11-10T04:00:00Z");
         assert_eq!(done_again["statusHistory"].as_array().unwrap().len(), 3);
@@ -486,20 +825,46 @@ mod calendar_tests {
     #[test]
     fn board_visibility_uses_exact_elapsed_72_hours() {
         let completed = json!({"completedAt":"2026-11-01T00:00:00Z"});
-        let instant = DateTime::parse_from_rfc3339("2026-11-01T00:00:00Z").unwrap().with_timezone(&Utc);
-        assert!(board_done_visible(&completed, &(instant + Duration::milliseconds(BOARD_DONE_MS - 1))));
-        assert!(!board_done_visible(&completed, &(instant + Duration::milliseconds(BOARD_DONE_MS))));
-        assert!(!board_done_visible(&completed, &(instant + Duration::hours(73))));
-        assert!(!board_done_visible(&completed, &(instant - Duration::milliseconds(1))));
-        assert!(!board_done_visible(&json!({"completedAt":"not-a-date"}), &instant));
+        let instant = DateTime::parse_from_rfc3339("2026-11-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert!(board_done_visible(
+            &completed,
+            &(instant + Duration::milliseconds(BOARD_DONE_MS - 1))
+        ));
+        assert!(!board_done_visible(
+            &completed,
+            &(instant + Duration::milliseconds(BOARD_DONE_MS))
+        ));
+        assert!(!board_done_visible(
+            &completed,
+            &(instant + Duration::hours(73))
+        ));
+        assert!(!board_done_visible(
+            &completed,
+            &(instant - Duration::milliseconds(1))
+        ));
+        assert!(!board_done_visible(
+            &json!({"completedAt":"not-a-date"}),
+            &instant
+        ));
     }
 
     #[test]
     fn legacy_done_observation_is_distinct_from_actual_completion() {
         let mut data = json!({"items":[{"id":"legacy","status":"done","start":"2020-01-02T08:30:00-05:00"},{"id":"old-event","kind":"event","title":"Old event","start":"2020-01-03T09:00:00+07:00"}]});
-        assert!(normalize_legacy_completions(&mut data, "2026-11-08T00:00:00Z"));
-        assert_eq!(data["items"][0]["originalStart"], "2020-01-02T08:30:00-05:00");
-        assert_eq!(data["items"][0]["completionObservedAt"], "2026-11-08T00:00:00Z");
+        assert!(normalize_legacy_completions(
+            &mut data,
+            "2026-11-08T00:00:00Z"
+        ));
+        assert_eq!(
+            data["items"][0]["originalStart"],
+            "2020-01-02T08:30:00-05:00"
+        );
+        assert_eq!(
+            data["items"][0]["completionObservedAt"],
+            "2026-11-08T00:00:00Z"
+        );
         assert!(data["items"][0].get("completedAt").is_none());
         assert_eq!(data["items"][1]["status"], "todo");
         assert!(data["items"][1].get("statusHistory").is_none());
@@ -508,7 +873,8 @@ mod calendar_tests {
     #[test]
     fn full_backup_restore_cannot_unlock_a_completed_start() {
         let existing = json!({"items":[{"id":"one","status":"done","start":"2026-11-07T09:15:00+07:00","originalStart":"2026-11-07T09:15:00+07:00","firstCompletedAt":"2026-11-08T04:00:00Z","completedAt":"2026-11-08T04:00:00Z","statusHistory":[{"status":"done","changedAt":"2026-11-08T04:00:00Z"}]}]});
-        let mut imported = json!({"items":[{"id":"one","status":"todo","start":"2030-01-01T00:00:00Z"}]});
+        let mut imported =
+            json!({"items":[{"id":"one","status":"todo","start":"2030-01-01T00:00:00Z"}]});
         preserve_locked_starts(&existing, &mut imported);
         assert_eq!(imported["items"][0]["start"], "2026-11-07T09:15:00+07:00");
         assert_eq!(imported["items"][0]["completedAt"], "2026-11-08T04:00:00Z");
@@ -527,10 +893,19 @@ mod calendar_tests {
         let original = json!({"schemaVersion":1,"categories":[],"items":[{"id":"one","kind":"task","title":"Task","status":"todo","priority":"normal","start":"2026-11-07T09:15:00+07:00","due":"2026-11-08","endTime":"10:00","checklist":[],"progress":0,"updatedAt":"v1","vendorField":{"kept":true}}]});
         write_at(&path, &original).unwrap();
         let mut completed = original["items"][0].clone();
-        completed["status"] = json!("done"); completed["start"] = json!("2026-11-09T12:00:00+07:00");
-        completed["due"] = json!("2026-11-10"); completed["endTime"] = json!("13:00");
-        let mut expected = HashMap::new(); expected.insert("one".into(), Some("v1".into()));
-        save_calendar_changes_at(&path, json!({"schemaVersion":1,"categories":[],"items":[completed.clone()]}), expected.clone(), vec![]).unwrap();
+        completed["status"] = json!("done");
+        completed["start"] = json!("2026-11-09T12:00:00+07:00");
+        completed["due"] = json!("2026-11-10");
+        completed["endTime"] = json!("13:00");
+        let mut expected = HashMap::new();
+        expected.insert("one".into(), Some("v1".into()));
+        save_calendar_changes_at(
+            &path,
+            json!({"schemaVersion":1,"categories":[],"items":[completed.clone()]}),
+            expected.clone(),
+            vec![],
+        )
+        .unwrap();
         let saved = read_calendar_at(&path).unwrap();
         let saved_item = &saved["items"][0];
         assert_eq!(saved["items"].as_array().unwrap().len(), 1);
@@ -539,8 +914,19 @@ mod calendar_tests {
         assert_eq!(saved_item["endTime"], "13:00");
         assert_eq!(saved_item["vendorField"]["kept"], true);
         assert_eq!(saved_item["statusHistory"].as_array().unwrap().len(), 1);
-        assert!(save_calendar_changes_at(&path, json!({"schemaVersion":1,"categories":[],"items":[completed]}), expected, vec![]).is_err());
-        assert_eq!(read_calendar_at(&path).unwrap()["items"][0]["status"], "done");
+        assert!(
+            save_calendar_changes_at(
+                &path,
+                json!({"schemaVersion":1,"categories":[],"items":[completed]}),
+                expected,
+                vec![]
+            )
+            .is_err()
+        );
+        assert_eq!(
+            read_calendar_at(&path).unwrap()["items"][0]["status"],
+            "done"
+        );
         remove_temp(&path);
     }
 
@@ -560,7 +946,12 @@ mod calendar_tests {
         assert_eq!(history["items"].as_array().unwrap().len(), 1);
         assert_eq!(history["items"][0]["id"], "old-event");
         let board = query_calendar_at(&path, "2026-11-08", "2026-11-08", true).unwrap();
-        let ids = board["items"].as_array().unwrap().iter().map(|item| item["id"].as_str().unwrap()).collect::<Vec<_>>();
+        let ids = board["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["id"].as_str().unwrap())
+            .collect::<Vec<_>>();
         assert!(ids.contains(&"recent-task"));
         assert!(!ids.contains(&"expired-task"));
         remove_temp(&path);
@@ -577,7 +968,12 @@ mod calendar_tests {
         ]});
         write_at(&path, &data).unwrap();
         let result = query_calendar_at(&path, "2026-11-09", "2026-11-09", false).unwrap();
-        let ids = result["items"].as_array().unwrap().iter().map(|item| item["id"].as_str().unwrap()).collect::<HashSet<_>>();
+        let ids = result["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["id"].as_str().unwrap())
+            .collect::<HashSet<_>>();
         assert!(ids.contains("daily"));
         assert!(ids.contains("multi-event"));
         assert!(!ids.contains("not-in-view"));
@@ -587,8 +983,15 @@ mod calendar_tests {
 
     #[test]
     fn category_counts_include_zeroes_and_count_items_in_one_result() {
-        let items = vec![json!({"category":"Work"}), json!({"category":"Home"}), json!({"category":"Work"})];
-        assert_eq!(calendar_category_counts(&items, &json!(["Work", "Home", "Empty"])), json!({"Work":2,"Home":1,"Empty":0}));
+        let items = vec![
+            json!({"category":"Work"}),
+            json!({"category":"Home"}),
+            json!({"category":"Work"}),
+        ];
+        assert_eq!(
+            calendar_category_counts(&items, &json!(["Work", "Home", "Empty"])),
+            json!({"Work":2,"Home":1,"Empty":0})
+        );
     }
 
     #[test]
@@ -603,8 +1006,11 @@ mod calendar_tests {
         let narrow = query_calendar_at(&path, "2026-11-08", "2026-11-08", false).unwrap();
         assert_eq!(narrow["items"].as_array().unwrap().len(), 2);
         assert_eq!(narrow["categoryCounts"]["Work"], 2);
-        let mut visible = narrow["items"][0].clone(); visible["title"] = json!("Visible edited"); visible["category"] = json!("Office");
-        let mut expected = HashMap::new(); expected.insert("visible".into(), Some("v1".into()));
+        let mut visible = narrow["items"][0].clone();
+        visible["title"] = json!("Visible edited");
+        visible["category"] = json!("Office");
+        let mut expected = HashMap::new();
+        expected.insert("visible".into(), Some("v1".into()));
         save_calendar_changes_at(&path, json!({"schemaVersion":1,"categories":["Office","Home"],"categoryColors":{"Office":"#ef476f","Home":"#3a86ff"},"items":[visible]}), expected, vec![]).unwrap();
         let renamed = read_calendar_at(&path).unwrap();
         assert_eq!(renamed["items"][0]["category"], "Office");
@@ -630,20 +1036,49 @@ mod calendar_tests {
             {"id":"c","kind":"task","title":"C","status":"todo","priority":"normal","start":"2026-11-08","due":"2026-11-08","checklist":[],"progress":0,"updatedAt":"v3"}
         ]});
         write_at(&path, &original).unwrap();
-        let mut expected = HashMap::new(); expected.insert("c".into(), Some("v3".into())); expected.insert("d".into(), None); expected.insert("b".into(), Some("v2".into()));
-        let mut changed = original["items"][2].clone(); changed["title"] = json!("C edited");
+        let mut expected = HashMap::new();
+        expected.insert("c".into(), Some("v3".into()));
+        expected.insert("d".into(), None);
+        expected.insert("b".into(), Some("v2".into()));
+        let mut changed = original["items"][2].clone();
+        changed["title"] = json!("C edited");
         let new_item = json!({"id":"d","kind":"task","title":"D","status":"todo","priority":"normal","start":"2026-11-08","due":"2026-11-08","checklist":[],"progress":0});
-        save_calendar_changes_at(&path, json!({"schemaVersion":1,"categories":[],"items":[changed, new_item]}), expected, vec!["b".into()]).unwrap();
+        save_calendar_changes_at(
+            &path,
+            json!({"schemaVersion":1,"categories":[],"items":[changed, new_item]}),
+            expected,
+            vec!["b".into()],
+        )
+        .unwrap();
         let saved = read_calendar_at(&path).unwrap();
-        let ids = saved["items"].as_array().unwrap().iter().map(|item| item["id"].as_str().unwrap()).collect::<Vec<_>>();
+        let ids = saved["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["id"].as_str().unwrap())
+            .collect::<Vec<_>>();
         assert_eq!(ids, ["a", "c", "d"]);
         assert_eq!(saved["items"][1]["title"], "C edited");
         let before = fs::read(&path).unwrap();
-        let mut expected = HashMap::new(); expected.insert("a".into(), Some("v1".into()));
-        let conflict = save_calendar_changes_at(&path, json!({"schemaVersion":1,"categories":[],"items":[saved["items"][0].clone()]}), expected.clone(), vec!["a".into()]);
+        let mut expected = HashMap::new();
+        expected.insert("a".into(), Some("v1".into()));
+        let conflict = save_calendar_changes_at(
+            &path,
+            json!({"schemaVersion":1,"categories":[],"items":[saved["items"][0].clone()]}),
+            expected.clone(),
+            vec!["a".into()],
+        );
         assert!(conflict.is_err());
         assert_eq!(fs::read(&path).unwrap(), before);
-        assert!(save_calendar_changes_at(&path, json!({"schemaVersion":1,"categories":[],"items":[]}), HashMap::new(), vec!["a".into(), "a".into()]).is_err());
+        assert!(
+            save_calendar_changes_at(
+                &path,
+                json!({"schemaVersion":1,"categories":[],"items":[]}),
+                HashMap::new(),
+                vec!["a".into(), "a".into()]
+            )
+            .is_err()
+        );
         remove_temp(&path);
     }
 
@@ -658,8 +1093,6 @@ mod calendar_tests {
         assert_eq!(fs::read(&path).unwrap(), before);
         remove_temp(&path);
     }
-
-
 }
 fn file(name: &str) -> Result<PathBuf, String> {
     Ok(user_dir()?.join(name))
@@ -683,7 +1116,9 @@ fn write_at(path: &Path, value: &Value) -> Result<(), String> {
 #[cfg(test)]
 fn write_calendar_at(path: &Path, value: &Value) -> Result<(), String> {
     let bytes = serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?;
-    if bytes.len() > 10_000_000 { return Err("Calendar data exceeds the 10 MB safety limit.".into()); }
+    if bytes.len() > 10_000_000 {
+        return Err("Calendar data exceeds the 10 MB safety limit.".into());
+    }
     write_bytes_at(path, &bytes)
 }
 fn write_bytes_at(path: &Path, bytes: &[u8]) -> Result<(), String> {
@@ -712,45 +1147,150 @@ pub fn chat_session() -> Result<Option<Value>, String> {
     chat_session_at(&chat_path()?)
 }
 fn chat_session_at(path: &Path) -> Result<Option<Value>, String> {
-    if !path.exists() { return Ok(None); }
+    if !path.exists() {
+        return Ok(None);
+    }
     let bytes = fs::read(&path).map_err(|e| format!("Could not read chatbot session: {e}"))?;
-    if bytes.len() > 1_000_000 { return Err("Chatbot session is too large to restore.".into()); }
-    let value: Value = serde_json::from_slice(&bytes).map_err(|_| "Chatbot session data is invalid. Reset the chatbot to continue.".to_string())?;
-    validate_chat_session(&value).map_err(|_| "Chatbot session data is invalid. Reset the chatbot to continue.".to_string())?;
+    if bytes.len() > 1_000_000 {
+        return Err("Chatbot session is too large to restore.".into());
+    }
+    let value: Value = serde_json::from_slice(&bytes).map_err(|_| {
+        "Chatbot session data is invalid. Reset the chatbot to continue.".to_string()
+    })?;
+    validate_chat_session(&value).map_err(|_| {
+        "Chatbot session data is invalid. Reset the chatbot to continue.".to_string()
+    })?;
     Ok(Some(value))
 }
 fn validate_chat_session(value: &Value) -> Result<(), String> {
-    let messages = value.get("messages").and_then(Value::as_array).ok_or("Invalid chatbot session.")?;
-    let count = value.get("userQuestionCount").and_then(Value::as_u64).ok_or("Invalid chatbot session.")?;
-    if value["schemaVersion"] != 1 || value["sessionId"].as_str().is_none_or(|id| id.is_empty() || id.len() > 100) || count > 20 || messages.len() > 40 || messages.iter().filter(|message| message["role"] == "user").count() as u64 != count {
+    let messages = value
+        .get("messages")
+        .and_then(Value::as_array)
+        .ok_or("Invalid chatbot session.")?;
+    let count = value
+        .get("userQuestionCount")
+        .and_then(Value::as_u64)
+        .ok_or("Invalid chatbot session.")?;
+    if value["schemaVersion"] != 1
+        || value["sessionId"]
+            .as_str()
+            .is_none_or(|id| id.is_empty() || id.len() > 100)
+        || count > 20
+        || messages.len() > 40
+        || messages
+            .iter()
+            .filter(|message| message["role"] == "user")
+            .count() as u64
+            != count
+    {
         return Err("Invalid chatbot session.".into());
     }
     for message in messages {
         let role = message["role"].as_str().ok_or("Invalid chatbot session.")?;
         let mode = message["mode"].as_str().ok_or("Invalid chatbot session.")?;
-        let status = message["status"].as_str().ok_or("Invalid chatbot session.")?;
+        let status = message["status"]
+            .as_str()
+            .ok_or("Invalid chatbot session.")?;
         let text = message["text"].as_str().ok_or("Invalid chatbot session.")?;
         let limit = if role == "user" { 1000 } else { 32000 };
-        if !["user", "assistant"].contains(&role) || !["offline", "online"].contains(&mode) || !["accepted", "pending", "complete", "error", "interrupted"].contains(&status) || text.chars().count() > limit || message["id"].as_str().is_none_or(|id| id.is_empty() || id.len() > 100) || !message["createdAt"].is_number() {
+        if !["user", "assistant"].contains(&role)
+            || !["offline", "online"].contains(&mode)
+            || !["accepted", "pending", "complete", "error", "interrupted"].contains(&status)
+            || text.chars().count() > limit
+            || message["id"]
+                .as_str()
+                .is_none_or(|id| id.is_empty() || id.len() > 100)
+            || !message["createdAt"].is_number()
+        {
             return Err("Invalid chatbot session.".into());
         }
         if let Some(context) = message.get("context") {
-            let faq_ids = ["rename", "scan", "count", "merge", "backup", "translation", "signature", "copies", "settings", "privacy", "word-recent", "word-shortcuts", "word-multiple-files", "word-documents", "features"];
-            let invalid_scalar = ["fieldId", "validationCode", "errorCode", "previousFaqId"].iter().any(|key| {
-                context.get(*key).is_some_and(|value| !value.is_null() && value.as_str().is_none())
-            });
+            let faq_ids = [
+                "rename",
+                "scan",
+                "count",
+                "merge",
+                "backup",
+                "translation",
+                "signature",
+                "copies",
+                "settings",
+                "privacy",
+                "word-recent",
+                "word-shortcuts",
+                "word-multiple-files",
+                "word-documents",
+                "features",
+            ];
+            let invalid_scalar = ["page", "fieldId", "validationCode", "errorCode", "previousFaqId"]
+                .iter()
+                .any(|key| {
+                    context
+                        .get(*key)
+                        .is_some_and(|value| !value.is_null() && value.as_str().is_none())
+                });
             let invalid_faq_ids = context.get("faqIds").is_some_and(|ids| {
-                ids.as_array().is_none_or(|ids| ids.len() > 3 || ids.iter().any(|id| {
-                    id.as_str().is_none_or(|id| !faq_ids.contains(&id))
-                }))
+                ids.as_array().is_none_or(|ids| {
+                    ids.len() > 3
+                        || ids
+                            .iter()
+                            .any(|id| id.as_str().is_none_or(|id| !faq_ids.contains(&id)))
+                })
             });
-            if context["selector"].as_str().is_none_or(|selector| !["home", "rename", "count", "translation", "signature", "copies", "word", "settings"].contains(&selector))
-                || invalid_scalar
-                || context["fieldId"].as_str().is_some_and(|field| !["refNo", "quantity", "unitPrice", "totalAmount", "customer", "description"].contains(&field))
-                || context["validationCode"].as_str().is_some_and(|code| !["copiesNumbersInvalid", "browser-invalid", "signatureHeaderInvalid"].contains(&code))
-                || context["errorCode"].as_str().is_some_and(|code| !["access_error", "file_not_found", "workbook_format_error", "ipc_error", "online_error", "validation_error", "operation_error"].contains(&code))
-                || context["previousFaqId"].as_str().is_some_and(|id| !faq_ids.contains(&id))
+            let invalid_ui_ids = context.get("uiIds").is_some_and(|ids| {
+                ids.as_array().is_none_or(|ids| ids.len() > 3 || ids.iter().any(|id| id.as_str().is_none_or(|id| id.len() > 50)))
+            });
+            if context["selector"].as_str().is_none_or(|selector| {
+                ![
+                    "home",
+                    "rename",
+                    "count",
+                    "translation",
+                    "signature",
+                    "copies",
+                    "word",
+                    "calendar",
+                    "settings",
+                ]
+                .contains(&selector)
+            }) || invalid_scalar
+                || context["page"].as_str().is_some_and(|page| !["editor", "home", "storage", "settings", "translation", "signature", "copies"].contains(&page))
+                || context["fieldId"].as_str().is_some_and(|field| {
+                    ![
+                        "refNo",
+                        "quantity",
+                        "unitPrice",
+                        "totalAmount",
+                        "customer",
+                        "description",
+                    ]
+                    .contains(&field)
+                })
+                || context["validationCode"].as_str().is_some_and(|code| {
+                    ![
+                        "copiesNumbersInvalid",
+                        "browser-invalid",
+                        "signatureHeaderInvalid",
+                    ]
+                    .contains(&code)
+                })
+                || context["errorCode"].as_str().is_some_and(|code| {
+                    ![
+                        "access_error",
+                        "file_not_found",
+                        "workbook_format_error",
+                        "ipc_error",
+                        "online_error",
+                        "validation_error",
+                        "operation_error",
+                    ]
+                    .contains(&code)
+                })
+                || context["previousFaqId"]
+                    .as_str()
+                    .is_some_and(|id| !faq_ids.contains(&id))
                 || invalid_faq_ids
+                || invalid_ui_ids
             {
                 return Err("Invalid chatbot session context.".into());
             }
@@ -763,9 +1303,12 @@ pub fn save_chat_session(value: &Value) -> Result<(), String> {
 }
 fn save_chat_session_at(path: &Path, value: &Value) -> Result<(), String> {
     let bytes = serde_json::to_vec(value).map_err(|e| e.to_string())?;
-    if bytes.len() > 1_000_000 { return Err("Chatbot session is too large to save.".into()); }
+    if bytes.len() > 1_000_000 {
+        return Err("Chatbot session is too large to save.".into());
+    }
     validate_chat_session(value)?;
-    fs::create_dir_all(path.parent().unwrap()).map_err(|e| format!("Could not save chatbot session: {e}"))?;
+    fs::create_dir_all(path.parent().unwrap())
+        .map_err(|e| format!("Could not save chatbot session: {e}"))?;
     let temp = path.with_extension(format!("{}.tmp", Uuid::new_v4()));
     fs::write(&temp, bytes).map_err(|e| format!("Could not save chatbot session: {e}"))?;
     if let Err(error) = fs::rename(&temp, &path) {
@@ -783,8 +1326,15 @@ fn reset_chat_session_at(path: &Path) -> Result<(), String> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(format!("Could not reset chatbot session: {error}")),
     }?;
-    let Some(parent) = path.parent() else { return Ok(()); };
-    let prefix = format!("{}.", path.file_stem().and_then(|name| name.to_str()).unwrap_or("chat-session"));
+    let Some(parent) = path.parent() else {
+        return Ok(());
+    };
+    let prefix = format!(
+        "{}.",
+        path.file_stem()
+            .and_then(|name| name.to_str())
+            .unwrap_or("chat-session")
+    );
     let entries = match fs::read_dir(parent) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -794,7 +1344,10 @@ fn reset_chat_session_at(path: &Path) -> Result<(), String> {
         let entry = entry.map_err(|e| format!("Could not reset chatbot session: {e}"))?;
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if name.starts_with(&prefix) && name.ends_with(".tmp") { fs::remove_file(entry.path()).map_err(|e| format!("Could not reset chatbot session: {e}"))?; }
+        if name.starts_with(&prefix) && name.ends_with(".tmp") {
+            fs::remove_file(entry.path())
+                .map_err(|e| format!("Could not reset chatbot session: {e}"))?;
+        }
     }
     Ok(())
 }
@@ -858,7 +1411,10 @@ mod tests {
         ]});
         save_chat_session_at(&path, &session).unwrap();
         save_chat_session_at(&path, &session).unwrap();
-        assert_eq!(chat_session_at(&path).unwrap().unwrap()["userQuestionCount"], 1);
+        assert_eq!(
+            chat_session_at(&path).unwrap().unwrap()["userQuestionCount"],
+            1
+        );
         assert!(!path.with_extension("json.b6h-electron-backup").exists());
         fs::write(dir.join("chat-session.old.tmp"), "old").unwrap();
         reset_chat_session_at(&path).unwrap();
@@ -884,9 +1440,7 @@ fn settings() -> Result<Map<String, Value>, String> {
         .unwrap_or_default())
 }
 pub fn destinations() -> Result<Value, String> {
-    let documents = std::env::var_os("USERPROFILE").ok_or("USERPROFILE is unavailable")?;
-    let base = PathBuf::from(documents).join("Documents").join("B6H");
-    let mut value = json!({"backup":base.join("Backup").to_string_lossy(),"output":base.join("Output").to_string_lossy()});
+    let mut value = default_destinations_value()?;
     if let Some(saved) = settings()?.get("destinations").and_then(Value::as_object) {
         for kind in ["backup", "output"] {
             if let Some(path) = saved.get(kind).and_then(Value::as_str) {
@@ -906,6 +1460,102 @@ pub fn save_destination(kind: &str, value: &str) -> Result<Value, String> {
     data.insert("destinations".into(), paths.clone());
     write("settings.json", &Value::Object(data))?;
     Ok(paths)
+}
+fn default_destinations_value() -> Result<Value, String> {
+    let documents = std::env::var_os("USERPROFILE").ok_or("USERPROFILE is unavailable")?;
+    let base = PathBuf::from(documents).join("Documents").join("B6H");
+    Ok(
+        json!({"backup":base.join("Backup").to_string_lossy(),"output":base.join("Output").to_string_lossy()}),
+    )
+}
+pub fn default_destinations() -> Result<Value, String> {
+    default_destinations_value()
+}
+fn remove_saved_destination(data: &mut Map<String, Value>, kind: &str) {
+    let empty = match data.get_mut("destinations").and_then(Value::as_object_mut) {
+        Some(saved) => {
+            saved.remove(kind);
+            saved.is_empty()
+        }
+        None => false,
+    };
+    if empty {
+        data.remove("destinations");
+    }
+}
+/// Removes only the saved value so the existing dynamic default applies again.
+pub fn reset_destination(kind: &str) -> Result<Value, String> {
+    if !["backup", "output"].contains(&kind) {
+        return Err("Unknown destination.".into());
+    }
+    let mut data = settings()?;
+    remove_saved_destination(&mut data, kind);
+    write("settings.json", &Value::Object(data))?;
+    destinations()
+}
+/// Non-destructive writability probe: a uniquely named temp file is created and always removed.
+pub fn check_directory(path: &Path) -> &'static str {
+    if !path.is_absolute() {
+        return "invalid";
+    }
+    if !path.exists() {
+        return "notFound";
+    }
+    if !path.is_dir() {
+        return "invalid";
+    }
+    let probe = path.join(format!(".b6h-check-{}.tmp", Uuid::new_v4()));
+    let result = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&probe);
+    match result {
+        Ok(file) => {
+            drop(file);
+            let _ = fs::remove_file(&probe);
+            "available"
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => "noWrite",
+        Err(_) => "failed",
+    }
+}
+pub fn destination_path(kind: &str) -> Result<PathBuf, String> {
+    if !["backup", "output"].contains(&kind) {
+        return Err("Unknown destination.".into());
+    }
+    destinations()?[kind]
+        .as_str()
+        .map(PathBuf::from)
+        .ok_or_else(|| "Destination is unavailable.".to_string())
+}
+#[cfg(test)]
+mod destination_tests {
+    use super::*;
+    #[test]
+    fn reset_removes_only_the_selected_saved_kind() {
+        let mut data = json!({"language":"VI","destinations":{"backup":"C:\\a","output":"C:\\b"}})
+            .as_object()
+            .cloned()
+            .unwrap();
+        remove_saved_destination(&mut data, "backup");
+        assert_eq!(data["destinations"], json!({"output":"C:\\b"}));
+        remove_saved_destination(&mut data, "output");
+        assert!(!data.contains_key("destinations"));
+        assert_eq!(data["language"], "VI");
+    }
+    #[test]
+    fn check_directory_reports_states_and_leaves_no_residue() {
+        let dir = std::env::temp_dir().join(format!("b6h-check-{}", Uuid::new_v4()));
+        fs::create_dir(&dir).unwrap();
+        assert_eq!(check_directory(&dir), "available");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 0);
+        let file = dir.join("f.txt");
+        fs::write(&file, b"x").unwrap();
+        assert_eq!(check_directory(&file), "invalid");
+        assert_eq!(check_directory(&dir.join("missing")), "notFound");
+        assert_eq!(check_directory(Path::new("relative")), "invalid");
+        fs::remove_dir_all(dir).unwrap();
+    }
 }
 pub fn language() -> Result<String, String> {
     Ok(
@@ -1022,6 +1672,33 @@ pub fn save_word_settings(value: Value) -> Result<Value, String> {
     write("settings.json", &Value::Object(data))?;
     word_settings()
 }
+
+pub fn word_refeed_preferences() -> Result<Value, String> {
+    Ok(settings()?
+        .get("wordcraftRefeed")
+        .cloned()
+        .unwrap_or_else(|| json!({})))
+}
+
+pub fn save_word_refeed_preference(
+    printer: &str,
+    face: &str,
+    leading_edge: &str,
+) -> Result<(), String> {
+    let mut data = settings()?;
+    let mut preferences = data
+        .get("wordcraftRefeed")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    preferences.insert(
+        printer.to_owned(),
+        json!({"face":face,"leadingEdge":leading_edge}),
+    );
+    data.insert("wordcraftRefeed".into(), Value::Object(preferences));
+    write("settings.json", &Value::Object(data))
+}
+
 fn validate_labels(value: &Value, selector: Option<&str>) -> Result<(), String> {
     let obj = value.as_object().ok_or("Invalid settings")?;
     if obj.len() > 200 {

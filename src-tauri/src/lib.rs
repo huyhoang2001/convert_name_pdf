@@ -1,6 +1,7 @@
 mod chat;
 mod count;
 mod pdf;
+mod printing;
 mod storage;
 mod update;
 mod word;
@@ -109,6 +110,33 @@ fn save_destination(kind: String, value: String) -> Result<serde_json::Value, St
     storage::save_destination(&kind, &value)
 }
 #[tauri::command]
+fn default_destinations() -> Result<serde_json::Value, String> {
+    storage::default_destinations()
+}
+#[tauri::command]
+fn reset_destination(kind: String) -> Result<serde_json::Value, String> {
+    storage::reset_destination(&kind)
+}
+#[tauri::command]
+async fn check_destination(kind: String) -> Result<String, String> {
+    let path = storage::destination_path(&kind)?;
+    tauri::async_runtime::spawn_blocking(move || storage::check_directory(&path).to_string())
+        .await
+        .map_err(|e| e.to_string())
+}
+#[tauri::command]
+fn open_destination(kind: String) -> Result<(), String> {
+    let path = storage::destination_path(&kind)?;
+    if !path.is_dir() {
+        return Err("Destination folder not found.".into());
+    }
+    std::process::Command::new("explorer.exe")
+        .arg(path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+#[tauri::command]
 fn get_language() -> Result<String, String> {
     storage::language()
 }
@@ -204,14 +232,22 @@ fn remove_chat_key() -> Result<chat::KeyStatus, String> {
     chat::remove()
 }
 #[tauri::command]
-fn load_chat_session() -> Result<Option<serde_json::Value>, String> { storage::chat_session() }
+fn load_chat_session() -> Result<Option<serde_json::Value>, String> {
+    storage::chat_session()
+}
 #[tauri::command]
-fn save_chat_session(session: serde_json::Value) -> Result<(), String> { storage::save_chat_session(&session) }
+fn save_chat_session(session: serde_json::Value) -> Result<(), String> {
+    storage::save_chat_session(&session)
+}
 #[tauri::command]
-fn reset_chat_session() -> Result<(), String> { storage::reset_chat_session() }
+fn reset_chat_session() -> Result<(), String> {
+    storage::reset_chat_session()
+}
 #[tauri::command]
 fn cancel_online_chat(id: String) -> Result<(), String> {
-    if id.is_empty() || id.len() > 100 { return Err("Invalid chat request.".into()); }
+    if id.is_empty() || id.len() > 100 {
+        return Err("Invalid chat request.".into());
+    }
     chat::cancel(&id)
 }
 #[tauri::command]
@@ -476,12 +512,66 @@ fn save_word_settings(value: serde_json::Value) -> Result<serde_json::Value, Str
     storage::save_word_settings(value)
 }
 #[tauri::command]
+async fn get_word_printers() -> Result<Vec<serde_json::Value>, String> {
+    tauri::async_runtime::spawn_blocking(printing::printers)
+        .await
+        .map_err(|error| error.to_string())
+}
+#[tauri::command]
+async fn open_word_printer_properties(printer: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || printing::open_properties(&printer))
+        .await
+        .map_err(|error| error.to_string())?
+}
+#[tauri::command]
+async fn print_word_pdf(
+    pdf_base64: String,
+    printer: String,
+    mode: String,
+    copies: u32,
+    collate: bool,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        printing::submit_pdf(&pdf_base64, &printer, &mode, copies, collate)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+#[tauri::command]
+async fn print_word_manual_pass(
+    pdf_base64: String,
+    printer: String,
+    pass: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        printing::submit_manual_pass(&pdf_base64, &printer, &pass)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+#[tauri::command]
+fn get_word_refeed_preferences() -> Result<serde_json::Value, String> {
+    printing::refeed_preferences()
+}
+#[tauri::command]
+fn save_word_refeed_preference(
+    printer: String,
+    face: String,
+    leading_edge: String,
+) -> Result<serde_json::Value, String> {
+    printing::save_refeed_preference(&printer, &face, &leading_edge)
+}
+#[tauri::command]
 async fn get_calendar_data() -> Result<serde_json::Value, String> {
-    tauri::async_runtime::spawn_blocking(storage::calendar_data).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(storage::calendar_data)
+        .await
+        .map_err(|e| e.to_string())?
 }
 #[tauri::command]
 async fn save_calendar_data(value: serde_json::Value) -> Result<serde_json::Value, String> {
-    tauri::async_runtime::spawn_blocking(move || storage::save_calendar_data(value)).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || storage::save_calendar_data(value))
+        .await
+        .map_err(|e| e.to_string())?
 }
 #[tauri::command]
 async fn write_calendar_backup(file: String, contents: String) -> Result<(), String> {
@@ -492,17 +582,37 @@ async fn write_calendar_backup(file: String, contents: String) -> Result<(), Str
     .map_err(|e| e.to_string())?
 }
 #[tauri::command]
-async fn query_calendar_data(start_date: String, end_date: String, board_view: bool) -> Result<serde_json::Value, String> {
-    tauri::async_runtime::spawn_blocking(move || storage::query_calendar_data(start_date, end_date, board_view)).await.map_err(|e| e.to_string())?
+async fn query_calendar_data(
+    start_date: String,
+    end_date: String,
+    board_view: bool,
+) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        storage::query_calendar_data(start_date, end_date, board_view)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 #[tauri::command]
-async fn save_calendar_changes(value: serde_json::Value, expected_updated_at: std::collections::HashMap<String, Option<String>>, deleted_ids: Vec<String>) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || storage::save_calendar_changes(value, expected_updated_at, deleted_ids)).await.map_err(|e| e.to_string())?
+async fn save_calendar_changes(
+    value: serde_json::Value,
+    expected_updated_at: std::collections::HashMap<String, Option<String>>,
+    deleted_ids: Vec<String>,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        storage::save_calendar_changes(value, expected_updated_at, deleted_ids)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 #[tauri::command]
-fn calendar_rebuild_status() -> Option<serde_json::Value> { storage::calendar_rebuild_status() }
+fn calendar_rebuild_status() -> Option<serde_json::Value> {
+    storage::calendar_rebuild_status()
+}
 #[tauri::command]
-fn cancel_calendar_rebuild() -> Result<(), String> { storage::cancel_calendar_rebuild() }
+fn cancel_calendar_rebuild() -> Result<(), String> {
+    storage::cancel_calendar_rebuild()
+}
 #[tauri::command]
 async fn list_word_templates() -> Result<Vec<word::TemplateEntry>, String> {
     tauri::async_runtime::spawn_blocking(word::templates)
@@ -727,6 +837,10 @@ pub fn run() {
             run_pdf,
             get_destinations,
             save_destination,
+            default_destinations,
+            reset_destination,
+            check_destination,
+            open_destination,
             get_language,
             save_language,
             get_theme,
@@ -774,6 +888,12 @@ pub fn run() {
             get_word_settings,
             get_word_local_fonts,
             save_word_settings,
+            get_word_printers,
+            open_word_printer_properties,
+            print_word_pdf,
+            print_word_manual_pass,
+            get_word_refeed_preferences,
+            save_word_refeed_preference,
             get_calendar_data,
             save_calendar_data,
             write_calendar_backup,

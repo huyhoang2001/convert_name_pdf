@@ -1,6 +1,6 @@
 [package]
 name = "b6h"
-version = "2.0.15"
+version = "2.0.16"
 description = "B6H desktop application"
 authors = ["Local"]
 license = ""
@@ -10,7 +10,17 @@ rust-version = "1.90"
 
 [lib]
 name = "b6h_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["rlib"]
+
+[profile.dev]
+opt-level = 0
+debug = "line-tables-only"
+incremental = false
+debug-assertions = true
+overflow-checks = true
+
+[profile.dev.package."*"]
+debug = false
 
 [build-dependencies]
 tauri-build = { version = "2.7.4", features = [] }
@@ -35,3 +45,7 @@ sha2 = "0.10"
 hex = "0.4"
 base64 = "0.22"
 zip = { version = "2.6", default-features = false, features = ["deflate"] }
+craft-print = { package = "craft-print", git = "https://github.com/storytold/craft-libs", rev = "92d392cff132eaf53e13afff77f38b5c11b73aa0", version = "=0.1.0" }
+
+[target.'cfg(windows)'.dependencies]
+winprint = { git = "https://github.com/storytold/winprint.rs", rev = "5f80b9baf6b58937c401656634e42d33f00ddf49", default-features = false }

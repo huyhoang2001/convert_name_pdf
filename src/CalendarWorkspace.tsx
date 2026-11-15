@@ -3,7 +3,7 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 import { confirm as tauriConfirm, save as saveFileDialog } from '@tauri-apps/plugin-dialog';
 import { boardDoneVisible, itemsByDate, type Item, type Status } from './calendarLogic';
 import { saveCalendarBackup } from './calendarBackup';
-import { addCalendarNotification, emptyNotificationState, markAllCalendarNotificationsRead, markCalendarNotificationRead, readCalendarNotificationState, setCalendarNotificationPreference, writeCalendarNotificationState, type CalendarNotification, type CalendarNotificationState } from './calendarNotifications';
+import { addCalendarNotification, clearAllCalendarNotifications, emptyNotificationState, markAllCalendarNotificationsRead, markCalendarNotificationRead, readCalendarNotificationState, setCalendarNotificationPreference, writeCalendarNotificationState, type CalendarNotification, type CalendarNotificationState } from './calendarNotifications';
 import './calendar.css';
 
 type Data = { schemaVersion: 1; items: Item[]; categories: string[]; categoryColors?: Record<string, string>; categoryCounts?: Record<string, number> };
@@ -13,21 +13,63 @@ const statuses: Status[] = ['todo', 'in_progress', 'in_review', 'done'];
 const priorityRank: Record<Item['priority'], number> = { normal: 0, medium: 1, high: 2, urgent: 3 };
 const statusNames = { EN: ['To Do', 'In Progress', 'In Review', 'Done'], VI: ['Cần làm', 'Đang làm', 'Đang xem xét', 'Hoàn tất'] };
 const strings = {
-  EN: { title: 'Calendar & To-do', board: 'Board', calendar: 'Calendar', timeline: 'Timeline', today: 'Today', day: 'Day', week: 'Week', month: 'Month', previous: 'Previous', next: 'Next', task: 'Task', event: 'Event', add: 'New', search: 'Search tasks and events', all: 'All', high: 'High Priority', allStatuses: 'All statuses', allDates: 'All dates', category: 'Category', categoryColor: 'Category color', categoryCount: 'categories', items: 'items', maxVisible: 'Max 5 visible', accent: 'Accent', selected: 'selected', selectAll: 'Select All', clearAll: 'Clear All', titleLabel: 'Title', description: 'Notes', status: 'Status', priority: 'Priority', start: 'Start date', due: 'Due date', time: 'Start time', allDay: 'All day', reminder: 'Reminder (minutes)', recurrence: 'Repeat', checklist: 'Checklist', progress: 'Progress', save: 'Save', cancel: 'Cancel', delete: 'Delete', addItem: 'Add', empty: 'Nothing scheduled. Add a task or event to get started.', export: 'Export backup', import: 'Import backup', categoryNew: 'Add category', overdue: 'Overdue', dueSoon: 'Due soon', owner: 'Local calendar', saved: 'Saved locally', confirmDelete: 'Delete this item?', discard: 'Discard unsaved changes?', share: 'Sharing is unavailable offline. Export a local backup instead.', failed: 'Could not save calendar data.', conflict: 'Calendar changed elsewhere. Reload and try again.', busy: 'A calendar save is already in progress. Try again shortly.', noDate: 'No date', noCategory: 'Uncategorized', daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', yearly: 'Yearly', never: 'Never', checklistPlaceholder: 'Checklist item', priorityNames: ['Normal', 'Medium', 'High', 'Urgent'], reminders: ['None', 'At time', '5 minutes before', '15 minutes before', '30 minutes before', '60 minutes before'], close: 'Close' },
-  VI: { title: 'Lịch & Công việc', board: 'Bảng', calendar: 'Lịch', timeline: 'Tiến độ', today: 'Hôm nay', day: 'Ngày', week: 'Tuần', month: 'Tháng', previous: 'Trước', next: 'Sau', task: 'Công việc', event: 'Sự kiện', add: 'Thêm mới', search: 'Tìm công việc và sự kiện', all: 'Tất cả', high: 'Ưu tiên cao', category: 'Danh mục', categoryColor: 'Màu danh mục', categoryCount: 'danh m\u1ee5c', items: 'm\u1ee5c', maxVisible: 'T\u1ed1i \u0111a 5 m\u1ee5c', accent: 'M\u00e0u nh\u1ea5n', selected: '\u0111\u00e3 ch\u1ecdn', selectAll: 'Ch\u1ecdn t\u1ea5t c\u1ea3', clearAll: 'B\u1ecf ch\u1ecdn t\u1ea5t c\u1ea3', titleLabel: 'Tiêu đề', description: 'Ghi chú', status: 'Trạng thái', priority: 'Ưu tiên', start: 'Ngày bắt đầu', due: 'Hạn chót', time: 'Giờ bắt đầu', allDay: 'Cả ngày', reminder: 'Nhắc trước (phút)', recurrence: 'Lặp lại', checklist: 'Danh sách kiểm tra', progress: 'Tiến độ', save: 'Lưu', cancel: 'Hủy', delete: 'Xóa', addItem: 'Thêm', empty: 'Chưa có lịch. Hãy thêm công việc hoặc sự kiện.', export: 'Xuất bản sao lưu', import: 'Nhập bản sao lưu', categoryNew: 'Thêm danh mục', overdue: 'Quá hạn', dueSoon: 'Sắp đến hạn', owner: 'Lịch cục bộ', saved: 'Đã lưu trên thiết bị', confirmDelete: 'Xóa mục này?', discard: 'Hủy thay đổi chưa lưu?', share: 'Chia sẻ trực tuyến chưa khả dụng. Hãy xuất bản sao lưu cục bộ.', failed: 'Không thể lưu dữ liệu lịch.', conflict: 'L\u1ecbch \u0111\u00e3 thay \u0111\u1ed5i \u1edf n\u01a1i kh\u00e1c. H\u00e3y t\u1ea3i l\u1ea1i r\u1ed3i th\u1eed l\u1ea1i.', busy: 'L\u1ecbch \u0111ang \u0111\u01b0\u1ee3c l\u01b0u. Vui l\u00f2ng th\u1eed l\u1ea1i sau.', noDate: 'Chưa có ngày', noCategory: 'Chưa phân loại', daily: 'Hằng ngày', weekly: 'Hằng tuần', monthly: 'Hằng tháng', yearly: 'Hằng năm', never: 'Không lặp', checklistPlaceholder: 'Mục kiểm tra', priorityNames: ['Bình thường', 'Trung bình', 'Cao', 'Khẩn cấp'], reminders: ['Không', 'Đúng giờ', 'Trước 5 phút', 'Trước 15 phút', 'Trước 30 phút', 'Trước 60 phút'], close: 'Đóng' },
+  EN: { title: 'Calendar & To-do', board: 'Board', calendar: 'Calendar', timeline: 'Timeline', today: 'Today', day: 'Day', week: 'Week', month: 'Month', previous: 'Previous', next: 'Next', task: 'Task', event: 'Event', add: 'New', search: 'Search tasks and events', all: 'All', high: 'High Priority', allStatuses: 'All statuses', allDates: 'All dates', category: 'Category', categoryColor: 'Category color', categoryCount: 'categories', items: 'items', maxVisible: 'Max 5 visible', accent: 'Accent', selected: 'selected', selectAll: 'Select All', clearAll: 'Clear All', titleLabel: 'Title', description: 'Notes', status: 'Status', priority: 'Priority', start: 'Start date', due: 'Due date', time: 'Start time', allDay: 'All day', reminder: 'Reminder (minutes)', recurrence: 'Repeat', checklist: 'Checklist', progress: 'Progress', save: 'Save', cancel: 'Cancel', delete: 'Delete', addItem: 'Add', empty: 'Nothing scheduled. Add a task or event to get started.', export: 'Export backup', import: 'Import backup', categoryNew: 'Add category', overdue: 'Overdue', dueSoon: 'Due soon', owner: 'Local calendar', saved: 'Saved locally', confirmDelete: 'Delete this item?', discard: 'Discard unsaved changes?', share: 'Sharing is unavailable offline. Export a local backup instead.', failed: 'Could not save calendar data.', conflict: 'Calendar changed elsewhere. Reload and try again.', busy: 'A calendar save is already in progress. Try again shortly.', noDate: 'No date', noCategory: 'Uncategorized', daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', yearly: 'Yearly', never: 'Never', checklistPlaceholder: 'Checklist item', priorityNames: ['Normal', 'Medium', 'High', 'Urgent'], reminders: ['None', 'At time', '5 minutes before', '15 minutes before', '30 minutes before', '60 minutes before'], close: 'Close', conflictTitle: 'Conflicting & Overlapping Tasks', conflictItem: 'item', conflictItems: 'items', conflictOverlap: 'Overlap', conflictAlert: 'Conflict Alert' },
+  VI: { title: 'Lịch & Công việc', board: 'Bảng', calendar: 'Lịch', timeline: 'Tiến độ', today: 'Hôm nay', day: 'Ngày', week: 'Tuần', month: 'Tháng', previous: 'Trước', next: 'Sau', task: 'Công việc', event: 'Sự kiện', add: 'Thêm mới', search: 'Tìm công việc và sự kiện', all: 'Tất cả', high: 'Ưu tiên cao', category: 'Danh mục', categoryColor: 'Màu danh mục', categoryCount: 'danh mục', items: 'mục', maxVisible: 'Tối đa 5 mục', accent: 'Màu nhấn', selected: 'đã chọn', selectAll: 'Chọn tất cả', clearAll: 'Bỏ chọn tất cả', titleLabel: 'Tiêu đề', description: 'Ghi chú', status: 'Trạng thái', priority: 'Ưu tiên', start: 'Ngày bắt đầu', due: 'Hạn chót', time: 'Giờ bắt đầu', allDay: 'Cả ngày', reminder: 'Nhắc trước (phút)', recurrence: 'Lặp lại', checklist: 'Danh sách kiểm tra', progress: 'Tiến độ', save: 'Lưu', cancel: 'Hủy', delete: 'Xóa', addItem: 'Thêm', empty: 'Chưa có lịch. Hãy thêm công việc hoặc sự kiện.', export: 'Xuất bản sao lưu', import: 'Nhập bản sao lưu', categoryNew: 'Thêm danh mục', overdue: 'Quá hạn', dueSoon: 'Sắp đến hạn', owner: 'Lịch cục bộ', saved: 'Đã lưu trên thiết bị', confirmDelete: 'Xóa mục này?', discard: 'Hủy thay đổi chưa lưu?', share: 'Chia sẻ trực tuyến chưa khả dụng. Hãy xuất bản sao lưu cục bộ.', failed: 'Không thể lưu dữ liệu lịch.', conflict: 'Lịch đã thay đổi ở nơi khác. Hãy tải lại rồi thử lại.', busy: 'Lịch đang được lưu. Vui lòng thử lại sau.', noDate: 'Chưa có ngày', noCategory: 'Chưa phân loại', daily: 'Hằng ngày', weekly: 'Hằng tuần', monthly: 'Hằng tháng', yearly: 'Hằng năm', never: 'Không lặp', checklistPlaceholder: 'Mục kiểm tra', priorityNames: ['Bình thường', 'Trung bình', 'Cao', 'Khẩn cấp'], reminders: ['Không', 'Đúng giờ', 'Trước 5 phút', 'Trước 15 phút', 'Trước 30 phút', 'Trước 60 phút'], close: 'Đóng', conflictTitle: 'Công việc xung đột & trùng giờ', conflictItem: 'mục', conflictItems: 'mục', conflictOverlap: 'Trùng giờ', conflictAlert: 'Cảnh báo xung đột' },
 };
 const notificationStrings = {
-  EN: { title: 'Notifications', count: (count: number) => `${count} new`, markAll: 'Mark all as read', settings: 'Notification settings', viewAll: 'View all', close: 'Close notifications', back: 'Back to notifications', preferences: 'Notification preferences', status: 'Status changes', reminder: 'Due reminders', backup: 'Backup activity', empty: 'You’re all caught up.', moved: (title: string, status: string) => `“${title}” moved to ${status}`, due: (title: string) => `Deadline coming up: ${title}`, backupSuccess: (action: string) => `Calendar backup ${action} successfully`, backupFailure: (action: string) => `Calendar backup ${action} failed`, exported: 'exported', imported: 'imported', justNow: 'Just now', enabled: 'Enabled', allTitle: 'All notifications' },
-  VI: { title: 'Thông báo', count: (count: number) => `${count} mới`, markAll: 'Đánh dấu đã đọc tất cả', settings: 'Cài đặt thông báo', viewAll: 'Xem tất cả', close: 'Đóng thông báo', back: 'Quay lại thông báo', preferences: 'Tùy chọn thông báo', status: 'Thay đổi trạng thái', reminder: 'Nhắc hạn chót', backup: 'Hoạt động sao lưu', empty: 'Bạn đã xem hết thông báo.', moved: (title: string, status: string) => `“${title}” đã chuyển sang ${status}`, due: (title: string) => `Sắp đến hạn: ${title}`, backupSuccess: (action: string) => `Bản sao lưu đã ${action} thành công`, backupFailure: (action: string) => `Không thể ${action} bản sao lưu`, exported: 'xuất', imported: 'nhập', justNow: 'Vừa xong', enabled: 'Đang bật', allTitle: 'Tất cả thông báo' },
+  EN: { title: 'Notifications', count: (count: number) => `${count} new`, markAll: 'Mark all as read', settings: 'Notification settings', viewAll: 'View all', close: 'Close notifications', back: 'Back to notifications', preferences: 'Notification preferences', status: 'Status changes', reminder: 'Due reminders', backup: 'Backup activity', empty: 'You’re all caught up.', moved: (title: string, status: string) => `“${title}” moved to ${status}`, due: (title: string) => `Deadline coming up: ${title}`, backupSuccess: (action: string) => `Calendar backup ${action} successfully`, backupFailure: (action: string) => `Calendar backup ${action} failed`, exported: 'exported', imported: 'imported', justNow: 'Just now', enabled: 'Enabled', allTitle: 'All notifications', deleteAll: 'Delete all notifications' },
+  VI: { title: 'Thông báo', count: (count: number) => `${count} mới`, markAll: 'Đánh dấu đã đọc tất cả', settings: 'Cài đặt thông báo', viewAll: 'Xem tất cả', close: 'Đóng thông báo', back: 'Quay lại thông báo', preferences: 'Tùy chọn thông báo', status: 'Thay đổi trạng thái', reminder: 'Nhắc hạn chót', backup: 'Hoạt động sao lưu', empty: 'Bạn đã xem hết thông báo.', moved: (title: string, status: string) => `“${title}” đã chuyển sang ${status}`, due: (title: string) => `Sắp đến hạn: ${title}`, backupSuccess: (action: string) => `Bản sao lưu đã ${action} thành công`, backupFailure: (action: string) => `Không thể ${action} bản sao lưu`, exported: 'xuất', imported: 'nhập', justNow: 'Vừa xong', enabled: 'Đang bật', allTitle: 'Tất cả thông báo', deleteAll: 'Xóa tất cả thông báo' },
 };
 const dateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const todayKey = () => dateKey(new Date());
 const fresh = (kind: Item['kind'], date = todayKey()): Item => ({ id: crypto.randomUUID(), kind, title: '', description: '', category: '', status: 'todo', priority: 'normal', start: date, due: date, endTime: '10:00', allDay: kind === 'task', reminder: 0, recurrence: '', checklist: [], progress: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
 const labelDate = (value: string, language: 'EN' | 'VI') => value ? new Intl.DateTimeFormat(language === 'VI' ? 'vi-VN' : 'en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${value}T00:00:00`)) : '';
 
+const HOURS = Array.from({ length: 24 }, (_, i) => i);
+function formatHourLabel(h: number): string {
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${String(h12).padStart(2, '0')} ${ampm}`;
+}
+
+function formatTime12(timeStr: string): string {
+  if (!timeStr) return '';
+  const parts = timeStr.split(':');
+  const h = parseInt(parts[0], 10);
+  if (isNaN(h)) return timeStr;
+  const m = parts[1] ? parts[1].slice(0, 2) : '00';
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${String(h12).padStart(2, '0')}:${m} ${ampm}`;
+}
+
+function formatItemTimeRange(item: Item): string {
+  if (item.allDay) return 'All Day';
+  const startTime = item.start.includes('T') ? item.start.slice(11, 16) : '';
+  const endTime = item.endTime || '';
+  if (!startTime && !endTime) return '';
+  const s = startTime ? formatTime12(startTime) : '';
+  const e = endTime ? formatTime12(endTime) : '';
+  if (s && e) return `${s} - ${e}`;
+  return s || e;
+}
+
+const statusTheme: Record<Status, { bg: string; border: string; text: string; dot: string }> = {
+  todo: { bg: '#f8fafc', border: '#cbd5e1', text: '#334155', dot: '#718096' },
+  in_progress: { bg: '#eff6ff', border: '#bfdbfe', text: '#1e40af', dot: '#2879e8' },
+  in_review: { bg: '#fffbeb', border: '#fde68a', text: '#92400e', dot: '#c27803' },
+  done: { bg: '#f0fdf4', border: '#bbf7d0', text: '#166534', dot: '#11865b' },
+};
+
+function getStatusTheme(status: string) {
+  return statusTheme[status as Status] ?? statusTheme.todo;
+}
+
 export default function CalendarWorkspace({ language, api }: { language: 'EN' | 'VI'; api: { getCalendarData: () => Promise<Data>; saveCalendarData: (data: Data) => Promise<Data>; queryCalendarData: (startDate: string, endDate: string, boardView: boolean) => Promise<Data>; saveCalendarChanges: (data: Data, expectedUpdatedAt: Record<string, string | null>, deletedIds: string[]) => Promise<void>; getCalendarRebuildStatus?: () => Promise<{ completed: number; total: number } | null>; cancelCalendarRebuild?: () => Promise<void> } }) {
+  const backupInput = useRef<HTMLInputElement>(null);
   const l = strings[language]; const nl = notificationStrings[language]; const startLockText = language === 'EN' ? 'Locked after completion' : '\u0110\u00e3 kh\u00f3a sau khi ho\u00e0n t\u1ea5t'; const [data, setData] = useState<Data>(empty); const [view, setView] = useState<'board' | 'calendar' | 'timeline'>(() => (sessionStorage.getItem('b6h-calendar-view') as 'board' | 'calendar' | 'timeline') || 'board'); const [scale, setScale] = useState<'day' | 'week' | 'month'>(() => (sessionStorage.getItem('b6h-calendar-scale') as 'day' | 'week' | 'month') || 'week');
-  const [selectedDate, setSelectedDate] = useState(() => sessionStorage.getItem('b6h-calendar-date') || todayKey()); const [query, setQuery] = useState(''); const [highOnly, setHighOnly] = useState(false); const [category, setCategory] = useState(''); const [accentColor, setAccentColor] = useState(categoryPalette[4]); const [deleteCategory, setDeleteCategory] = useState<string | null>(null); const [statusFilter, setStatusFilter] = useState(''); const [visibleLimit, setVisibleLimit] = useState(100); const [dateFilter, setDateFilter] = useState(''); const [draft, setDraft] = useState<Item | null>(null); const [draftBaseline, setDraftBaseline] = useState(''); const [sidePanelOpen, setSidePanelOpen] = useState(true); const [checkText, setCheckText] = useState(''); const [categoryText, setCategoryText] = useState(''); const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [saving, setSaving] = useState(false); const [loading, setLoading] = useState(true); const [rebuildProgress, setRebuildProgress] = useState<{ completed: number; total: number } | null>(null); const [refresh, setRefresh] = useState(0); const savingRef = useRef(false);
+  const [selectedDate, setSelectedDate] = useState(() => sessionStorage.getItem('b6h-calendar-date') || todayKey()); const [query, setQuery] = useState(''); const [category, setCategory] = useState(''); const [accentColor, setAccentColor] = useState(categoryPalette[4]); const [deleteCategory, setDeleteCategory] = useState<string | null>(null); const [statusFilter, setStatusFilter] = useState(''); const [visibleLimit, setVisibleLimit] = useState(100); const [draft, setDraft] = useState<Item | null>(null); const [draftBaseline, setDraftBaseline] = useState(''); const [sidePanelOpen, setSidePanelOpen] = useState(true); const [checkText, setCheckText] = useState(''); const [categoryText, setCategoryText] = useState(''); const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [saving, setSaving] = useState(false); const [loading, setLoading] = useState(true); const [rebuildProgress, setRebuildProgress] = useState<{ completed: number; total: number } | null>(null); const [refresh, setRefresh] = useState(0); const savingRef = useRef(false);
+  const [conflictCluster, setConflictCluster] = useState<{ date: string; hour: number; items: Item[] } | null>(null);
   const [notificationState, setNotificationState] = useState<CalendarNotificationState>(() => { try { return readCalendarNotificationState(window.localStorage); } catch { return emptyNotificationState; } }); const notificationStateRef = useRef(notificationState); const [notificationsOpen, setNotificationsOpen] = useState(false); const [notificationView, setNotificationView] = useState<'list' | 'settings'>('list'); const [allNotificationsOpen, setAllNotificationsOpen] = useState(false); const notificationButtonRef = useRef<HTMLButtonElement>(null); const notificationPopoverRef = useRef<HTMLDivElement>(null); const notificationDialogRef = useRef<HTMLDivElement>(null);
   const commitNotificationState = useCallback((next: CalendarNotificationState) => { notificationStateRef.current = next; setNotificationState(next); try { writeCalendarNotificationState(window.localStorage, next); } catch { /* Local history remains available for this session if storage is unavailable. */ } }, []);
   const appendNotification = useCallback((notification: CalendarNotification) => { const current = notificationStateRef.current; const next = addCalendarNotification(current, notification); if (next !== current) commitNotificationState(next); }, [commitNotificationState]);
@@ -50,6 +92,7 @@ export default function CalendarWorkspace({ language, api }: { language: 'EN' | 
   const switchDraftKind = (kind: Item['kind']) => { if (!draft || draft.kind === kind) return; const next = { ...draft, kind, start: kind === 'event' ? draft.start.slice(0, 10) + 'T09:00' : draft.start.slice(0, 10), allDay: kind === 'task' }; if (!data.items.some(item => item.id === draft.id) && !draftDirty) setDraftBaseline(JSON.stringify(next)); setDraft(next); };
   const closeDraft = () => { if (!draftDirty || window.confirm(l.discard)) { setDraft(null); setDraftBaseline(''); setCheckText(''); } };
   useEffect(() => { if (!draft) return; const close = (event: KeyboardEvent) => { if (event.key === 'Escape') closeDraft(); }; window.addEventListener('keydown', close); return () => window.removeEventListener('keydown', close); }, [draft, draftDirty, l.discard]);
+  useEffect(() => { if (!conflictCluster) return; const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setConflictCluster(null); }; window.addEventListener('keydown', close); return () => window.removeEventListener('keydown', close); }, [conflictCluster]);
   const reminders = useMemo(() => data.items.filter(item => item.reminder && item.due && item.status !== 'done').map(item => {
     const due = new Date(item.kind === 'event' && item.start.includes('T') ? item.start : `${item.due}T09:00:00`).getTime();
     return { item, due, trigger: due - (item.reminder === -1 ? 0 : item.reminder) * 60000, key: `b6h-calendar-reminder-${item.id}-${item.due}` };
@@ -83,7 +126,7 @@ export default function CalendarWorkspace({ language, api }: { language: 'EN' | 
     finally { savingRef.current = false; setSaving(false); }
     return true;
   };
-  const filtered = useMemo(() => data.items.filter(item => (view !== 'board' || item.status !== 'done' || boardDoneVisible(item)) && (!query || `${item.title} ${item.description} ${item.category}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())) && (!highOnly || ['high', 'urgent'].includes(item.priority)) && (!category || item.category === category) && (!statusFilter || item.status === statusFilter) && (!dateFilter || (dateFilter === 'completed' ? item.status === 'done' : dateFilter === 'overdue' ? item.due < todayKey() && item.status !== 'done' : item.due >= todayKey() && item.due <= dateKey(new Date(Date.now() + 7 * 86400000)) && item.status !== 'done'))), [data.items, query, highOnly, category, statusFilter, dateFilter, view]);
+  const filtered = useMemo(() => data.items.filter(item => (view !== 'board' || item.status !== 'done' || boardDoneVisible(item)) && (!query || `${item.title} ${item.description} ${item.category}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())) && (!category || item.category === category) && (!statusFilter || item.status === statusFilter)), [data.items, query, category, statusFilter, view]);
   const openNew = (kind: Item['kind'], date = selectedDate) => openDraft(fresh(kind, date));
   const saveDraft = async (event: React.FormEvent) => { event.preventDefault(); if (!draft?.title.trim()) return; const start = draft.originalStart ?? draft.start; if (start && draft.due && (draft.due < start.slice(0, 10) || (draft.kind === 'event' && !draft.allDay && draft.due === start.slice(0, 10) && start.includes('T') && draft.endTime < start.slice(11, 16)))) { setError(l.failed); return; } const item = { ...draft, title: draft.title.trim(), updatedAt: new Date().toISOString() }; if (await persist({ ...data, items: data.items.some(existing => existing.id === item.id) ? data.items.map(existing => existing.id === item.id ? item : existing) : [...data.items, item] })) { setDraft(null); setDraftBaseline(''); setCheckText(''); } };
   const deleteDraft = async () => {
@@ -125,30 +168,285 @@ export default function CalendarWorkspace({ language, api }: { language: 'EN' | 
   const exportData = async () => { try { const complete = await api.getCalendarData(); const contents = JSON.stringify(complete, null, 2); if (isTauri()) { const saved = await saveCalendarBackup(contents, filename => saveFileDialog({ defaultPath: filename, filters: [{ name: 'JSON backup', extensions: ['json'] }] }), (file, value) => invoke('write_calendar_backup', { file, contents: value })); if (!saved) return; } else download('b6h-calendar-backup.json', contents, 'application/json'); appendNotification({ id: crypto.randomUUID(), kind: 'backup', action: 'export', outcome: 'success', createdAt: new Date().toISOString(), read: false }); } catch (reason) { setError(reason instanceof Error && reason.message ? reason.message : l.failed); appendNotification({ id: crypto.randomUUID(), kind: 'backup', action: 'export', outcome: 'failure', createdAt: new Date().toISOString(), read: false }); } };
   const importData = async (file?: File) => { if (!file) return; try { const imported = JSON.parse(await file.text()) as Data; if (imported.schemaVersion !== 1 || !Array.isArray(imported.items) || !Array.isArray(imported.categories) || imported.items.some(item => !item.id || !item.title || !['task', 'event'].includes(item.kind)) || new Set(imported.items.map(item => item.id)).size !== imported.items.length || (imported.categoryColors !== undefined && (typeof imported.categoryColors !== 'object' || imported.categoryColors === null || Array.isArray(imported.categoryColors) || Object.entries(imported.categoryColors).some(([name, color]) => !imported.categories.includes(name) || typeof color !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(color))))) throw new Error(); if (window.confirm(language === 'EN' ? 'Replace the current calendar with this backup?' : 'Thay thế lịch hiện tại bằng bản sao lưu này?')) { if (await persist(imported, true)) { setDraft(null); setDraftBaseline(''); appendNotification({ id: crypto.randomUUID(), kind: 'backup', action: 'import', outcome: 'success', createdAt: new Date().toISOString(), read: false }); } else appendNotification({ id: crypto.randomUUID(), kind: 'backup', action: 'import', outcome: 'failure', createdAt: new Date().toISOString(), read: false }); } } catch { setError(language === 'EN' ? 'Backup file is invalid.' : 'Tệp sao lưu không hợp lệ.'); appendNotification({ id: crypto.randomUUID(), kind: 'backup', action: 'import', outcome: 'failure', createdAt: new Date().toISOString(), read: false }); } };
   const weekdays = language === 'EN' ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] : ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+  const tzOffset = -new Date().getTimezoneOffset() / 60;
+  const tzLabel = 'GMT' + (tzOffset >= 0 ? '+' : '') + String(Math.floor(tzOffset)).padStart(2, '0');
   const shownPeriod = new Intl.DateTimeFormat(language === 'VI' ? 'vi-VN' : 'en-US', { month: 'long', year: 'numeric' }).format(new Date(`${selectedDate}T12:00:00`));
+
+  const renderEventCard = (item: Item) => {
+    const theme = getStatusTheme(item.status);
+    const timeStr = formatItemTimeRange(item);
+    return (
+      <div
+        className={`calendar-event-card status-${item.status}`}
+        key={item.id}
+        style={{
+          backgroundColor: theme.bg,
+          borderColor: theme.border,
+          color: theme.text,
+        }}
+        onClick={e => {
+          e.stopPropagation();
+          openDraft(item);
+        }}
+      >
+        <div className="calendar-event-title">{item.title}</div>
+        {item.description && (
+          <div className="calendar-event-notes">{item.description}</div>
+        )}
+        {timeStr && (
+          <div className="calendar-event-time">
+            <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+            <span>{timeStr}</span>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderStackContainer = (items: Item[], date: string, hour = 0) => (
+    <div
+      className="calendar-stack-container"
+      onClick={e => {
+        e.stopPropagation();
+        setConflictCluster({ date, hour, items });
+      }}
+      title={`${items.length} ${items.length === 1 ? l.conflictItem : l.conflictItems}`}
+    >
+      {items.slice(0, 3).map((item, idx) => {
+        const theme = getStatusTheme(item.status);
+        const isLastVisible = idx === 2;
+        const hasMore = items.length > 3 && isLastVisible;
+        const moreCount = items.length - 3;
+        const offsets = [
+          { left: '0%', top: '2px', width: '88%', zIndex: 10 },
+          { left: '12%', top: '20px', width: '84%', zIndex: 20 },
+          { left: '24%', top: '38px', width: '80%', zIndex: 30 },
+        ];
+        const offset = offsets[idx] || offsets[0];
+        return (
+          <div
+            className={`calendar-stack-card layer-${idx} status-${item.status}`}
+            key={item.id}
+            style={{
+              left: offset.left,
+              top: offset.top,
+              width: offset.width,
+              zIndex: offset.zIndex,
+              backgroundColor: theme.bg,
+              borderColor: idx === 0 ? theme.border : '#ffffff',
+              color: theme.text,
+            }}
+          >
+            <div className="calendar-stack-dot" style={{ backgroundColor: theme.dot }} />
+            <span className="calendar-stack-label">
+              {hasMore
+                ? `+${moreCount} ${language === 'EN' ? 'more' : 'thêm'}`
+                : item.category || (item.kind === 'task' ? l.task : l.event)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+
   return <section className="calendar-workspace">
     <header className="calendar-toolbar">
       <h1>{l.title}</h1>
       <div className="calendar-switch" role="tablist">{(['board', 'calendar', 'timeline'] as const).map(id => <button key={id} role="tab" aria-selected={view === id} onClick={() => setView(id)}>{l[id]}</button>)}</div>
       <button onClick={() => setSelectedDate(todayKey())}>{l.today}</button><div className="calendar-toolbar-spacer"/>
+      <button type="button" onClick={() => void exportData()}>{l.export}</button>
+      <button type="button" onClick={() => backupInput.current?.click()}>{l.import}</button>
+      <input ref={backupInput} type="file" accept=".json,application/json" hidden onChange={event => { const file = event.target.files?.[0]; if (file) void importData(file); event.target.value = ''; }} />
       <select aria-label={l.month} value={scale} onChange={event => setScale(event.target.value as typeof scale)}>{(['day', 'week', 'month'] as const).map(value => <option key={value} value={value}>{l[value]}</option>)}</select>
       <input aria-label={l.search} placeholder={l.search} value={query} onChange={event => setQuery(event.target.value)}/>
       <select aria-label={l.category} value={category} onChange={event => setCategory(event.target.value)}><option value="">{l.all}</option>{data.categories.map(value => <option key={value}>{value}</option>)}</select>
       <select aria-label={l.status} value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="">{l.all}</option>{statuses.map((value, i) => <option value={value} key={value}>{statusNames[language][i]}</option>)}</select>
-      <select aria-label={l.due} value={dateFilter} onChange={event => setDateFilter(event.target.value)}><option value="">{l.all}</option><option value="overdue">{l.overdue}</option><option value="upcoming">{l.dueSoon}</option><option value="completed">{statusNames[language][3]}</option></select>
-      <div className="calendar-toolbar-backups"><button aria-pressed={highOnly} onClick={() => setHighOnly(value => !value)}>{l.high}</button><button onClick={() => void exportData()}>{l.export}</button>
-      <label className="calendar-import">{l.import}<input type="file" accept="application/json,.json" onChange={event => void importData(event.target.files?.[0])}/></label><div className="calendar-notifications"><button ref={notificationButtonRef} type="button" className="calendar-notification-trigger" aria-label={`${nl.title}${unreadNotifications ? `, ${nl.count(unreadNotifications)}` : ''}`} aria-haspopup="dialog" aria-expanded={notificationsOpen} aria-controls="calendar-notifications-popover" onClick={() => { setNotificationsOpen(value => !value); setNotificationView('list'); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>{unreadNotifications > 0 && <span className="calendar-notification-ping"><i/><span className="calendar-sr-only">{nl.count(unreadNotifications)}</span></span>}</button>{notificationsOpen && <div ref={notificationPopoverRef} id="calendar-notifications-popover" className="calendar-notification-popover" role="dialog" aria-modal="false" aria-labelledby="calendar-notifications-title">{notificationView === 'list' ? <><header><div><h2 id="calendar-notifications-title">{nl.title}</h2><span className="calendar-notification-count">{nl.count(unreadNotifications)}</span></div><button type="button" className="calendar-notification-mark" disabled={!unreadNotifications} onClick={() => commitNotificationState(markAllCalendarNotificationsRead(notificationStateRef.current))}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>{nl.markAll}</button></header>{renderNotificationItems(notificationState.notifications.slice(0, 7))}<footer><button type="button" onClick={() => setNotificationView('settings')}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM4 13.5l-2-1.5 2-1.5.4-1.4-1-2.3 2.1-1.2 1.9 1.3 1.5-.4L10 4h4l1.1 2.5 1.5.4 1.9-1.3 2.1 1.2-1 2.3.4 1.4 2 1.5-2 1.5-.4 1.4 1 2.3-2.1 1.2-1.9-1.3-1.5.4L14 20h-4l-1.1-2.5-1.5-.4-1.9 1.3-2.1-1.2-1 2.3Z"/></svg>{nl.settings}</button><button type="button" onClick={() => { setNotificationsOpen(false); setAllNotificationsOpen(true); }}>{nl.viewAll}<span aria-hidden="true">›</span></button></footer></> : <><header className="calendar-notification-settings-heading"><button type="button" aria-label={nl.back} onClick={() => setNotificationView('list')}>‹</button><h2 id="calendar-notifications-title">{nl.preferences}</h2></header><div className="calendar-notification-preferences">{(['status', 'reminder', 'backup'] as const).map(kind => <label key={kind}><span>{nl[kind]}</span><input type="checkbox" checked={notificationState.preferences[kind]} onChange={event => commitNotificationState(setCalendarNotificationPreference(notificationStateRef.current, kind, event.target.checked))}/></label>)}</div></>}</div>}</div></div>
+      <div className="calendar-notifications"><button ref={notificationButtonRef} type="button" className="calendar-notification-trigger" aria-label={`${nl.title}${unreadNotifications ? `, ${nl.count(unreadNotifications)}` : ''}`} aria-haspopup="dialog" aria-expanded={notificationsOpen} aria-controls="calendar-notifications-popover" onClick={() => { setNotificationsOpen(value => !value); setNotificationView('list'); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>{unreadNotifications > 0 && <span className="calendar-notification-ping"><i/><span className="calendar-sr-only">{nl.count(unreadNotifications)}</span></span>}</button>{notificationsOpen && <div ref={notificationPopoverRef} id="calendar-notifications-popover" className="calendar-notification-popover" role="dialog" aria-modal="false" aria-labelledby="calendar-notifications-title">{notificationView === 'list' ? <><header><div><h2 id="calendar-notifications-title">{nl.title}</h2><span className="calendar-notification-count">{nl.count(unreadNotifications)}</span></div><button type="button" className="calendar-notification-mark" disabled={!unreadNotifications} onClick={() => commitNotificationState(markAllCalendarNotificationsRead(notificationStateRef.current))}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>{nl.markAll}</button></header>{renderNotificationItems(notificationState.notifications.slice(0, 7))}<footer><button type="button" onClick={() => setNotificationView('settings')}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM4 13.5l-2-1.5 2-1.5.4-1.4-1-2.3 2.1-1.2 1.9 1.3 1.5-.4L10 4h4l1.1 2.5 1.5.4 1.9-1.3 2.1 1.2-1 2.3.4 1.4 2 1.5-2 1.5-.4 1.4 1 2.3-2.1 1.2-1.9-1.3-1.5.4L14 20h-4l-1.1-2.5-1.5-.4-1.9 1.3-2.1-1.2-1 2.3Z"/></svg>{nl.settings}</button><button type="button" onClick={() => { setNotificationsOpen(false); setAllNotificationsOpen(true); }}>{nl.viewAll}<span aria-hidden="true">›</span></button></footer></> : <><header className="calendar-notification-settings-heading"><button type="button" aria-label={nl.back} onClick={() => setNotificationView('list')}>‹</button><h2 id="calendar-notifications-title">{nl.preferences}</h2></header><div className="calendar-notification-preferences">{(['status', 'backup'] as const).map(kind => <label key={kind}><span>{nl[kind]}</span><input type="checkbox" checked={notificationState.preferences[kind]} onChange={event => commitNotificationState(setCalendarNotificationPreference(notificationStateRef.current, kind, event.target.checked))}/></label>)}<button type="button" className="calendar-notification-delete-all" onClick={() => commitNotificationState(clearAllCalendarNotifications(notificationStateRef.current))}>{nl.deleteAll}</button></div></>}</div>}</div>
     </header>
     {allNotificationsOpen && <div className="calendar-notification-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) { setAllNotificationsOpen(false); notificationButtonRef.current?.focus(); } }}><div ref={notificationDialogRef} className="calendar-notification-dialog" role="dialog" aria-modal="true" aria-labelledby="calendar-all-notifications-title" tabIndex={-1} onKeyDown={event => { if (event.key !== 'Tab') return; const targets = event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled)'); const first = targets[0]; const last = targets[targets.length - 1]; if (event.shiftKey && (document.activeElement === first || document.activeElement === event.currentTarget)) { event.preventDefault(); last?.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); } }}><header><h2 id="calendar-all-notifications-title">{nl.allTitle}</h2><button type="button" aria-label={nl.close} onClick={() => { setAllNotificationsOpen(false); notificationButtonRef.current?.focus(); }}>×</button></header>{renderNotificationItems(notificationState.notifications)}</div></div>}
     <div className="calendar-body">{sidePanelOpen && <aside className="calendar-side"><div className="calendar-side-heading"><button type="button" aria-label={l.previous} onClick={() => movePeriod(-1)}>‹</button><h2>{shownPeriod}</h2><button type="button" aria-label={l.next} onClick={() => movePeriod(1)}>›</button><button type="button" className="calendar-side-toggle" aria-label={language === 'EN' ? 'Hide calendar panel' : '\u1ea8n b\u1ea3ng l\u1ecbch'} title={language === 'EN' ? 'Hide calendar panel' : '\u1ea8n b\u1ea3ng l\u1ecbch'} onClick={() => setSidePanelOpen(false)}><span aria-hidden="true">&#9776;</span></button></div><div className="mini-calendar">{weekdays.map(day => <b key={day}>{day}</b>)}{gridDates.map(date => <button key={date} className={`${date === selectedDate ? 'selected' : ''} ${date === todayKey() ? 'today' : ''} ${date.slice(0, 7) !== selectedDate.slice(0, 7) ? 'outside' : ''}`} onClick={() => setSelectedDate(date)}>{Number(date.slice(-2))}</button>)}</div><section className="calendar-categories" aria-labelledby="calendar-category-heading"><header className="calendar-category-header"><h3 id="calendar-category-heading">{l.category}<span aria-label={data.categories.length + ' ' + l.categoryCount}>{data.categories.length}</span></h3><small>{l.maxVisible}</small></header><form className="calendar-add-category" onSubmit={event => { event.preventDefault(); const value = categoryText.trim(); if (value && !data.categories.includes(value)) void persist({ ...data, categories: [...data.categories, value], categoryColors: { ...Object.fromEntries(data.categories.map(name => [name, data.categoryColors?.[name] ?? colorForCategory(name)])), [value]: accentColor } }); setCategoryText(''); }}><input aria-label={l.categoryNew} value={categoryText} onChange={event => setCategoryText(event.target.value)} placeholder={l.categoryNew}/><button type="submit" aria-label={l.categoryNew} disabled={!categoryText.trim()}>+</button></form><div className="calendar-accent"><span>{l.accent}:</span>{categoryPalette.map(color => <button key={color} type="button" aria-label={l.accent + ' ' + color} aria-pressed={accentColor === color} title={l.accent + ' ' + color} onClick={() => applyAccentColor(color)}><i style={{ backgroundColor: color }}/></button>)}</div><div className="calendar-category-list" tabIndex={0} aria-label={l.category}>{data.categories.map(value => <div className="calendar-category" key={value}><div className="calendar-category-name" style={{ '--category-color': colorForCategory(value) } as React.CSSProperties}><span>{value}</span><small>{data.categoryCounts?.[value] ?? data.items.filter(item => item.category === value).length}</small></div><button type="button" aria-label={language === 'EN' ? 'Rename ' + value : '\u0110\u1ed5i t\u00ean ' + value} title={language === 'EN' ? 'Rename category' : '\u0110\u1ed5i t\u00ean danh m\u1ee5c'} onClick={async () => { const renamed = window.prompt(language === 'EN' ? 'Rename category' : '\u0110\u1ed5i t\u00ean danh m\u1ee5c', value)?.trim(); if (renamed && renamed !== value) { const categoryColors = { ...data.categoryColors, [renamed]: data.categoryColors?.[value] ?? colorForCategory(value) }; delete categoryColors[value]; await persist({ ...data, categories: data.categories.map(item => item === value ? renamed : item), categoryColors, items: data.items.map(item => item.category === value ? { ...item, category: renamed } : item) }); } }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5 5 5M4 20l4.5-1 10-10a2.1 2.1 0 0 0-3-3l-10 10L4 20Z"/></svg></button><button type="button" aria-label={language === 'EN' ? 'Delete ' + value : 'X\u00f3a ' + value} title={language === 'EN' ? 'Delete category' : 'X\u00f3a danh m\u1ee5c'} onClick={() => setDeleteCategory(value)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div>)}</div></section></aside>}
       <main className="calendar-main"><div className="calendar-actions">{!sidePanelOpen && <><button type="button" aria-label={l.previous} onClick={() => movePeriod(-1)}>‹</button><button type="button" aria-label={l.next} onClick={() => movePeriod(1)}>›</button><button type="button" className="calendar-side-toggle" aria-label={language === 'EN' ? 'Show calendar panel' : 'Hi\u1ec7n b\u1ea3ng l\u1ecbch'} title={language === 'EN' ? 'Show calendar panel' : 'Hi\u1ec7n b\u1ea3ng l\u1ecbch'} onClick={() => setSidePanelOpen(true)}><span aria-hidden="true">&#9776;</span></button></>}<span>{filtered.length} · {l.owner}</span>{(notice || saving || loading || error) && <div className="calendar-feedback" aria-live="polite">{notice && <span role="status">{notice}</span>}{saving && <span>{language === 'EN' ? 'Saving\u2026' : '\u0110ang l\u01b0u\u2026'}</span>}{loading && <span>{rebuildProgress ? 'Rebuilding calendar index ' + Math.round(rebuildProgress.completed / Math.max(1, rebuildProgress.total) * 100) + '%' : language === 'EN' ? 'Loading calendar…' : 'Đang tải lịch…'}</span>}{rebuildProgress && api.cancelCalendarRebuild && <button type="button" onClick={() => void api.cancelCalendarRebuild?.()}>{language === 'EN' ? 'Cancel rebuild' : 'Hủy lập chỉ mục'}</button>}{error && <span role="alert">{error}</span>}</div>}<button onClick={() => openNew('task')}>+ {l.task}/{l.event}</button></div>
-      {view === 'board' && <div className="calendar-board">{statuses.map((status, index) => <section className={`calendar-lane lane-${status}`} key={status} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); const item = data.items.find(value => value.id === event.dataTransfer.getData('text/plain')); if (item) moveStatus(item, status); }}><h2><i/>{statusNames[language][index]} <span>{filtered.filter(item => item.status === status).length}</span><button aria-label={`${l.add} ${l.task}`} onClick={() => { const item = fresh('task'); item.status = status; openDraft(item); }}>＋</button></h2><div className="calendar-lane-cards" aria-label={statusNames[language][index]}>{filtered.filter(item => item.status === status).sort((a, b) => priorityRank[b.priority] - priorityRank[a.priority]).map(item => <article draggable key={item.id} onDragStart={event => event.dataTransfer.setData('text/plain', item.id)} onClick={() => openDraft(item)}><div className="calendar-card-meta"><span style={item.category ? { color: colorForCategory(item.category), borderColor: colorForCategory(item.category) } : undefined}>{item.category || l.noCategory}</span>{item.kind === 'event' ? <b className="calendar-card-kind">{l.event}</b> : <b className={`priority-${item.priority}`}>{l.priorityNames[['normal', 'medium', 'high', 'urgent'].indexOf(item.priority)]}</b>}</div><strong>{item.title}</strong><p>{item.description}</p>{item.kind === 'event' && !item.allDay && <small className="calendar-card-time">{item.start.slice(11, 16)} - {item.endTime}</small>}{item.checklist.length > 0 && <small>{item.checklist.filter(c => c.done).length}/{item.checklist.length} · {l.checklist}</small>}<footer>{(item.kind === 'event' ? item.start.slice(0, 10) : item.due) ? labelDate(item.kind === 'event' ? item.start.slice(0, 10) : item.due, language) : l.noDate}<select className="calendar-card-status" aria-label={l.status} value={item.status} onClick={event => event.stopPropagation()} onChange={event => moveStatus(item, event.target.value as Status)}>{statuses.map((value, i) => <option key={value} value={value}>{statusNames[language][i]}</option>)}</select></footer></article>)}</div></section>)}</div>}
-      {view === 'calendar' && <div className={`calendar-grid ${scale}`}><div className="calendar-weekdays">{(scale === 'day' ? [weekdays[(new Date(`${selectedDate}T12:00:00`).getDay() + 6) % 7]] : scale === 'week' ? rangeDates.map(date => weekdays[(new Date(date + 'T12:00:00').getDay() + 6) % 7]): weekdays).map((day, i) => <b key={`${day}${i}`}>{day}</b>)}</div>{(scale === 'month' ? rangeDates : rangeDates).map(date => { const dayItems = calendarItemsByDate.get(date) ?? []; return <div className={`calendar-cell ${date === todayKey() ? 'today' : ''}`} key={date} onDoubleClick={() => openNew('event', date)}><div className="calendar-cell-heading"><button className="calendar-cell-date" onClick={() => setSelectedDate(date)}>{Number(date.slice(-2))}</button>{dayItems.length > 0 && <span className="calendar-cell-count">{dayItems.length} {l.items}</span>}</div><div className="calendar-cell-items" tabIndex={0} aria-label={`${date} ${l.items}`}>{dayItems.map(item => <button className={`calendar-event ${item.kind}`} key={item.id} style={item.category ? { '--category-color': colorForCategory(item.category), color: colorForCategory(item.category) } as React.CSSProperties : undefined} onClick={() => openDraft(item)}>{item.title}{item.kind === 'event' && !item.allDay ? ` \u2013 ${item.start.includes('T') ? item.start.slice(11, 16) : '09:00'}-${item.endTime}` : ''}</button>)}</div></div>; })}</div>}
+      {view === 'board' && <div className="calendar-board">{statuses.map((status, index) => <section className={`calendar-lane lane-${status}`} key={status} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); const item = data.items.find(value => value.id === event.dataTransfer.getData('text/plain')); if (item) moveStatus(item, status); }}><h2><i/>{statusNames[language][index]} <span>{filtered.filter(item => item.status === status).length}</span><button aria-label={`${l.add} ${l.task}`} onClick={() => { const item = fresh('task'); item.status = status; openDraft(item); }}>＋</button></h2><div className="calendar-lane-cards" aria-label={statusNames[language][index]}>{filtered.filter(item => item.status === status).sort((a, b) => priorityRank[b.priority] - priorityRank[a.priority]).map(item => <article draggable key={item.id} className={`status-${item.status}`} onDragStart={event => event.dataTransfer.setData('text/plain', item.id)} onClick={() => openDraft(item)}><div className="calendar-card-meta"><span style={item.category ? { color: colorForCategory(item.category), borderColor: colorForCategory(item.category) } : undefined}>{item.category || l.noCategory}</span>{item.kind === 'event' && <b className="calendar-card-kind">{l.event}</b>}<b className={`priority-${item.priority}`}>{l.priorityNames[['normal', 'medium', 'high', 'urgent'].indexOf(item.priority)]}</b></div><strong>{item.title}</strong><p>{item.description}</p>{item.kind === 'event' && !item.allDay && <small className="calendar-card-time">{item.start.slice(11, 16)} - {item.endTime}</small>}{item.checklist.length > 0 && <small>{item.checklist.filter(c => c.done).length}/{item.checklist.length} · {l.checklist}</small>}<footer>{(item.kind === 'event' ? item.start.slice(0, 10) : item.due) ? labelDate(item.kind === 'event' ? item.start.slice(0, 10) : item.due, language) : l.noDate}<select className="calendar-card-status" aria-label={l.status} value={item.status} onClick={event => event.stopPropagation()} onChange={event => moveStatus(item, event.target.value as Status)}>{statuses.map((value, i) => <option key={value} value={value}>{statusNames[language][i]}</option>)}</select></footer></article>)}</div></section>)}</div>}
+      {view === 'calendar' && (
+        scale === 'month' ? (
+          <div className={`calendar-grid ${scale}`}><div className="calendar-weekdays">{weekdays.map((day, i) => <b key={`${day}${i}`}>{day}</b>)}</div>{rangeDates.map(date => { const dayItems = calendarItemsByDate.get(date) ?? []; return <div className={`calendar-cell ${date === todayKey() ? 'today' : ''}`} key={date} onDoubleClick={() => openNew('event', date)}><div className="calendar-cell-heading"><button className="calendar-cell-date" onClick={() => setSelectedDate(date)}>{Number(date.slice(-2))}</button>{dayItems.length > 0 && <span className="calendar-cell-count">{dayItems.length} {l.items}</span>}</div><div className="calendar-cell-items" tabIndex={0} aria-label={`${date} ${l.items}`}>{dayItems.length === 1 && renderEventCard(dayItems[0])}{dayItems.length > 1 && renderStackContainer(dayItems, date, 0)}</div></div>; })}</div>
+        ) : (
+          <div className={`calendar-time-view ${scale}`}>
+            <div className="calendar-time-header-row">
+              <div className="calendar-time-corner">{tzLabel}</div>
+              <div className="calendar-time-day-headers">
+                {rangeDates.map(date => {
+                  const dObj = new Date(`${date}T12:00:00`);
+                  const dayName = weekdays[(dObj.getDay() + 6) % 7];
+                  const dayNum = Number(date.slice(-2));
+                  const isToday = date === todayKey();
+                  return (
+                    <div className={`calendar-time-day-col-header ${isToday ? 'today' : ''}`} key={date} onClick={() => setSelectedDate(date)}>
+                      <span className="calendar-time-day-name">{dayName}</span>
+                      <span className="calendar-time-day-num">{dayNum}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="calendar-time-body">
+              {rangeDates.some(d => (calendarItemsByDate.get(d) ?? []).some(item => item.allDay || !item.start.includes('T'))) && (
+                <div className="calendar-allday-row">
+                  <div className="calendar-time-corner-empty">{l.allDay}</div>
+                  <div className="calendar-allday-columns">
+                    {rangeDates.map(date => {
+                      const allDayItems = (calendarItemsByDate.get(date) ?? []).filter(item => item.allDay || !item.start.includes('T'));
+                      return (
+                        <div className="calendar-allday-col" key={date}>
+                          {allDayItems.map(item => {
+                            const theme = getStatusTheme(item.status);
+                            return (
+                              <div
+                                key={item.id}
+                                className={`calendar-allday-chip status-${item.status}`}
+                                style={{ backgroundColor: theme.bg, borderColor: theme.border, color: theme.text }}
+                                onClick={() => openDraft(item)}
+                              >
+                                {item.title}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              <div className="calendar-time-grid-container">
+                <div className="calendar-time-gutter">
+                  {HOURS.map(h => (
+                    <div className="calendar-time-slot-label" key={h}>
+                      <span>{formatHourLabel(h)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="calendar-time-columns">
+                  {rangeDates.map(date => {
+                    const timedItems = (calendarItemsByDate.get(date) ?? []).filter(item => !item.allDay && item.start.includes('T'));
+                    return (
+                      <div className={`calendar-time-col ${date === todayKey() ? 'today' : ''}`} key={date}>
+                        {HOURS.map(h => {
+                          const hourItems = timedItems.filter(item => {
+                            const itemH = parseInt(item.start.slice(11, 13), 10);
+                            return itemH === h;
+                          });
+                          const hasStack = hourItems.length > 1;
+                          return (
+                            <div
+                              className={`calendar-hour-cell ${hasStack ? 'has-stack' : ''}`}
+                              key={h}
+                              onDoubleClick={() => openNew('event', `${date}T${String(h).padStart(2, '0')}:00`)}
+                            >
+                              {hourItems.length === 1 && renderEventCard(hourItems[0])}
+                              {hourItems.length > 1 && renderStackContainer(hourItems, date, h)}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      )}
       {view === 'timeline' && <div className="calendar-timeline"><div className="timeline-workflow"><b>{language === 'EN' ? 'Workflow' : 'Quy tr\u00ecnh'}:</b>{statuses.map((status, index) => <button type="button" key={status} className={`timeline-workflow-${status}${statusFilter === status ? ' active' : ''}`} aria-pressed={statusFilter === status} onClick={() => setStatusFilter(current => current === status ? '' : status)}>{statusNames[language][index]} <span>{data.items.filter(item => item.status === status).length}</span></button>)}</div><div className="timeline-heading"><b>{language === 'EN' ? 'Task / Event' : 'C\u00f4ng vi\u1ec7c / S\u1ef1 ki\u1ec7n'}</b><b>{l.status}</b><b>{language === 'EN' ? 'Stage' : 'Giai \u0111o\u1ea1n'}</b><div className="timeline-days">{timelineDates.map(date => <span className={date === todayKey() ? 'today' : ''} key={date}><small>{weekdays[(new Date(`${date}T12:00:00`).getDay() + 6) % 7]}</small><strong>{Number(date.slice(-2))}</strong></span>)}</div></div>{filtered.slice(0, visibleLimit).map(item => { const startIndex = Math.round((new Date(`${item.start.slice(0, 10)}T12:00:00`).getTime() - timelineStart.getTime()) / 86400000); const endIndex = Math.max(startIndex, Math.round((new Date(`${(item.due || item.start).slice(0, 10)}T12:00:00`).getTime() - timelineStart.getTime()) / 86400000)); const visibleStart = Math.max(0, startIndex); const visibleEnd = Math.min(timelineDates.length - 1, endIndex); const stageIndex = statuses.indexOf(item.status); return <div className="timeline-row" key={item.id}><button className="timeline-task" onClick={() => openDraft(item)}><strong>{item.title}</strong><small>{item.kind === 'task' ? l.task : l.event} {'\u00b7'} {item.description || item.category || l.noCategory}</small></button><select className={`timeline-status timeline-workflow-${item.status}`} aria-label={l.status} value={item.status} onClick={event => event.stopPropagation()} onChange={event => moveStatus(item, event.target.value as Status)}>{statuses.map((value, index) => <option key={value} value={value}>{statusNames[language][index]}</option>)}</select><div className="timeline-stage" aria-label={`${statusNames[language][stageIndex]} ${stageIndex + 1}/4`}>{statuses.map((stage, index) => <i className={index <= stageIndex ? `stage-${stage}` : ''} key={stage}/>)}<b>{stageIndex + 1}/4</b></div><div className="timeline-track">{timelineDates.map(date => <span className={date === todayKey() ? 'today' : ''} key={date}/>)}{visibleStart <= visibleEnd && <button className={`timeline-bar timeline-bar-${item.status}`} style={{ left: `${visibleStart / timelineDates.length * 100}%`, width: `${(visibleEnd - visibleStart + 1) / timelineDates.length * 100}%`, '--stage-fill': `${(stageIndex + 1) * 25}%` } as React.CSSProperties} onClick={() => openDraft(item)}><i/><strong>{item.title}</strong><small>{language === 'EN' ? 'Stage' : 'Giai \u0111o\u1ea1n'} {stageIndex + 1}/4</small></button>}</div></div>; })}</div>}
       {filtered.length === 0 && <p className="calendar-empty">{l.empty}</p>}
       </main></div>
     {deleteCategory && <div className="calendar-confirm-backdrop"><section className="calendar-confirm" role="alertdialog" aria-modal="true" aria-labelledby="calendar-delete-title"><h2 id="calendar-delete-title">{language === 'EN' ? `Delete category \"${deleteCategory}\"?` : `X\u00f3a danh m\u1ee5c \"${deleteCategory}\"?`}</h2><p>{language === 'EN' ? 'Items in this category will become uncategorized.' : 'C\u00e1c m\u1ee5c trong danh m\u1ee5c n\u00e0y s\u1ebd kh\u00f4ng c\u00f2n ph\u00e2n lo\u1ea1i.'}</p><footer><button type="button" onClick={() => setDeleteCategory(null)}>{language === 'EN' ? 'Cancel' : 'H\u1ee7y'}</button><button type="button" className="danger" onClick={() => { const value = deleteCategory; setDeleteCategory(null); if (category === value) setCategory(''); void persist({ ...data, categories: data.categories.filter(item => item !== value), categoryColors: Object.fromEntries(data.categories.filter(name => name !== value).map(name => [name, data.categoryColors?.[name] ?? colorForCategory(name)])), items: data.items.map(item => item.category === value ? { ...item, category: '' } : item) }); }}>{language === 'EN' ? 'Delete' : 'X\u00f3a'}</button></footer></section></div>}
-    {draft && <div className="calendar-inspector-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) closeDraft(); }}><form className="calendar-inspector" onSubmit={saveDraft}><header><h2>{draft.id && data.items.some(item => item.id === draft.id) ? (draft.kind === 'task' ? l.task : l.event) : l.add}</h2><button type="button" aria-label={l.close} onClick={closeDraft}>×</button></header>{!data.items.some(item => item.id === draft.id) && <div className="calendar-editor-tabs" role="tablist" aria-label={l.task + ' / ' + l.event}><button type="button" role="tab" aria-selected={draft.kind === 'task'} onClick={() => switchDraftKind('task')}>{l.task}</button><button type="button" role="tab" aria-selected={draft.kind === 'event'} onClick={() => switchDraftKind('event')}>{l.event}</button></div>}<label>{l.titleLabel}<input autoFocus maxLength={500} required value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })}/></label><label>{l.description}<textarea maxLength={10000} value={draft.description} onChange={event => setDraft({ ...draft, description: event.target.value })}/></label><label>{l.category}<select value={draft.category} onChange={event => setDraft({ ...draft, category: event.target.value })}><option value="">{l.noCategory}</option>{data.categories.map(value => <option key={value}>{value}</option>)}</select></label><fieldset className="calendar-editor-stages"><legend>{l.status}</legend><div className="calendar-card-stages">{statuses.map((stage, stageIndex) => <button type="button" key={stage} className={`calendar-card-stage stage-${stage}${draft.status === stage ? ' active' : ''}`} aria-pressed={draft.status === stage} onClick={() => setDraft({ ...draft, status: stage })}>{statusNames[language][stageIndex]}</button>)}</div></fieldset>{draft.kind === 'task' && <label>{l.priority}<select value={draft.priority} onChange={event => setDraft({ ...draft, priority: valueAt(event.target.value) })}>{(['normal', 'medium', 'high', 'urgent'] as const).map((value, i) => <option key={value} value={value}>{l.priorityNames[i]}</option>)}</select></label>}<label title={draft.originalStart ? startLockText : undefined}>{l.start}{draft.originalStart && <small className="calendar-locked-hint">{startLockText}</small>}<input type="date" disabled={Boolean(draft.originalStart)} value={(draft.originalStart ?? draft.start).slice(0, 10)} onChange={event => setDraft({ ...draft, start: event.target.value })}/></label><label>{l.due}<input type="date" value={draft.due.slice(0, 10)} onChange={event => setDraft({ ...draft, due: event.target.value })}/></label>{draft.kind === 'event' && <><label title={draft.originalStart ? startLockText : undefined}>{l.time}{draft.originalStart && <small className="calendar-locked-hint">{startLockText}</small>}<input type="time" disabled={Boolean(draft.originalStart)} value={(draft.originalStart ?? draft.start).includes('T') ? (draft.originalStart ?? draft.start).slice(11, 16) : '09:00'} onChange={event => setDraft({ ...draft, start: `${draft.start.slice(0, 10)}T${event.target.value}` })}/></label><label>{language === 'EN' ? 'End time' : 'Gi? k?t th?c'}<input type="time" value={draft.endTime} onChange={event => setDraft({ ...draft, endTime: event.target.value })}/></label><label className="calendar-check"><input type="checkbox" checked={draft.allDay} onChange={event => setDraft({ ...draft, allDay: event.target.checked })}/>{l.allDay}</label></>}<label>{l.reminder}<select value={draft.reminder} onChange={event => setDraft({ ...draft, reminder: Number(event.target.value) })}>{[0, -1, 5, 15, 30, 60].map(value => <option key={value} value={value}>{l.reminders[value === 0 ? 0 : value === -1 ? 1 : value === 5 ? 2 : value === 15 ? 3 : value === 30 ? 4 : 5]}</option>)}</select></label><label>{l.recurrence}<select value={draft.recurrence} onChange={event => setDraft({ ...draft, recurrence: event.target.value })}><option value="">{l.never}</option><option value="daily">{l.daily}</option><option value="weekly">{l.weekly}</option><option value="monthly">{l.monthly}</option><option value="yearly">{l.yearly}</option></select></label>{draft.kind === 'task' && <><fieldset><legend>{l.checklist}</legend>{draft.checklist.map(check => <label className="calendar-check" key={check.id}><input type="checkbox" checked={check.done} onChange={event => setDraft({ ...draft, checklist: draft.checklist.map(value => value.id === check.id ? { ...value, done: event.target.checked } : value) })}/><input aria-label={l.checklist} maxLength={250} value={check.title} onChange={event => setDraft({ ...draft, checklist: draft.checklist.map(value => value.id === check.id ? { ...value, title: event.target.value } : value) })}/><button type="button" onClick={() => setDraft({ ...draft, checklist: draft.checklist.filter(value => value.id !== check.id) })}>×</button></label>)}<div className="calendar-add-category"><input placeholder={l.checklistPlaceholder} value={checkText} onChange={event => setCheckText(event.target.value)}/><button type="button" disabled={!checkText.trim()} onClick={() => { setDraft({ ...draft, checklist: [...draft.checklist, { id: crypto.randomUUID(), title: checkText.trim(), done: false }] }); setCheckText(''); }}>+</button></div></fieldset></>}<div className="calendar-inspector-actions"><button type="button" onClick={closeDraft}>{l.cancel}</button>{data.items.some(item => item.id === draft.id) && <button type="button" onClick={() => void deleteDraft()}>{l.delete}</button>}<button className="primary-button" type="submit" disabled={!draft.title.trim() || saving}>{l.save}</button></div>{error && <p className="error" role="alert">{error}</p>}</form></div>}
+    {draft && <div className="calendar-inspector-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) closeDraft(); }}><form className="calendar-inspector" onSubmit={saveDraft}><header><h2>{draft.id && data.items.some(item => item.id === draft.id) ? (draft.kind === 'task' ? l.task : l.event) : l.add}</h2><button type="button" aria-label={l.close} onClick={closeDraft}>×</button></header>{!data.items.some(item => item.id === draft.id) && <div className="calendar-editor-tabs" role="tablist" aria-label={l.task + ' / ' + l.event}><button type="button" role="tab" aria-selected={draft.kind === 'task'} onClick={() => switchDraftKind('task')}>{l.task}</button><button type="button" role="tab" aria-selected={draft.kind === 'event'} onClick={() => switchDraftKind('event')}>{l.event}</button></div>}<label>{l.titleLabel}<input autoFocus maxLength={500} required value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })}/></label><label>{l.description}<textarea maxLength={10000} value={draft.description} onChange={event => setDraft({ ...draft, description: event.target.value })}/></label><label>{l.category}<select value={draft.category} onChange={event => setDraft({ ...draft, category: event.target.value })}><option value="">{l.noCategory}</option>{data.categories.map(value => <option key={value}>{value}</option>)}</select></label><fieldset className="calendar-editor-stages"><legend>{l.status}</legend><div className="calendar-card-stages">{statuses.map((stage, stageIndex) => <button type="button" key={stage} className={`calendar-card-stage stage-${stage}${draft.status === stage ? ' active' : ''}`} aria-pressed={draft.status === stage} onClick={() => setDraft({ ...draft, status: stage })}>{statusNames[language][stageIndex]}</button>)}</div></fieldset><label>{l.priority}<select value={draft.priority} onChange={event => setDraft({ ...draft, priority: valueAt(event.target.value) })}>{(['normal', 'medium', 'high', 'urgent'] as const).map((value, i) => <option key={value} value={value}>{l.priorityNames[i]}</option>)}</select></label><label title={draft.originalStart ? startLockText : undefined}>{l.start}{draft.originalStart && <small className="calendar-locked-hint">{startLockText}</small>}<input type="date" disabled={Boolean(draft.originalStart)} value={(draft.originalStart ?? draft.start).slice(0, 10)} onChange={event => setDraft({ ...draft, start: event.target.value })}/></label><label>{l.due}<input type="date" value={draft.due.slice(0, 10)} onChange={event => setDraft({ ...draft, due: event.target.value })}/></label>{draft.kind === 'event' && <><label title={draft.originalStart ? startLockText : undefined}>{l.time}{draft.originalStart && <small className="calendar-locked-hint">{startLockText}</small>}<input type="time" disabled={Boolean(draft.originalStart)} value={(draft.originalStart ?? draft.start).includes('T') ? (draft.originalStart ?? draft.start).slice(11, 16) : '09:00'} onChange={event => setDraft({ ...draft, start: `${draft.start.slice(0, 10)}T${event.target.value}` })}/></label><label>{language === 'EN' ? 'End time' : 'Gi? k?t th?c'}<input type="time" value={draft.endTime} onChange={event => setDraft({ ...draft, endTime: event.target.value })}/></label><label className="calendar-check"><input type="checkbox" checked={draft.allDay} onChange={event => setDraft({ ...draft, allDay: event.target.checked })}/>{l.allDay}</label></>}<label>{l.reminder}<select value={draft.reminder} onChange={event => setDraft({ ...draft, reminder: Number(event.target.value) })}>{[0, -1, 5, 15, 30, 60].map(value => <option key={value} value={value}>{l.reminders[value === 0 ? 0 : value === -1 ? 1 : value === 5 ? 2 : value === 15 ? 3 : value === 30 ? 4 : 5]}</option>)}</select></label><label>{l.recurrence}<select value={draft.recurrence} onChange={event => setDraft({ ...draft, recurrence: event.target.value })}><option value="">{l.never}</option><option value="daily">{l.daily}</option><option value="weekly">{l.weekly}</option><option value="monthly">{l.monthly}</option><option value="yearly">{l.yearly}</option></select></label>{draft.kind === 'task' && <><fieldset><legend>{l.checklist}</legend>{draft.checklist.map(check => <label className="calendar-check" key={check.id}><input type="checkbox" checked={check.done} onChange={event => setDraft({ ...draft, checklist: draft.checklist.map(value => value.id === check.id ? { ...value, done: event.target.checked } : value) })}/><input aria-label={l.checklist} maxLength={250} value={check.title} onChange={event => setDraft({ ...draft, checklist: draft.checklist.map(value => value.id === check.id ? { ...value, title: event.target.value } : value) })}/><button type="button" onClick={() => setDraft({ ...draft, checklist: draft.checklist.filter(value => value.id !== check.id) })}>×</button></label>)}<div className="calendar-add-category"><input placeholder={l.checklistPlaceholder} value={checkText} onChange={event => setCheckText(event.target.value)}/><button type="button" disabled={!checkText.trim()} onClick={() => { setDraft({ ...draft, checklist: [...draft.checklist, { id: crypto.randomUUID(), title: checkText.trim(), done: false }] }); setCheckText(''); }}>+</button></div></fieldset></>}<div className="calendar-inspector-actions"><button type="button" onClick={closeDraft}>{l.cancel}</button>{data.items.some(item => item.id === draft.id) && <button type="button" onClick={() => void deleteDraft()}>{l.delete}</button>}<button className="primary-button" type="submit" disabled={!draft.title.trim() || saving}>{l.save}</button></div>{error && <p className="error" role="alert">{error}</p>}</form></div>}
+    {conflictCluster && (
+      <div
+        className="calendar-conflict-backdrop"
+        onMouseDown={event => {
+          if (event.target === event.currentTarget) setConflictCluster(null);
+        }}
+      >
+        <div className="calendar-conflict-popover" role="dialog" aria-modal="true" aria-labelledby="calendar-conflict-title">
+          <header className="calendar-conflict-header">
+            <h2 id="calendar-conflict-title" className="calendar-conflict-title">{l.conflictTitle}</h2>
+            <span className="calendar-conflict-count-badge">
+              {conflictCluster.items.length} {conflictCluster.items.length === 1 ? l.conflictItem : l.conflictItems}
+            </span>
+            <button
+              type="button"
+              className="calendar-conflict-close"
+              aria-label={l.close}
+              onClick={() => setConflictCluster(null)}
+            >
+              ×
+            </button>
+          </header>
+          <div className="calendar-conflict-list">
+            {conflictCluster.items.map((item, idx) => {
+              const theme = getStatusTheme(item.status);
+              const timeStr = formatItemTimeRange(item);
+              return (
+                <div
+                  className={`calendar-conflict-card status-${item.status}`}
+                  key={item.id}
+                  style={{
+                    backgroundColor: theme.bg,
+                    borderColor: theme.border,
+                  }}
+                  onClick={() => {
+                    setConflictCluster(null);
+                    openDraft(item);
+                  }}
+                >
+                  <div className="calendar-conflict-card-top">
+                    <span
+                      className="calendar-conflict-pill"
+                      style={{ color: theme.text, backgroundColor: '#ffffffcc' }}
+                    >
+                      <span className="calendar-conflict-pill-dot" style={{ backgroundColor: theme.dot }} />
+                      {item.category || (item.kind === 'task' ? l.task : l.event)}
+                    </span>
+                    {idx === 0 ? (
+                      <span className="calendar-conflict-badge badge-overlap">
+                        ⚠️ {l.conflictOverlap}
+                      </span>
+                    ) : (
+                      <span className="calendar-conflict-badge badge-alert">
+                        ⚠️ {l.conflictAlert}
+                      </span>
+                    )}
+                    {['urgent', 'high'].includes(item.priority) && (
+                      <span className="calendar-conflict-badge badge-priority">
+                        {item.priority === 'urgent' ? (language === 'EN' ? 'Urgent' : 'Khẩn cấp') : (language === 'EN' ? 'High Priority' : 'Ưu tiên cao')}
+                      </span>
+                    )}
+                    {timeStr && <span className="calendar-conflict-time">{timeStr}</span>}
+                  </div>
+                  <div className="calendar-conflict-card-title">{item.title}</div>
+                  {item.description && (
+                    <div className="calendar-conflict-card-notes">{item.description}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <footer className="calendar-conflict-footer">
+            <button
+              type="button"
+              className="calendar-conflict-footer-close"
+              onClick={() => setConflictCluster(null)}
+            >
+              {l.close}
+            </button>
+          </footer>
+        </div>
+      </div>
+    )}
   </section>;
 }
 function valueAt(value: string): Item['priority'] { return (['normal', 'medium', 'high', 'urgent'] as const).includes(value as Item['priority']) ? value as Item['priority'] : 'normal'; }

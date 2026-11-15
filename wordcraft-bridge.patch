@@ -27,7 +27,7 @@ index ca6ad46..4e5dd66 100644
    <link data-trunk rel="rust" data-bin="wordcraft-web" data-wasm-opt="z" data-weak-refs />
    <style>
 diff --git a/apps/wordcraft-web/src/host.rs b/apps/wordcraft-web/src/host.rs
-index 9307e0e..4f2f889 100644
+index 9307e0e..489f533 100644
 --- a/apps/wordcraft-web/src/host.rs
 +++ b/apps/wordcraft-web/src/host.rs
 @@ -23,16 +23,18 @@
@@ -41,25 +41,30 @@ index 9307e0e..4f2f889 100644
  use wasm_bindgen::JsCast as _;
  use wasm_bindgen::JsValue;
  use wasm_bindgen::closure::Closure;
- use wordcraft_ui_egui::{Inbox, Services, WordApp};
 +use wordcraft_ui_egui::async_saves::{AsyncSaves, SaveOutcome};
+ use wordcraft_ui_egui::{Inbox, Services, WordApp};
  
  /// The longest user name taken from `?author=`.
  const MAX_AUTHOR_CHARS: usize = 200;
-+const MAX_HOST_DOCX_BYTES: u32 = 30 * 1024 * 1024;
++const MAX_HOST_DOCX_BYTES: u32 = 100 * 1024 * 1024;
  
  #[derive(Clone)]
  pub struct Bridge {
-@@ -41,6 +43,8 @@ pub struct Bridge {
+@@ -41,6 +43,13 @@ pub struct Bridge {
      origin: String,
  }
  
-+pub struct Request { pub kind: String, pub id: String, pub name: String }
++pub struct Request {
++    pub kind: String,
++    pub id: String,
++    pub name: String,
++    pub params: serde_json::Value,
++}
 +
  impl Bridge {
      /// `None` when the page isn't framed (there is no parent to talk to), or when the parent is
      /// on another origin: messages only go to this origin, so the browser would drop every save
-@@ -65,15 +69,27 @@ impl Bridge {
+@@ -65,15 +74,46 @@ impl Bridge {
  
      /// Hand saved and exported files to the parent instead of downloading them, report unsaved
      /// changes to it, and hear the files it sends.
@@ -86,14 +91,33 @@ index 9307e0e..4f2f889 100644
 +        services.download = Some(Box::new(move |name: &str, bytes: &[u8]| bridge.post_save(name, bytes, false, 0)));
 +        services.async_saves = Some(saves);
 +        let bridge = self.clone();
++        services.print = Some(Box::new(move |bytes, params| bridge.post_print_pdf(bytes, params)));
++        let bridge = self.clone();
++        services.host_print_discover = Some(Box::new(move || {
++            if bridge.send(&[("type", "wordcraft:print-discover".into())]) { Ok(()) } else { Err("couldn't request printers from the host".into()) }
++        }));
++        let bridge = self.clone();
++        services.host_printer_properties = Some(Box::new(move |printer| {
++            if bridge.send(&[("type", "wordcraft:print-properties".into()), ("printer", printer.into())]) {
++                Ok(())
++            } else {
++                Err("couldn't request printer properties from the host".into())
++            }
++        }));
++        let bridge = self.clone();
 +        services.host_navigation = Some(Box::new(move |command| {
-+            let kind = if command == "file.open" { "wordcraft:open-request" } else { "wordcraft:new" };
++            let kind = match command {
++                "file.open" => "wordcraft:open-request",
++                "host.closeAllSave" => "wordcraft:close-all-save",
++                "host.closeAllDiscard" => "wordcraft:close-all-discard",
++                _ => "wordcraft:new",
++            };
 +            bridge.send(&[("type", kind.into())]);
 +        }));
          let bridge = self.clone();
          let reported: Rc<Cell<Option<bool>>> = Rc::default();
          services.on_dirty = Some(Box::new(move |dirty: bool| {
-@@ -91,8 +107,8 @@ impl Bridge {
+@@ -91,8 +131,8 @@ impl Bridge {
          }
      }
  
@@ -104,7 +128,7 @@ index 9307e0e..4f2f889 100644
      }
  
      /// The app couldn't start (no WebGPU or WebGL2, for example): let the parent say so.
-@@ -100,13 +116,14 @@ impl Bridge {
+@@ -100,13 +140,14 @@ impl Bridge {
          self.send(&[("type", "wordcraft:failed".into()), ("error", error.into())]);
      }
  
@@ -120,7 +144,7 @@ index 9307e0e..4f2f889 100644
              ("bytes", buffer.clone().into()),
          ])
          .ok_or_else(|| "couldn't build the message".to_string())?;
-@@ -116,7 +133,7 @@ impl Bridge {
+@@ -116,7 +157,7 @@ impl Bridge {
      }
  
      /// Hear `wordcraft:open` from the parent and queue the file like a dropped one.
@@ -129,7 +153,7 @@ index 9307e0e..4f2f889 100644
          let parent = self.parent.clone();
          let origin = self.origin.clone();
          let on_message = Closure::<dyn FnMut(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
-@@ -124,11 +141,40 @@ impl Bridge {
+@@ -124,11 +165,62 @@ impl Bridge {
                  return;
              }
              let data = event.data();
@@ -138,26 +162,48 @@ index 9307e0e..4f2f889 100644
 +            match string(&data, "type").as_deref() {
 +                Some("wordcraft:save-result") => {
 +                    let Some(ticket) = string(&data, "id").and_then(|id| id.parse::<u64>().ok()) else { return };
-+                    let outcome = if string(&data, "error").is_some() { SaveOutcome::Failed(string(&data, "error").unwrap_or_default()) } else { SaveOutcome::Saved };
++                    let outcome = if string(&data, "error").is_some() {
++                        SaveOutcome::Failed(string(&data, "error").unwrap_or_default())
++                    } else {
++                        SaveOutcome::Saved
++                    };
 +                    saves.finish(ticket, outcome);
 +                    ctx.request_repaint();
 +                    return;
 +                }
 +                Some("wordcraft:snapshot") | Some("wordcraft:command") => {
 +                    let Some(id) = string(&data, "id") else { return };
-+                    if id.len() > 64 { return; }
++                    if id.len() > 64 {
++                        return;
++                    }
 +                    let kind = string(&data, "type").unwrap_or_default();
 +                    let command = if kind == "wordcraft:snapshot" { "snapshot".to_string() } else { string(&data, "command").unwrap_or_default() };
-+                    if !matches!(command.as_str(), "snapshot" | "save" | "saveAs" | "print") { return; }
-+                    requests.borrow_mut().push(Request { kind: command, id, name: String::new() });
++                    if !matches!(command.as_str(), "snapshot" | "save" | "saveAs" | "print") {
++                        return;
++                    }
++                    requests.borrow_mut().push(Request { kind: command, id, name: String::new(), params: serde_json::Value::Null });
++                    ctx.request_repaint();
++                    return;
++                }
++                Some("wordcraft:print-discover-result") | Some("wordcraft:print-submit-result") | Some("wordcraft:print-properties-result") => {
++                    let Some(kind) = string(&data, "type") else { return };
++                    let Some(params) = string(&data, "dataJson").and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok()) else {
++                        return;
++                    };
++                    if params.as_object().is_none() {
++                        return;
++                    }
++                    requests.borrow_mut().push(Request { kind, id: String::new(), name: String::new(), params });
 +                    ctx.request_repaint();
 +                    return;
 +                }
 +                Some("wordcraft:stored") => {
 +                    let Some(id) = string(&data, "rev") else { return };
 +                    let Some(name) = string(&data, "name") else { return };
-+                    if name.len() > 255 || !name.to_ascii_lowercase().ends_with(".docx") { return; }
-+                    requests.borrow_mut().push(Request { kind: "stored".into(), id, name });
++                    if name.len() > 255 || !name.to_ascii_lowercase().ends_with(".docx") {
++                        return;
++                    }
++                    requests.borrow_mut().push(Request { kind: "stored".into(), id, name, params: serde_json::Value::Null });
 +                    ctx.request_repaint();
 +                    return;
 +                }
@@ -168,19 +214,24 @@ index 9307e0e..4f2f889 100644
 +            let name = string(&data, "name").filter(|n| !n.trim().is_empty() && n.len() <= 255).unwrap_or_else(|| "Document.docx".to_string());
              let Some(bytes) = bytes(&data) else { return };
 +            if let Some(id) = string(&data, "id").filter(|id| id.len() <= 64) {
-+                requests.borrow_mut().push(Request { kind: "opened".into(), id, name: name.clone() });
++                requests.borrow_mut().push(Request { kind: "opened".into(), id, name: name.clone(), params: serde_json::Value::Null });
 +            }
              inbox.lock().unwrap_or_else(|e| e.into_inner()).push((name, bytes));
              ctx.request_repaint();
          });
-@@ -142,6 +188,25 @@ impl Bridge {
+@@ -142,6 +234,44 @@ impl Bridge {
      fn send(&self, fields: &[(&str, JsValue)]) -> bool {
          message(fields).is_some_and(|m| self.parent.post_message(&m, &self.origin).is_ok())
      }
 +
 +    pub fn post_snapshot(&self, id: &str, bytes: &[u8], rev: u64) {
 +        let buffer = js_sys::Uint8Array::from(bytes).buffer();
-+        if let Some(message) = message(&[("type", "wordcraft:snapshot-result".into()), ("id", id.into()), ("rev", rev.to_string().into()), ("bytes", buffer.clone().into())]) {
++        if let Some(message) = message(&[
++            ("type", "wordcraft:snapshot-result".into()),
++            ("id", id.into()),
++            ("rev", rev.to_string().into()),
++            ("bytes", buffer.clone().into()),
++        ]) {
 +            let _ = self.parent.post_message_with_transfer(&message, &self.origin, &js_sys::Array::of1(&buffer));
 +        }
 +    }
@@ -193,13 +244,27 @@ index 9307e0e..4f2f889 100644
 +        let _ = self.send(&[("type", "wordcraft:revision".into()), ("rev", rev.to_string().into()), ("dirty", dirty.into())]);
 +    }
 +
++    pub fn post_view(&self, backstage: bool) {
++        let _ = self.send(&[("type", "wordcraft:view".into()), ("backstage", backstage.into())]);
++    }
++
 +    pub fn post_opened(&self, id: &str, name: &str, opened: bool) {
 +        let _ = self.send(&[("type", "wordcraft:open-result".into()), ("id", id.into()), ("name", name.into()), ("opened", opened.into())]);
++    }
++
++    fn post_print_pdf(&self, bytes: &[u8], params: &serde_json::Value) -> Result<(), String> {
++        let buffer = js_sys::Uint8Array::from(bytes).buffer();
++        let params = serde_json::to_string(params).map_err(|error| error.to_string())?;
++        let message = message(&[("type", "wordcraft:print-submit".into()), ("paramsJson", params.into()), ("bytes", buffer.clone().into())])
++            .ok_or_else(|| "couldn't build the print message".to_string())?;
++        self.parent
++            .post_message_with_transfer(&message, &self.origin, &js_sys::Array::of1(&buffer))
++            .map_err(|error| error.as_string().unwrap_or_else(|| format!("{error:?}")))
 +    }
  }
  
  fn message(fields: &[(&str, JsValue)]) -> Option<js_sys::Object> {
-@@ -160,9 +225,10 @@ fn string(data: &JsValue, key: &str) -> Option<String> {
+@@ -160,9 +290,10 @@ fn string(data: &JsValue, key: &str) -> Option<String> {
  fn bytes(data: &JsValue) -> Option<Vec<u8>> {
      let bytes = js_sys::Reflect::get(data, &JsValue::from_str("bytes")).ok()?;
      if let Some(array) = bytes.dyn_ref::<js_sys::Uint8Array>() {
@@ -213,7 +278,7 @@ index 9307e0e..4f2f889 100644
          None
      }
 diff --git a/apps/wordcraft-web/src/web.rs b/apps/wordcraft-web/src/web.rs
-index 580e28e..73630c8 100644
+index 580e28e..385f523 100644
 --- a/apps/wordcraft-web/src/web.rs
 +++ b/apps/wordcraft-web/src/web.rs
 @@ -39,6 +39,10 @@ pub fn start() {
@@ -244,12 +309,21 @@ index 580e28e..73630c8 100644
                      }
                      let mut app = WordApp::new(session, services);
                      // Pasted pictures wait apart from dropped files: the app inserts one only when the page is the edit target (#1349).
-@@ -100,14 +105,14 @@ pub fn start() {
+@@ -100,14 +105,23 @@ pub fn start() {
                          crate::host::Bridge::set_author(&mut app, &author);
                          prefs.keep_own_author(&app.session.author, &own);
                      }
 -                    Ok(Box::new(WebShell { app, inbox, messages, prefs }))
-+                    Ok(Box::new(WebShell { app, inbox, messages, prefs, bridge: app_bridge.clone(), requests: app_requests.clone(), last_rev: 0 }))
++                    Ok(Box::new(WebShell {
++                        app,
++                        inbox,
++                        messages,
++                        prefs,
++                        bridge: app_bridge.clone(),
++                        requests: app_requests.clone(),
++                        last_rev: 0,
++                        last_backstage: None,
++                    }))
                  }),
              )
              .await;
@@ -261,17 +335,18 @@ index 580e28e..73630c8 100644
                  Err(e) => bridge.post_failed(&format!("{e:?}")),
              }
          }
-@@ -135,6 +140,9 @@ struct WebShell {
+@@ -135,6 +149,10 @@ struct WebShell {
      inbox: Inbox,
      messages: Rc<RefCell<Vec<String>>>,
      prefs: crate::prefs::PrefsSync,
 +    bridge: Option<crate::host::Bridge>,
 +    requests: Rc<RefCell<Vec<crate::host::Request>>>,
 +    last_rev: u64,
++    last_backstage: Option<bool>,
  }
  
  fn local_storage() -> Option<web_sys::Storage> {
-@@ -151,11 +159,42 @@ impl eframe::App for WebShell {
+@@ -151,11 +169,61 @@ impl eframe::App for WebShell {
      /// then writes changed preferences to browser storage immediately, because a reload or closed
      /// tab never runs the exit path.
      fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -280,6 +355,17 @@ index 580e28e..73630c8 100644
 +            let Some(bridge) = &self.bridge else { continue };
 +            if request.kind == "opened" {
 +                opened.push(request);
++            } else if request.kind == "wordcraft:print-discover-result" {
++                self.app.ui.print.host_discovered(&request.params);
++            } else if request.kind == "wordcraft:print-submit-result" {
++                self.app.ui.print.host_result(&request.params);
++                if let Some(error) = request.params.get("error").and_then(serde_json::Value::as_str).filter(|v| !v.is_empty()) {
++                    self.app.status(error);
++                } else if let Some(receipt) = request.params.get("receipt").and_then(serde_json::Value::as_str).filter(|v| !v.is_empty()) {
++                    self.app.status(receipt);
++                }
++            } else if request.kind == "wordcraft:print-properties-result" {
++                self.app.ui.print.host_properties_result(&request.params);
 +            } else if request.kind == "snapshot" {
 +                match wordcraft_engine::io::save_bytes("document.docx", &self.app.session.doc) {
 +                    Ok(bytes) => bridge.post_snapshot(&request.id, &bytes, self.app.session.rev()),
@@ -291,7 +377,12 @@ index 580e28e..73630c8 100644
 +                    self.app.session.path = Some(std::path::PathBuf::from(request.name));
 +                }
 +            } else {
-+                let command = match request.kind.as_str() { "save" => "file.save", "saveAs" => "file.saveAs", "print" => "file.print", _ => continue };
++                let command = match request.kind.as_str() {
++                    "save" => "file.save",
++                    "saveAs" => "file.saveAs",
++                    "print" => "file.print",
++                    _ => continue,
++                };
 +                let result = self.app.run(command, serde_json::json!({}));
 +                bridge.post_command_result(&request.id, result.err().as_deref());
 +            }
@@ -303,17 +394,118 @@ index 580e28e..73630c8 100644
          self.app.logic(ctx);
 +        if let Some(bridge) = &self.bridge {
 +            for request in opened {
-+                let matches = self.app.session.path.as_ref().and_then(|path| path.file_name()).is_some_and(|name| name.to_string_lossy() == request.name);
++                let matches =
++                    self.app.session.path.as_ref().and_then(|path| path.file_name()).is_some_and(|name| name.to_string_lossy() == request.name);
 +                bridge.post_opened(&request.id, &request.name, matches);
 +            }
 +        }
 +        if self.app.session.rev() != self.last_rev {
 +            self.last_rev = self.app.session.rev();
-+            if let Some(bridge) = &self.bridge { bridge.post_revision(self.last_rev, self.app.session.dirty); }
++            if let Some(bridge) = &self.bridge {
++                bridge.post_revision(self.last_rev, self.app.session.dirty);
++            }
 +        }
          // Store changed preferences straight away: a reload or closed tab runs no exit code (#2132).
          if let Some(json) = self.prefs.changed(&self.app) {
              match local_storage() {
+@@ -198,6 +266,12 @@ impl eframe::App for WebShell {
+             }
+         }
+         self.app.ui(ui);
++        if let Some(bridge) = &self.bridge
++            && self.last_backstage != Some(self.app.ui.backstage)
++        {
++            self.last_backstage = Some(self.app.ui.backstage);
++            bridge.post_view(self.app.ui.backstage);
++        }
+     }
+ }
+ 
+@@ -589,7 +663,7 @@ const PRINT_FRAME_ID: &str = "wordcraft-print-frame";
+ /// a download or a popup window the browser might block. The previous
+ /// print's iframe and object URL are removed first, so only one copy of the
+ /// document's PDF stays in the page (the last one may still be printing).
+-fn print_pdf(bytes: &[u8]) -> Result<(), String> {
++fn print_pdf(bytes: &[u8], _params: &serde_json::Value) -> Result<(), String> {
+     let js = |e: wasm_bindgen::JsValue| format!("{e:?}");
+     let window = web_sys::window().ok_or("no window")?;
+     let document = window.document().ok_or("no document")?;
+diff --git a/crates/engine/src/print.rs b/crates/engine/src/print.rs
+index 420cc61..a4b57a8 100644
+--- a/crates/engine/src/print.rs
++++ b/crates/engine/src/print.rs
+@@ -85,6 +85,29 @@ pub struct PrintPlan {
+     pub copies: u32,
+ }
+ 
++/// Pages for one manual-duplex pass, preserving the selected copy collation.
++pub fn manual_duplex_pages(plan: &PrintPlan, collate: bool, pass: &str, reverse: bool) -> Result<Vec<usize>, String> {
++    if !matches!(pass, "front" | "back") {
++        return Err("manual duplex pass must be front or back".into());
++    }
++    let copies = plan.copies as usize;
++    let mut pages = Vec::new();
++    for copy in 0..copies {
++        for slot in 0..plan.chosen {
++            let index = if collate { copy * plan.chosen + slot } else { slot * copies + copy };
++            if (slot % 2 == 0) == (pass == "front") {
++                if let Some(page) = plan.pages.get(index) {
++                    pages.push(*page);
++                }
++            }
++        }
++    }
++    if reverse {
++        pages.reverse();
++    }
++    Ok(pages)
++}
++
+ /// Works out the print plan for `v` against a layout of `total` pages whose caret and selection
+ /// sit on pages `current` (first, last). Params:
+ /// `range` (`all` | `current` | `selection` | `custom`; `custom` is implied by `pages`),
+@@ -173,7 +196,15 @@ impl Session {
+         // Print Markup (File › Print) decides whether tracked changes and comments print.
+         let markup = crate::cmd::file::export_options(self, v);
+         let lay = self.export_layout_with(markup.markup);
+-        let plan = plan(v, lay.pages.len(), self.current_pages(&lay))?;
++        let mut plan = plan(v, lay.pages.len(), self.current_pages(&lay))?;
++        if let Some(pass) = p::str(v, "manualPass") {
++            let collate = p::bool(v, "collate").unwrap_or(true);
++            let reverse = p::bool(v, "reverseManualPass").unwrap_or(false);
++            plan.pages = manual_duplex_pages(&plan, collate, pass, reverse).map_err(CmdError::Params)?;
++            if plan.pages.is_empty() {
++                return Err(CmdError::Params("there are no pages in this manual duplex pass".into()));
++            }
++        }
+         let paper = paper(v)?.map(|(_, w, h)| (w, h));
+         let opts = wordcraft_pdf::PdfOptions {
+             pages: Some(plan.pages.clone()),
+@@ -235,6 +266,24 @@ mod tests {
+         assert_eq!(p(json!({"copies": -5, "range": "current"})), Ok(vec![2]));
+     }
+ 
++    #[test]
++    fn manual_duplex_passes_pair_selected_pages_and_reverse_backs_on_request() {
++        let plan = plan(&json!({"pages":"2-6","copies":1}), 8, (0, 0)).unwrap();
++        assert_eq!(manual_duplex_pages(&plan, true, "front", false).unwrap(), vec![1, 3, 5]);
++        assert_eq!(manual_duplex_pages(&plan, true, "back", true).unwrap(), vec![4, 2]);
++        assert!(manual_duplex_pages(&plan, true, "other", false).is_err());
++    }
++
++    #[test]
++    fn manual_duplex_passes_keep_collated_copies_together_and_split_uncollated_copies() {
++        let collated = plan(&json!({"pages":"1-3","copies":2,"collate":true}), 3, (0, 0)).unwrap();
++        assert_eq!(manual_duplex_pages(&collated, true, "front", false).unwrap(), vec![0, 2, 0, 2]);
++        assert_eq!(manual_duplex_pages(&collated, true, "back", false).unwrap(), vec![1, 1]);
++        let uncollated = plan(&json!({"pages":"1-3","copies":2,"collate":false}), 3, (0, 0)).unwrap();
++        assert_eq!(manual_duplex_pages(&uncollated, false, "front", false).unwrap(), vec![0, 2, 0, 2]);
++        assert_eq!(manual_duplex_pages(&uncollated, false, "back", false).unwrap(), vec![1, 1]);
++    }
++
+     #[test]
+     fn print_pdf_writes_only_the_chosen_pages() {
+         let mut s = Session::new(crate::sample::sample_document());
 diff --git a/crates/ui-egui/src/app/commands.rs b/crates/ui-egui/src/app/commands.rs
 index c7719e3..ac5aef5 100644
 --- a/crates/ui-egui/src/app/commands.rs
@@ -331,11 +523,892 @@ index c7719e3..ac5aef5 100644
          // Comment text still being typed is written first, so a save or export has it and a
          // close, New or Open counts it as a change (#1348). A draft the document refuses is not
          // part of it: saving and exporting go on without it (the refusal stays on the status
+diff --git a/crates/ui-egui/src/app/files.rs b/crates/ui-egui/src/app/files.rs
+index 1591f13..21efcc9 100644
+--- a/crates/ui-egui/src/app/files.rs
++++ b/crates/ui-egui/src/app/files.rs
+@@ -446,7 +446,14 @@ impl WordApp {
+                 placed_picture = Self::placed_in_text(&r);
+                 r
+             } else {
+-                self.run("file.open", json!({"path": name, "data": wordcraft_engine::cmd::insert::base64_encode(&bytes)}))
++                let opened = self.run("file.open", json!({"path": name, "data": wordcraft_engine::cmd::insert::base64_encode(&bytes)}));
++                if opened.is_ok()
++                    && self.services.host_save.is_some()
++                    && let Err(error) = self.run("view.zoom100", json!({}))
++                {
++                    self.status(error);
++                }
++                opened
+             };
+             if r.is_ok() {
+                 self.ui.backstage = false;
+diff --git a/crates/ui-egui/src/chrome.rs b/crates/ui-egui/src/chrome.rs
+index ac6fc94..dbde125 100644
+--- a/crates/ui-egui/src/chrome.rs
++++ b/crates/ui-egui/src/chrome.rs
+@@ -1,10 +1,10 @@
+-//! Title bar (Quick Access Toolbar, title, search, account) and status bar.
++//! Title bar (Quick Access Toolbar and document title) and status bar.
+ 
+ use egui::{Align2, Rect, Sense, Stroke, Ui, pos2, vec2};
+ use serde_json::json;
+ use wordcraft_doc::{PartKind, StoryRef};
+ 
+-use crate::theme::{Tokens, TypeRung, fit_text, medium, paint_text, regular, semibold, text_width};
++use crate::theme::{Tokens, TypeRung, fit_text, paint_text, regular, semibold, text_width};
+ use crate::{WordApp, icons};
+ 
+ /// Why the caret's language isn't spell-checked (dictionary unreadable or missing), if it isn't.
+@@ -210,6 +210,17 @@ pub(crate) fn qat_menu_button_id() -> egui::Id {
+ pub(crate) fn qat_menu(ui: &mut Ui, app: &mut WordApp) {
+     ui.label(egui::RichText::new(tl!("Customize Quick Access Toolbar")).font(semibold(12.0)));
+     ui.separator();
++    if let Some(navigate) = app.services.host_navigation.as_ref() {
++        if ui.button(tl!("Close All (with save)")).clicked() {
++            navigate("host.closeAllSave");
++            ui.close();
++        }
++        if ui.button(tl!("Close All (without save)")).clicked() {
++            navigate("host.closeAllDiscard");
++            ui.close();
++        }
++        ui.separator();
++    }
+     for id in QAT_MENU {
+         let Some(label) = app.session.registry.get(id).map(|s| tl!(s.label).to_string()) else { continue };
+         let on = app.session.ribbon.qat().contains(&id);
+@@ -275,22 +286,15 @@ impl MacTitleBar {
+     }
+ }
+ 
+-/// Where the AutoSave switch's knob sits in its track `r`: on at the right and off at the left,
+-/// mirrored in a right-to-left interface (on at the left).
+-fn autosave_knob_x(rtl: bool, on: bool, r: Rect) -> f32 {
+-    crate::rtl::lead_x(rtl != on, r, 8.0)
+-}
+-
+-/// Draws the title bar with window dragging, AutoSave, quick access, account, community and search
+-/// controls, and the centred clickable document title.
++/// Draws the title bar with window dragging, quick access and the centred clickable document title.
+ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
+     let t = Tokens::get(ui.ctx());
+     // macOS: shorter, so the system's traffic lights are centred in it; the tallest controls
+     // shrink to keep a margin above and below them.
+     let mac = app.integrated_titlebar;
+     let bar = app.mac_titlebar;
+-    let left = if mac { bar.content_left as i8 } else { 8 };
+-    let control_h = if mac { 22.0 } else { 26.0 };
++    let left = if mac { bar.content_left as i8 } else if app.services.host_navigation.is_some() { 42 } else { 8 };
++    let title_h = if mac { 22.0 } else { 26.0 };
+     egui::Panel::top("title_bar")
+         .exact_size(if mac { bar.height } else { 38.0 })
+         .frame(egui::Frame::NONE.fill(t.title_bar).inner_margin(egui::Margin { left, right: 10, top: 0, bottom: 0 }))
+@@ -305,96 +309,22 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
+                 let max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
+                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(!max));
+             }
+-            // The free stretch between the two clusters, for the centred title. Right to left the
+-            // clusters swap sides: AutoSave and the Quick Access Toolbar start at the right.
++            // Leave room for the centered title beside Quick Access.
+             let rtl = crate::rtl::on();
+             let mut qat_end = if rtl { full.max.x } else { full.min.x };
+-            let mut right_start = if rtl { full.min.x } else { full.max.x };
++            let right_start = if rtl { full.min.x } else { full.max.x };
+             crate::rtl::root(ui, |ui| {
+                 ui.horizontal_centered(|ui| {
+                     ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
+-                    // AutoSave switch: greyed out, with the reason as its tooltip, when AutoSave can't
+-                    // cover the document (#196, #176); clicking it then offers Save As where that helps.
+-                    let block = app.autosave_block();
+-                    let on = app.autosaves();
+-                    let color = if block.is_some() { t.text_dim.gamma_multiply(0.6) } else { t.text_dim };
+-                    // The text is part of the switch (#3370): clicking it toggles AutoSave, and chrome
+-                    // text is not document text to select (double-clicking it copied "AutoSave").
+-                    let text = ui.add(
+-                        egui::Label::new(egui::RichText::new(tl!("AutoSave")).font(regular(11.5)).color(color))
+-                            .selectable(false)
+-                            .sense(Sense::click()),
+-                    );
+-                    let (r, resp) = ui.allocate_exact_size(vec2(30.0, 16.0), Sense::click());
+-                    let (fill, stroke, knob_fill) = match (&block, on) {
+-                        (Some(_), _) => (t.input.gamma_multiply(0.5), t.border.gamma_multiply(0.7), t.text_dim.gamma_multiply(0.45)),
+-                        (None, true) => (t.accent, t.accent, t.on_accent),
+-                        (None, false) => (t.input, t.border_strong, t.text_dim),
+-                    };
+-                    ui.painter().rect(r, 8.0, fill, Stroke::new(1.0, stroke), egui::StrokeKind::Inside);
+-                    let knob = autosave_knob_x(rtl, on, r);
+-                    ui.painter().circle_filled(pos2(knob, r.center().y), 5.0, knob_fill);
+-                    let tip = block
+-                        .as_ref()
+-                        .map_or_else(|| tl!("AutoSave saves every change to the file (needs a saved document)").to_string(), |b| b.reason());
+-                    let text = text.on_hover_text(tip.as_str()).on_hover_cursor(egui::CursorIcon::PointingHand);
+-                    let resp = resp.on_hover_text(tip.as_str()).on_hover_cursor(egui::CursorIcon::PointingHand);
+-                    if text.clicked() || resp.clicked() {
+-                        match block {
+-                            None => {
+-                                let _ = app.run("file.autosave", json!({}));
+-                            }
+-                            // AutoSave comes on once Save As has saved (maybe on a later frame, #94).
+-                            Some(b) if b.save_as_helps() => {
+-                                let _ = app.save_as(crate::file_dialogs::AfterSave::AutoSave);
+-                            }
+-                            Some(b) => app.status(b.reason()),
+-                        }
+-                    }
+-                    ui.add_space(8.0);
+-                    // Hidden (#1945): neither the buttons nor the … menu; the title centres as before.
+                     if app.ui.quick_access_toolbar {
+                         quick_access(ui, app);
+                     }
+                     qat_end = if rtl { ui.min_rect().min.x } else { ui.min_rect().max.x };
+-                    ui.with_layout(crate::rtl::far_side(ui, egui::Align::Center), |ui| {
+-                        // Account / community.
+-                        let (r, resp) = ui.allocate_exact_size(vec2(control_h, control_h), Sense::click());
+-                        ui.painter().circle_filled(r.center(), control_h / 2.0 - 1.0, t.accent);
+-                        resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tl!("Account")));
+-                        let initials: String = app.session.user_initials().chars().take(2).collect();
+-                        ui.painter().text(r.center(), Align2::CENTER_CENTER, initials, semibold(10.5), t.on_accent);
+-                        if resp.on_hover_text(format!("{} — set your name in File › Options", app.session.author)).clicked() {
+-                            let _ = app.run("ui.backstage", json!({"value": true, "page": "options", "pane": "general"}));
+-                        }
+-                        ui.add_space(8.0);
+-                        if app.ui.show_discord {
+-                            let (r, resp) = ui.allocate_exact_size(vec2(84.0, 22.0), Sense::click());
+-                            ui.painter().rect_filled(r, 11.0, if resp.hovered() { t.accent_text } else { t.accent });
+-                            icons::paint(
+-                                ui.painter(),
+-                                Rect::from_center_size(pos2(crate::rtl::lead_x(rtl, r, 13.0), r.center().y), vec2(14.0, 14.0)),
+-                                "discord",
+-                                t.on_accent,
+-                                t.on_accent,
+-                            );
+-                            ui.painter().text(
+-                                pos2(crate::rtl::lead_x(rtl, r, 24.0), r.center().y),
+-                                crate::rtl::lead_center(rtl),
+-                                tl!("Discord"),
+-                                medium(11.5),
+-                                t.on_accent,
+-                            );
+-                            if resp.on_hover_text(tl!("Join the ArtCraft community on Discord")).clicked() {
+-                                let _ = app.run("ui.discord", json!({}));
+-                            }
+-                            ui.add_space(8.0);
+-                        }
+-                        search_box(app, ui, control_h);
+-                        right_start = if rtl { ui.min_rect().max.x } else { ui.min_rect().min.x };
+-                    });
+                 })
+             });
++            if app.services.host_navigation.is_some() {
++                return;
++            }
+             let (qat_end, right_start) = if rtl { (right_start, qat_end) } else { (qat_end, right_start) };
+             // Centred title.
+             let title = if !app.has_document() {
+@@ -426,7 +356,7 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
+             }
+             let w = text_width(ui.painter(), &shown, &font, track, t.text);
+             if available > 24.0 {
+-                let rect = Rect::from_center_size(pos2(cx, full.center().y), vec2(w + 8.0, control_h));
++                let rect = Rect::from_center_size(pos2(cx, full.center().y), vec2(w + 8.0, title_h));
+                 let response = ui.interact(rect, ui.scope_id().with("document_name"), Sense::click()).on_hover_text(tl!("Rename Document"));
+                 response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &title));
+                 if response.clicked() {
+@@ -446,8 +376,7 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
+         });
+ }
+ 
+-/// Search ("Tell me"): a box that opens command search. In the title bar, and in the Commands bar
+-/// of Full Screen (#1678).
++/// Search ("Tell me"): a box that opens command search in the Commands bar of Full Screen (#1678).
+ fn search_box(app: &mut WordApp, ui: &mut Ui, control_h: f32) {
+     let t = Tokens::get(ui.ctx());
+     let rtl = crate::rtl::on();
+diff --git a/crates/ui-egui/src/chrome/tests.rs b/crates/ui-egui/src/chrome/tests.rs
+index b6018ad..a32f91c 100644
+--- a/crates/ui-egui/src/chrome/tests.rs
++++ b/crates/ui-egui/src/chrome/tests.rs
+@@ -266,12 +266,15 @@ fn undo_list_row_returns_focus_to_the_document() {
+ }
+ 
+ /// A saved .docx (so AutoSave can cover it) with the title bar drawn over it.
+-fn autosave_harness() -> (egui_kittest::Harness<'static, WordApp>, std::path::PathBuf) {
+-    let dir = std::env::temp_dir().join(format!("wordcraft-ui-autosave-label-{}", std::process::id()));
++fn autosave_harness(hosted: bool) -> (egui_kittest::Harness<'static, WordApp>, std::path::PathBuf) {
++    let dir = std::env::temp_dir().join(format!("wordcraft-ui-autosave-label-{}-{hosted}", std::process::id()));
+     let _ = std::fs::remove_dir_all(&dir);
+     std::fs::create_dir_all(&dir).unwrap();
+     let path = dir.join("draft.docx");
+     let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), crate::Services::default());
++    if hosted {
++        a.services.host_navigation = Some(Box::new(|_| {}));
++    }
+     a.run("text.insert", json!({"text": "Hello"})).unwrap();
+     a.run("file.save", json!({"path": path.to_string_lossy()})).unwrap();
+     assert!(a.autosaves(), "a saved .docx is covered by AutoSave");
+@@ -292,29 +295,25 @@ fn autosave_harness() -> (egui_kittest::Harness<'static, WordApp>, std::path::Pa
+     (h, dir)
+ }
+ 
+-/// #3370: the AutoSave text is part of the switch, not a caption beside it: clicking the text
+-/// toggles AutoSave, as clicking the switch does.
++/// AutoSave remains enabled in the saved document while its title-bar control is hidden.
+ #[test]
+-fn clicking_the_autosave_label_toggles_autosave() {
++fn titlebar_controls_are_hidden_without_changing_autosave() {
+     use egui_kittest::kittest::Queryable;
+-    let (mut h, dir) = autosave_harness();
++    let (h, dir) = autosave_harness(false);
+     assert!(h.state().autosaves());
+-    h.get_by_label("AutoSave").click();
+-    h.run_steps(2);
+-    assert!(!h.state().autosaves(), "clicking the text turns AutoSave off");
+-    h.get_by_label("AutoSave").click();
+-    h.run_steps(2);
+-    assert!(h.state().autosaves(), "and clicking it again turns it back on");
++    for label in ["AutoSave", "Account", "Discord", "Search commands and help"] {
++        assert!(h.query_by_label(label).is_none(), "{label} is not in the title bar");
++    }
++    let title = h.get_by_label("draft — Saved").rect();
++    assert!((title.center().x - 720.0).abs() <= 1.0, "the document title stays centered: x={}", title.center().x);
+     let _ = std::fs::remove_dir_all(dir);
+ }
+ 
+-/// The AutoSave knob is at the right when the switch is on and at the left when it is off; a
+-/// right-to-left interface mirrors that.
+ #[test]
+-fn the_autosave_knob_sits_right_when_on_and_mirrors_right_to_left() {
+-    let track = Rect::from_min_max(egui::pos2(100.0, 0.0), egui::pos2(130.0, 16.0));
+-    assert_eq!(autosave_knob_x(false, true, track), 122.0, "left to right, on: right");
+-    assert_eq!(autosave_knob_x(false, false, track), 108.0, "left to right, off: left");
+-    assert_eq!(autosave_knob_x(true, true, track), 108.0, "right to left, on: left");
+-    assert_eq!(autosave_knob_x(true, false, track), 122.0, "right to left, off: right");
++fn hosted_titlebar_leaves_space_for_template_button_and_tabs() {
++    use egui_kittest::kittest::Queryable;
++    let (h, dir) = autosave_harness(true);
++    assert!(h.query_by_label("draft — Saved").is_none());
++    assert!(h.ctx.read_response(qat_button_id("file.save")).unwrap().rect.min.x >= 42.0);
++    let _ = std::fs::remove_dir_all(dir);
+ }
+diff --git a/crates/ui-egui/src/file_dialogs.rs b/crates/ui-egui/src/file_dialogs.rs
+index ffcbafe..7fd00a5 100644
+--- a/crates/ui-egui/src/file_dialogs.rs
++++ b/crates/ui-egui/src/file_dialogs.rs
+@@ -85,8 +85,6 @@ pub(crate) enum AfterPick {
+ /// What to do once Save As has written the document.
+ pub(crate) enum AfterSave {
+     Nothing,
+-    /// The AutoSave switch asked for the save: turn AutoSave on.
+-    AutoSave,
+     /// "Save changes?" answered Save: run the command it held back (New, Open, Close…), as long as
+     /// the document is safely written and is still the one the prompt asked about.
+     Continue {
+@@ -342,14 +340,6 @@ impl WordApp {
+                         }
+                         Ok(json!({"saved": saved}))
+                     }
+-                    AfterSave::AutoSave => {
+-                        if saved {
+-                            self.autosave = true;
+-                        } else if let Some(Err(error)) = &result {
+-                            self.fail_save_as(error);
+-                        }
+-                        Ok(json!({"saved": saved}))
+-                    }
+                     AfterSave::Continue { then, params, document } => {
+                         if let Some(Err(error)) = result {
+                             return Err(self.save_failed(&error, then, params, document));
+diff --git a/crates/ui-egui/src/file_dialogs/tests.rs b/crates/ui-egui/src/file_dialogs/tests.rs
+index 8acb162..60a3304 100644
+--- a/crates/ui-egui/src/file_dialogs/tests.rs
++++ b/crates/ui-egui/src/file_dialogs/tests.rs
+@@ -380,32 +380,6 @@ fn a_failed_save_as_says_so_and_keeps_the_document() {
+     let _ = std::fs::remove_dir_all(&dir);
+ }
+ 
+-/// The AutoSave switch's own Save As (clicked while blocked on `Unsaved`, chrome.rs) goes
+-/// through the same `AfterPick::SaveAs` arm as Backstage's, under `AfterSave::AutoSave`
+-/// instead of `AfterSave::Nothing`: a write failure there must reach the status bar too
+-/// (visible here, since the switch only shows while Backstage is closed), and AutoSave must
+-/// stay off rather than claim coverage it doesn't have (the raw `autosave` flag defaults to
+-/// `true`; what actually governs coverage is `autosaves()`, the flag plus the block).
+-#[test]
+-fn a_failed_autosave_switch_save_as_says_so_and_leaves_autosave_off() {
+-    let dir = scratch("autosave-switch-write-fails");
+-    let bogus = dir.join("does-not-exist").join("out.docx");
+-    let (mut a, shown) = async_app();
+-    typed(&mut a);
+-    assert!(matches!(a.autosave_block(), Some(crate::AutoSaveBlock::Unsaved)), "a new document blocks AutoSave until saved");
+-    assert!(!a.autosaves(), "blocked: AutoSave isn't covering the document yet");
+-    a.save_as(AfterSave::AutoSave);
+-    answer(&shown, Some(&bogus.to_string_lossy()));
+-    let r = a.poll_file_dialog().unwrap().unwrap();
+-    assert_eq!(r["saved"], false, "the write failed");
+-    assert!(!a.autosaves(), "still blocked: the save that would have lifted it never happened");
+-    assert!(a.session.path.is_none(), "unsaved: the write never actually landed");
+-    assert!(a.has_document() && body_text(&a).contains(UNSAVED), "the document and its text are kept");
+-    let msg = a.status_msg.as_ref().map(|(m, _)| m.clone()).unwrap_or_default();
+-    assert!(!msg.is_empty(), "the failure is no longer silent");
+-    let _ = std::fs::remove_dir_all(&dir);
+-}
+-
+ /// While a dialog is open, more Save As / Open / Export / Picture clicks don't open a second one.
+ #[test]
+ fn a_second_dialog_while_one_is_open_is_ignored() {
+diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
+index d21289e..887f21d 100644
+--- a/crates/ui-egui/src/lib.rs
++++ b/crates/ui-egui/src/lib.rs
+@@ -203,7 +203,6 @@ pub struct UiState {
+     /// Headings whose sub-headings the Navigation pane hides (#1997); per session, not saved.
+     #[serde(skip)]
+     pub nav_collapsed: std::collections::HashSet<wordcraft_doc::Path>,
+-    pub show_discord: bool,
+     /// User name (File › Options) for comments and tracked changes. `None` (no saved name) keeps
+     /// the default; a saved empty name stays empty (#4368).
+     pub author: Option<String>,
+@@ -327,7 +326,6 @@ impl Default for UiState {
+             pane_places: Default::default(),
+             pane_order: Vec::new(),
+             nav_collapsed: Default::default(),
+-            show_discord: true,
+             author: None,
+             window: None,
+             language: i18n::AUTO.into(),
+diff --git a/crates/ui-egui/src/options.rs b/crates/ui-egui/src/options.rs
+index 0e9a8f4..a664ce2 100644
+--- a/crates/ui-egui/src/options.rs
++++ b/crates/ui-egui/src/options.rs
+@@ -219,8 +219,8 @@ fn flag(app: &mut WordApp, ui: &mut Ui, label: &str, key: &str, value: bool) {
+     }
+ }
+ 
+-/// Draws General options: interface theme and size, mini toolbar, dark page, community button and
+-/// default apps; the Start screen; and personalization such as user name and initials.
++/// Draws General options: interface theme and size, mini toolbar, dark page, default apps, the
++/// Start screen, and personalization such as user name and initials.
+ fn general(app: &mut WordApp, ui: &mut Ui) {
+     section(ui, "Interface");
+     theme_picker(app, ui);
+@@ -234,7 +234,6 @@ fn general(app: &mut WordApp, ui: &mut Ui) {
+     {
+         let _ = app.run("view.darkMode", json!({"value": dark_page}));
+     }
+-    ui.checkbox(&mut app.ui.show_discord, tl!("Show the community button in the title bar"));
+     default_app_button(app, ui);
+     ui.add_space(8.0);
+     section(ui, "Start-up");
+diff --git a/crates/ui-egui/src/print_page.rs b/crates/ui-egui/src/print_page.rs
+index 920f571..c37917a 100644
+--- a/crates/ui-egui/src/print_page.rs
++++ b/crates/ui-egui/src/print_page.rs
+@@ -32,6 +32,38 @@ pub struct PrintSettings {
+     /// Scale to paper size (#2108): `none` prints the document's page sizes, a Layout › Size
+     /// name scales every page onto that paper. The document itself is unchanged.
+     pub paper: String,
++    /// Embedded-host printer settings. They belong to the print page, never the document.
++    pub host_printers: Vec<HostPrinter>,
++    pub host_printer: String,
++    pub host_duplex: String,
++    pub host_face: String,
++    pub host_leading_edge: String,
++    pub host_language: String,
++    pub host_loaded: bool,
++    pub host_loading: bool,
++    pub host_status: String,
++    host_stage: HostStage,
++}
++
++#[derive(Clone, Debug, PartialEq)]
++pub struct HostPrinter {
++    pub name: String,
++    pub label: String,
++    pub default: bool,
++    pub long_edge: Option<bool>,
++    pub short_edge: Option<bool>,
++    pub face: String,
++    pub leading_edge: String,
++}
++
++#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
++enum HostStage {
++    #[default]
++    Idle,
++    Submitting,
++    SubmittingFront,
++    AwaitingReload,
++    SubmittingBack,
+ }
+ 
+ impl Default for PrintSettings {
+@@ -46,6 +78,16 @@ impl Default for PrintSettings {
+             zoom: None,
+             orientation: "auto".into(),
+             paper: NO_SCALING.into(),
++            host_printers: Vec::new(),
++            host_printer: String::new(),
++            host_duplex: "printerDefault".into(),
++            host_face: "faceDown".into(),
++            host_leading_edge: "top".into(),
++            host_language: "EN".into(),
++            host_loaded: false,
++            host_loading: false,
++            host_status: String::new(),
++            host_stage: HostStage::Idle,
+         }
+     }
+ }
+@@ -73,6 +115,111 @@ impl PrintSettings {
+     pub fn paper_size(&self) -> Option<(f32, f32)> {
+         wordcraft_geom::paper_by_name(&self.paper).map(|(_, w, h)| (w, h))
+     }
++
++    pub fn host_discovered(&mut self, value: &Value) {
++        self.host_loading = false;
++        self.host_loaded = true;
++        self.host_language = value.get("language").and_then(Value::as_str).filter(|v| matches!(*v, "EN" | "VI")).unwrap_or("EN").into();
++        if let Some(error) = value.get("error").and_then(Value::as_str).filter(|v| !v.is_empty()) {
++            self.host_status = error.into();
++            self.host_printers.clear();
++            return;
++        }
++        let preferences = value.get("preferences").and_then(Value::as_object);
++        self.host_printers = value
++            .get("printers")
++            .and_then(Value::as_array)
++            .into_iter()
++            .flatten()
++            .filter_map(|printer| {
++                let name = printer.get("name")?.as_str()?.to_owned();
++                let preference = preferences.and_then(|p| p.get(&name));
++                Some(HostPrinter {
++                    label: printer.get("label").and_then(Value::as_str).unwrap_or("").to_owned(),
++                    default: printer.get("default").and_then(Value::as_bool).unwrap_or(false),
++                    long_edge: printer.get("longEdge").and_then(Value::as_bool),
++                    short_edge: printer.get("shortEdge").and_then(Value::as_bool),
++                    face: preference
++                        .and_then(|p| p.get("face"))
++                        .and_then(Value::as_str)
++                        .filter(|v| matches!(*v, "faceUp" | "faceDown"))
++                        .unwrap_or("faceDown")
++                        .into(),
++                    leading_edge: preference
++                        .and_then(|p| p.get("leadingEdge"))
++                        .and_then(Value::as_str)
++                        .filter(|v| matches!(*v, "top" | "bottom"))
++                        .unwrap_or("top")
++                        .into(),
++                    name,
++                })
++            })
++            .collect();
++        if !self.host_printers.iter().any(|p| p.name == self.host_printer) {
++            self.host_printer =
++                self.host_printers.iter().find(|p| p.default).or(self.host_printers.first()).map(|p| p.name.clone()).unwrap_or_default();
++            self.apply_refeed();
++        }
++        self.host_status = if self.host_printers.is_empty() {
++            host_text(&self.host_language, "No printers found.", "Không tìm thấy máy in.").into()
++        } else {
++            String::new()
++        };
++    }
++
++    pub fn host_result(&mut self, value: &Value) {
++        let error = value.get("error").and_then(Value::as_str).unwrap_or("");
++        let pass = value.get("pass").and_then(Value::as_str).unwrap_or("");
++        if !error.is_empty() {
++            self.host_stage = HostStage::Idle;
++            self.host_status = error.into();
++        } else if pass == "front" {
++            self.host_stage = HostStage::AwaitingReload;
++            self.host_status.clear();
++        } else {
++            self.host_stage = HostStage::Idle;
++            self.host_status = value
++                .get("receipt")
++                .and_then(Value::as_str)
++                .filter(|v| !v.is_empty())
++                .unwrap_or(host_text(&self.host_language, "Print job submitted.", "Đã gửi lệnh in."))
++                .into();
++        }
++    }
++
++    pub fn host_properties_result(&mut self, value: &Value) {
++        if let Some(error) = value.get("error").and_then(Value::as_str).filter(|v| !v.is_empty()) {
++            self.host_status = error.into();
++        }
++    }
++
++    fn apply_refeed(&mut self) {
++        if let Some(printer) = self.host_printers.iter().find(|p| p.name == self.host_printer) {
++            self.host_face.clone_from(&printer.face);
++            self.host_leading_edge.clone_from(&printer.leading_edge);
++        }
++    }
++
++    fn host_params(&self, pass: Option<&str>) -> Value {
++        let mut params = self.params();
++        params["hostPrinter"] = json!(self.host_printer);
++        params["hostDuplex"] = json!(self.host_duplex);
++        params["hostCopies"] = json!(self.copies);
++        params["hostFace"] = json!(self.host_face);
++        params["hostLeadingEdge"] = json!(self.host_leading_edge);
++        if let Some(pass) = pass {
++            params["manualPass"] = json!(pass);
++            params["reverseManualPass"] = json!(pass == "back" && self.host_face == "faceDown");
++        } else {
++            // Automatic copies belong to the spooler, not repeated PDF pages.
++            params["copies"] = json!(1);
++        }
++        params
++    }
++}
++
++fn host_text<'a>(language: &str, en: &'a str, vi: &'a str) -> &'a str {
++    if language == "VI" { vi } else { en }
+ }
+ 
+ const RANGES: [(&str, &str); 4] = [("all", "All pages"), ("current", "Current page"), ("selection", "Selected pages"), ("custom", "Custom range")];
+@@ -147,6 +294,186 @@ fn page_texture(app: &WordApp, ctx: &egui::Context, lay: &DocLayout, page: usize
+     Some(tex)
+ }
+ 
++fn host_submit(app: &mut WordApp) {
++    let stage = app.ui.print.host_stage;
++    let pass = match stage {
++        HostStage::AwaitingReload => Some("back"),
++        _ if app.ui.print.host_duplex == "manual" => Some("front"),
++        _ => None,
++    };
++    app.ui.print.host_stage = match pass {
++        Some("front") => HostStage::SubmittingFront,
++        Some("back") => HostStage::SubmittingBack,
++        _ => HostStage::Submitting,
++    };
++    app.ui.print.host_status.clear();
++    let params = app.ui.print.host_params(pass);
++    if let Err(error) = app.run("ui.print", params) {
++        app.ui.print.host_stage = HostStage::Idle;
++        app.ui.print.host_status = error;
++    }
++}
++
++fn host_controls(app: &mut WordApp, ui: &mut Ui) {
++    let language = app.ui.print.host_language.clone();
++    let busy = matches!(app.ui.print.host_stage, HostStage::Submitting | HostStage::SubmittingFront | HostStage::SubmittingBack);
++    ui.add_enabled_ui(!busy && app.ui.print.host_stage != HostStage::AwaitingReload, |ui| {
++        let printer_label = ui.label(egui::RichText::new(host_text(&language, "Printer", "Máy in")).font(medium(13.0)));
++        let selected = app
++            .ui
++            .print
++            .host_printers
++            .iter()
++            .find(|p| p.name == app.ui.print.host_printer)
++            .map(|p| if p.label.trim().is_empty() { p.name.as_str() } else { p.label.as_str() })
++            .unwrap_or(host_text(&language, "Select a printer", "Chọn máy in"));
++        let previous = app.ui.print.host_printer.clone();
++        craft_ui::ComboBox::from_id_salt("host_printer")
++            .width(260.0)
++            .selected_text(selected)
++            .show_ui(ui, |ui| {
++                for printer in &app.ui.print.host_printers {
++                    let shown = if printer.label.trim().is_empty() { &printer.name } else { &printer.label };
++                    ui.selectable_value(&mut app.ui.print.host_printer, printer.name.clone(), shown);
++                }
++            })
++            .response
++            .labelled_by(printer_label.id);
++        if previous != app.ui.print.host_printer {
++            app.ui.print.apply_refeed();
++            let supported = app.ui.print.host_printers.iter().find(|p| p.name == app.ui.print.host_printer);
++            let valid = match app.ui.print.host_duplex.as_str() {
++                "longEdge" => supported.and_then(|p| p.long_edge) == Some(true),
++                "shortEdge" => supported.and_then(|p| p.short_edge) == Some(true),
++                _ => true,
++            };
++            if !valid {
++                app.ui.print.host_duplex = "printerDefault".into();
++            }
++        }
++        ui.horizontal(|ui| {
++            if ui.button(host_text(&language, "Refresh printers", "Làm mới máy in")).clicked() {
++                app.ui.print.host_loading = true;
++                app.ui.print.host_status.clear();
++                if let Some(discover) = &app.services.host_print_discover
++                    && let Err(error) = discover()
++                {
++                    app.ui.print.host_loading = false;
++                    app.ui.print.host_status = error;
++                }
++            }
++            if ui
++                .add_enabled(
++                    !app.ui.print.host_printer.is_empty(),
++                    egui::Button::new(host_text(&language, "Printer Properties", "Thuộc tính máy in")),
++                )
++                .clicked()
++                && let Some(properties) = &app.services.host_printer_properties
++                && let Err(error) = properties(&app.ui.print.host_printer)
++            {
++                app.ui.print.host_status = error;
++            }
++        });
++
++        let copies_label = ui.label(egui::RichText::new(host_text(&language, "Copies", "Số bản")).font(medium(13.0)));
++        ui.horizontal(|ui| {
++            ui.add(egui::DragValue::new(&mut app.ui.print.copies).range(1..=wordcraft_engine::print::MAX_COPIES)).labelled_by(copies_label.id);
++            if app.ui.print.copies > 1 {
++                ui.checkbox(&mut app.ui.print.collate, host_text(&language, "Collate copies", "Sắp xếp theo bộ"));
++            }
++        });
++
++        let printer = app.ui.print.host_printers.iter().find(|p| p.name == app.ui.print.host_printer);
++        let long = printer.and_then(|p| p.long_edge);
++        let short = printer.and_then(|p| p.short_edge);
++        let unavailable = |capability: Option<bool>| match capability {
++            Some(false) => host_text(&language, " — Unsupported", " — Không hỗ trợ"),
++            None => host_text(&language, " — Unknown", " — Chưa xác định"),
++            Some(true) => "",
++        };
++        let choices = [
++            ("printerDefault", host_text(&language, "Printer Default", "Mặc định máy in"), true),
++            ("oneSided", host_text(&language, "Print One Sided", "In một mặt"), true),
++            ("longEdge", host_text(&language, "Print on Both Sides — Flip on Long Edge", "In hai mặt — Lật theo cạnh dài"), long == Some(true)),
++            ("shortEdge", host_text(&language, "Print on Both Sides — Flip on Short Edge", "In hai mặt — Lật theo cạnh ngắn"), short == Some(true)),
++            ("manual", host_text(&language, "Manually Print on Both Sides", "In hai mặt thủ công"), true),
++        ];
++        let shown = choices.iter().find(|(id, _, _)| *id == app.ui.print.host_duplex).map(|(_, label, _)| *label).unwrap_or(choices[0].1);
++        let duplex_label = ui.label(egui::RichText::new(host_text(&language, "Print sides", "Mặt giấy")).font(medium(13.0)));
++        craft_ui::ComboBox::from_id_salt("host_duplex")
++            .width(260.0)
++            .selected_text(shown)
++            .show_ui(ui, |ui| {
++                for (id, label, enabled) in choices {
++                    let suffix = match id {
++                        "longEdge" => unavailable(long),
++                        "shortEdge" => unavailable(short),
++                        _ => "",
++                    };
++                    ui.add_enabled_ui(enabled, |ui| {
++                        ui.selectable_value(&mut app.ui.print.host_duplex, id.into(), format!("{label}{suffix}"));
++                    });
++                }
++            })
++            .response
++            .labelled_by(duplex_label.id);
++
++        if app.ui.print.host_duplex == "manual" {
++            let faces = [
++                ("faceUp", host_text(&language, "Printed side up", "Mặt in hướng lên")),
++                ("faceDown", host_text(&language, "Printed side down", "Mặt in hướng xuống")),
++            ];
++            choice_named(
++                ui,
++                "host_refeed_face",
++                &mut app.ui.print.host_face,
++                &faces,
++                host_text(&language, "Printed side when reloading", "Mặt giấy khi nạp lại"),
++            );
++            let edges = [
++                ("top", host_text(&language, "Top edge first", "Cạnh trên vào trước")),
++                ("bottom", host_text(&language, "Bottom edge first", "Cạnh dưới vào trước")),
++            ];
++            choice_named(
++                ui,
++                "host_refeed_edge",
++                &mut app.ui.print.host_leading_edge,
++                &edges,
++                host_text(&language, "Leading edge", "Cạnh đưa vào trước"),
++            );
++        }
++    });
++
++    if app.ui.print.host_loading {
++        ui.label(host_text(&language, "Finding printers…", "Đang tìm máy in…"));
++    }
++    if app.ui.print.host_stage == HostStage::AwaitingReload {
++        let face = host_text(
++            &language,
++            if app.ui.print.host_face == "faceUp" { "printed side up" } else { "printed side down" },
++            if app.ui.print.host_face == "faceUp" { "mặt in hướng lên" } else { "mặt in hướng xuống" },
++        );
++        let edge = host_text(
++            &language,
++            if app.ui.print.host_leading_edge == "top" { "top edge first" } else { "bottom edge first" },
++            if app.ui.print.host_leading_edge == "top" { "cạnh trên vào trước" } else { "cạnh dưới vào trước" },
++        );
++        ui.label(host_text(
++            &language,
++            "The front sides have printed. Flip and reload the stack using the saved printer preference, then confirm the back pass.",
++            "Đã in xong mặt trước. Hãy lật và nạp lại xấp giấy theo tùy chọn đã lưu, rồi xác nhận lượt in mặt sau.",
++        ));
++        ui.label(format!("{face}; {edge}."));
++        if ui.button(host_text(&language, "Cancel manual duplex", "Hủy in hai mặt thủ công")).clicked() {
++            app.ui.print.host_stage = HostStage::Idle;
++            app.ui.print.host_status = host_text(&language, "Manual duplex cancelled before the back pass.", "Đã hủy trước lượt in mặt sau.").into();
++        }
++    }
++    if !app.ui.print.host_status.is_empty() {
++        ui.label(&app.ui.print.host_status);
++    }
++}
++
+ /// The Print page: settings on the left, the preview on the right.
+ pub fn show(app: &mut WordApp, ui: &mut Ui) {
+     let t = Tokens::get(ui.ctx());
+@@ -167,6 +494,16 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
+             }
+             egui::ScrollArea::vertical().id_salt("print_settings").show(ui, |ui| {
+                 ui.spacing_mut().item_spacing.y = 8.0;
++                let host = app.services.host_print_discover.is_some() && app.services.print.is_some();
++                if host && !app.ui.print.host_loaded && !app.ui.print.host_loading {
++                    app.ui.print.host_loading = true;
++                    if let Some(discover) = &app.services.host_print_discover
++                        && let Err(error) = discover()
++                    {
++                        app.ui.print.host_loading = false;
++                        app.ui.print.host_status = error;
++                    }
++                }
+                 let native = app.services.print_native.is_some();
+                 let hook = native || app.services.print.is_some();
+                 // #2958: as in Word, the page's action leads the settings, in the accent the app
+@@ -174,13 +511,38 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
+                 // that prints now rather than one more setting in the list below.
+                 if hook
+                     && ui
+-                        .add_enabled(!native || app.printing.ready(), crate::widgets::primary_button(ui, tl!("Print")).min_size(vec2(320.0, 34.0)))
++                        .add_enabled(
++                            if host {
++                                !app.ui.print.host_printer.is_empty()
++                                    && !matches!(
++                                        app.ui.print.host_stage,
++                                        HostStage::Submitting | HostStage::SubmittingFront | HostStage::SubmittingBack
++                                    )
++                            } else {
++                                !native || app.printing.ready()
++                            },
++                            crate::widgets::primary_button(
++                                ui,
++                                if host && app.ui.print.host_stage == HostStage::AwaitingReload {
++                                    host_text(&app.ui.print.host_language, "Paper reloaded — print back sides", "Đã nạp lại giấy — in mặt sau")
++                                } else {
++                                    tl!("Print")
++                                },
++                            )
++                            .min_size(vec2(320.0, 34.0)),
++                        )
+                         .clicked()
+                 {
+-                    let params = app.ui.print.params();
+-                    let _ = app.run("ui.print", params);
++                    if host {
++                        host_submit(app);
++                    } else {
++                        let params = app.ui.print.params();
++                        let _ = app.run("ui.print", params);
++                    }
+                 }
+-                if native {
++                if host {
++                    host_controls(app, ui);
++                } else if native {
+                     if let Some(discover) = &app.services.printers {
+                         crate::printing::show(&mut app.printing, ui, discover, |label| crate::i18n::t(label).to_owned());
+                     }
+@@ -201,7 +563,9 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
+                 }
+                 ui.add_space(6.0);
+ 
+-                if native {
++                if host {
++                    // Copies and collation are part of the host printer controls above.
++                } else if native {
+                     if app.ui.print.copies > 1 {
+                         ui.add_enabled_ui(!app.printing.busy(), |ui| ui.checkbox(&mut app.ui.print.collate, tl!("Collate copies")));
+                     }
+@@ -407,3 +771,51 @@ pub fn export_formats(app: &mut WordApp, ui: &mut Ui) {
+         ui.add_space(4.0);
+     }
+ }
++
++#[cfg(test)]
++mod host_tests {
++    use super::*;
++
++    fn discovery() -> Value {
++        json!({
++            "language": "VI",
++            "printers": [{
++                "name": "Office Printer",
++                "label": "Office Printer",
++                "default": true,
++                "longEdge": true,
++                "shortEdge": false
++            }],
++            "preferences": {
++                "Office Printer": {"face": "faceUp", "leadingEdge": "bottom"}
++            }
++        })
++    }
++
++    #[test]
++    fn host_discovery_keeps_exact_capabilities_and_saved_refeed_preference() {
++        let mut settings = PrintSettings::default();
++        settings.host_discovered(&discovery());
++        assert_eq!(settings.host_printer, "Office Printer");
++        assert_eq!(settings.host_language, "VI");
++        assert_eq!(settings.host_printers[0].long_edge, Some(true));
++        assert_eq!(settings.host_printers[0].short_edge, Some(false));
++        assert_eq!((settings.host_face.as_str(), settings.host_leading_edge.as_str()), ("faceUp", "bottom"));
++    }
++
++    #[test]
++    fn host_params_leave_automatic_copies_to_spooler_and_split_manual_passes() {
++        let mut settings = PrintSettings { copies: 3, collate: false, host_printer: "Office Printer".into(), ..Default::default() };
++        let automatic = settings.host_params(None);
++        assert_eq!(automatic["copies"], 1);
++        assert_eq!(automatic["hostCopies"], 3);
++        settings.host_duplex = "manual".into();
++        settings.host_face = "faceDown".into();
++        let back = settings.host_params(Some("back"));
++        assert_eq!(back["copies"], 3);
++        assert_eq!(back["manualPass"], "back");
++        assert_eq!(back["reverseManualPass"], true);
++        settings.host_result(&json!({"pass": "front", "receipt": "queued"}));
++        assert_eq!(settings.host_stage, HostStage::AwaitingReload);
++    }
++}
+diff --git a/crates/ui-egui/src/printing.rs b/crates/ui-egui/src/printing.rs
+index 79f9c9d..4e861fe 100644
+--- a/crates/ui-egui/src/printing.rs
++++ b/crates/ui-egui/src/printing.rs
+@@ -211,14 +211,15 @@ pub fn submit(app: &mut crate::WordApp, params: &serde_json::Value) -> Result<se
+             app.printing.begin(submit(bytes, settings, collate, print_options)).map_err(|_| "A print job is already being submitted.".to_owned())?;
+             app.print_feedback_seen = None;
+         } else if let Some(print) = &app.services.print {
+-            print(&bytes)?;
++            print(&bytes, params)?;
+         }
+         Ok(len)
+     });
+     match result {
+         Ok(len) => {
+-            app.status(if native { tl!("Submitting print job…") } else { tl!("Opening print dialog…") });
+-            Ok(json!({"printing": true, "bytes": len, "pending": native}))
++            let host = params.get("hostPrinter").is_some();
++            app.status(if native || host { tl!("Submitting print job…") } else { tl!("Opening print dialog…") });
++            Ok(json!({"printing": true, "bytes": len, "pending": native || host}))
+         }
+         Err(error) => {
+             log::error!("print failed: {error}");
 diff --git a/crates/ui-egui/src/services.rs b/crates/ui-egui/src/services.rs
-index b591fbc..b02e6cd 100644
+index b591fbc..b253915 100644
 --- a/crates/ui-egui/src/services.rs
 +++ b/crates/ui-egui/src/services.rs
-@@ -42,6 +42,8 @@ pub struct Services {
+@@ -42,12 +42,18 @@ pub struct Services {
      /// under its own name and format, as on the desktop, and a Save or Save As that keeps
      /// everything makes that name the document's file, so the next Save goes to it.
      pub host_save: Option<HostSaveFn>,
@@ -344,14 +1417,111 @@ index b591fbc..b02e6cd 100644
      /// Web: told whether the document has unsaved changes after each pass, for the browser's
      /// leave-page guard (`beforeunload` runs between frames and can't ask the app).
      pub on_dirty: Option<Box<dyn Fn(bool)>>,
+     /// Web: hand PDF bytes to the browser's print dialog (no download or intermediate file).
+     /// Desktop uses `print_native` instead. An error means nothing was opened.
+-    pub print: Option<Box<dyn Fn(&[u8]) -> Result<(), String>>>,
++    pub print: Option<Box<dyn Fn(&[u8], &serde_json::Value) -> Result<(), String>>>,
++    /// Embedded web host: request its native printer list. Results return through the host inbox.
++    pub host_print_discover: Option<Box<dyn Fn() -> Result<(), String>>>,
++    /// Embedded web host: open the selected queue's native properties.
++    pub host_printer_properties: Option<Box<dyn Fn(&str) -> Result<(), String>>>,
+     /// Desktop: the picture on the system clipboard, if any — egui's paste only carries text
+     /// (#45). Read when Paste finds no text; see [`paste_picture`].
+     pub clipboard_picture: Option<Box<dyn Fn() -> Option<paste_picture::ClipboardPicture>>>,
 diff --git a/crates/ui-egui/src/tests.rs b/crates/ui-egui/src/tests.rs
-index 1ea966c..604b52f 100644
+index 1ea966c..74230bc 100644
 --- a/crates/ui-egui/src/tests.rs
 +++ b/crates/ui-egui/src/tests.rs
-@@ -4303,6 +4303,23 @@ fn host_open(a: &mut WordApp, name: &str) {
+@@ -3301,7 +3301,7 @@ fn ui_print_needs_the_hosts_print_hook() {
+ 
+     let got = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+     let seen = got.clone();
+-    a.services.print = Some(Box::new(move |bytes| {
++    a.services.print = Some(Box::new(move |bytes, _params| {
+         seen.borrow_mut().push(bytes.to_vec());
+         Ok(())
+     }));
+@@ -3311,7 +3311,7 @@ fn ui_print_needs_the_hosts_print_hook() {
+     assert!(got.borrow().first().is_some_and(|b| b.starts_with(b"%PDF")), "the hook got a PDF");
+     assert!(a.session.dirty, "printing is not a save");
+ 
+-    a.services.print = Some(Box::new(|_| Err("blocked by the browser".into())));
++    a.services.print = Some(Box::new(|_, _params| Err("blocked by the browser".into())));
+     a.status_msg = None;
+     let e = a.run("ui.print", json!({})).unwrap_err();
+     assert!(e.contains("blocked by the browser"), "{e}");
+@@ -3368,7 +3368,7 @@ fn ui_print_honours_the_print_settings() {
+     let mut a = typed();
+     let sizes = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+     let seen = sizes.clone();
+-    a.services.print = Some(Box::new(move |bytes| {
++    a.services.print = Some(Box::new(move |bytes, _params| {
+         seen.borrow_mut().push(bytes.len());
+         Ok(())
+     }));
+@@ -3390,7 +3390,7 @@ fn the_print_button_shows_only_with_a_print_hook() {
+         let mut a = app();
+         if hook {
+             let seen = printed.clone();
+-            a.services.print = Some(Box::new(move |_| {
++            a.services.print = Some(Box::new(move |_, _params| {
+                 seen.set(seen.get() + 1);
+                 Ok(())
+             }));
+@@ -3430,7 +3430,7 @@ fn the_print_button_leads_the_settings_and_is_the_primary_action() {
+     use egui_kittest::kittest::{By, Queryable};
+     const BLURB: &str = "Send the document straight to the system print dialog, or save a copy in another format below.";
+     let mut a = app();
+-    a.services.print = Some(Box::new(|_| Ok(())));
++    a.services.print = Some(Box::new(|_, _params| Ok(())));
+     a.run("file.print", json!({})).unwrap();
+     let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+         |ui, app: &mut WordApp| {
+@@ -3563,7 +3563,6 @@ fn the_default_app_button_shows_only_with_the_hosts_hook() {
+             a,
+         );
+         h.run_steps(4);
+-        assert!(h.query_by_label("Show the community button in the title bar").is_some(), "hook {hook}: the Options page rendered");
+         assert_eq!(h.query_by_label(LABEL).is_some(), hook, "hook {hook}: the button");
+         if hook {
+             h.get_by_label(LABEL).click();
+@@ -4303,6 +4302,56 @@ fn host_open(a: &mut WordApp, name: &str) {
      assert!(a.session.dirty);
  }
  
++#[test]
++fn embedded_documents_open_at_100_percent_zoom() {
++    use wordcraft_doc::{Zoom, ZoomFit};
++
++    for saved in [Zoom { percent: 80, fit: None }, Zoom { percent: 125, fit: None }, Zoom { percent: 75, fit: Some(ZoomFit::PageWidth) }] {
++        let mut doc = wordcraft_doc::Document::new();
++        doc.settings.zoom = Some(saved);
++        let bytes = wordcraft_engine::io::save_bytes("zoom.docx", &doc).unwrap();
++        for embedded in [false, true] {
++            let mut a = app();
++            let inbox: Inbox = Inbox::default();
++            a.services.inbox = Some(inbox.clone());
++            if embedded {
++                a.services.host_save = Some(Box::new(|_, _, _| Ok(())));
++            }
++            inbox.lock().unwrap().push(("zoom.docx".into(), bytes.clone()));
++            a.drain_inbox();
++            assert_eq!(a.session.view.zoom, if embedded { 1.0 } else { saved.percent as f32 / 100.0 });
++            assert_eq!(
++                a.session.view.fit,
++                if embedded {
++                    ""
++                } else if saved.fit.is_some() {
++                    "pageWidth"
++                } else {
++                    ""
++                }
++            );
++            assert!(!a.session.dirty);
++        }
++    }
++}
++
 +#[test]
 +fn host_navigation_keeps_inbox_open_inside_wordcraft() {
 +    let (mut app, _) = host_app(false);
@@ -372,3 +1542,15 @@ index 1ea966c..604b52f 100644
  /// Save hands the opened file back under its own name and format; Save As says so and
  /// becomes the file the next Save writes.
  #[test]
+diff --git a/crates/ui-egui/src/window_ui.rs b/crates/ui-egui/src/window_ui.rs
+index 8e69776..dd7b6f5 100644
+--- a/crates/ui-egui/src/window_ui.rs
++++ b/crates/ui-egui/src/window_ui.rs
+@@ -265,7 +265,6 @@ impl WordApp {
+             legacy_dark: _,
+             nav_tab: _,
+             nav_pane: _,
+-            show_discord: _,
+             author: _,
+             window: _,
+             language: _,

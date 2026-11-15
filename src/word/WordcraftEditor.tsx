@@ -1,29 +1,37 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { checkDocxOpen } from './docx';
 import { decodeDocx, encodeDocx } from './docxCodec';
+import { wordBridge } from './bridge';
 import type { EditorAccess, Tab } from './editorTypes';
 import { advanceWordcraftStage, wordcraftBytes, wordcraftMessage, wordcraftTimeoutKind, type WordcraftStage } from './wordcraftProtocol';
 
 type Pending = { resolve: (bytes: string) => void; reject: (reason: Error) => void; timeout: number };
 type FailureKind = 'startup' | 'import' | 'compatibility';
 
-export const WordcraftEditor = memo(function WordcraftEditor({ tab, active, language, register, onChange, onFailed, onCompatibilityWarning, onOpen, onNew, onHostSave, onReady }: {
-  tab: Tab; active: boolean; language: 'EN' | 'VI'; register: (access: EditorAccess | null) => void;
-  onChange: () => void; onFailed: (kind: FailureKind, reason: string) => void; onCompatibilityWarning?: (reason: string) => void;
-  onOpen: () => void; onNew: () => void; onHostSave: (bytesBase64: string, saveAs: boolean) => Promise<boolean>; onReady: () => void;
+export const WordcraftEditor = memo(function WordcraftEditor({ tab, active, language, register, onChange, onFailed, onCompatibilityWarning, onBackstageChange, onOpen, onNew, onCloseAll, onHostSave, onReady }: {
+  tab: Tab | null; active: boolean; language: 'EN' | 'VI'; register: (access: EditorAccess | null) => void;
+  onChange: () => void; onFailed: (kind: FailureKind, reason: string) => void; onCompatibilityWarning?: (reason: string) => void; onBackstageChange: (backstage: boolean) => void;
+  onOpen: () => void; onNew: () => void; onCloseAll: (save: boolean) => void; onHostSave: (bytesBase64: string, saveAs: boolean) => Promise<boolean>; onReady: () => void;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const pending = useRef(new Map<string, Pending>());
   const snapshotRev = useRef('');
   const observedRevision = useRef('');
   const openId = useRef('');
+  const openingTab = useRef<Tab | null>(null);
+  const currentTab = useRef(tab);
+  currentTab.current = tab;
+  const currentLanguage = useRef(language);
+  currentLanguage.current = language;
+  const openInFrame = useRef<((tab: Tab) => void) | null>(null);
   const [ready, setReady] = useState(false);
+  const [rendererReady, setRendererReady] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [frameUrl, setFrameUrl] = useState<string>();
   const [startupError, setStartupError] = useState('');
   const [failed, setFailed] = useState(false);
-  const latest = useRef({ register, onChange, onFailed, onCompatibilityWarning, onOpen, onNew, onHostSave, onReady });
-  latest.current = { register, onChange, onFailed, onCompatibilityWarning, onOpen, onNew, onHostSave, onReady };
+  const latest = useRef({ register, onChange, onFailed, onCompatibilityWarning, onBackstageChange, onOpen, onNew, onCloseAll, onHostSave, onReady });
+  latest.current = { register, onChange, onFailed, onCompatibilityWarning, onBackstageChange, onOpen, onNew, onCloseAll, onHostSave, onReady };
 
   const requestFrame = (type: string, command?: string) => new Promise<string>((resolve, reject) => {
     const target = frame.current?.contentWindow;
@@ -36,17 +44,21 @@ export const WordcraftEditor = memo(function WordcraftEditor({ tab, active, lang
 
   useEffect(() => {
     const iframe = frame.current;
+    if (currentTab.current) latest.current.onBackstageChange(true);
+    openId.current = '';
+    openingTab.current = null;
     const started = performance.now();
     let stage: WordcraftStage = 'wasm-starting';
     let timer = 0;
     const log = (next: string, details: Record<string, string | number> = {}) => {
-      console.info('[Wordcraft lifecycle]', { tabId: tab.id, attempt, stage: next, elapsedMs: Math.round(performance.now() - started), ...details });
+      console.info('[Wordcraft lifecycle]', { tabId: currentTab.current?.id ?? 'prewarm', attempt, stage: next, elapsedMs: Math.round(performance.now() - started), ...details });
     };
     const fail = (kind: FailureKind, reason: string) => {
       window.clearTimeout(timer);
       log('failed', { kind, reason: kind === 'startup' ? reason.slice(0, 240) : kind });
       if (kind === 'startup' && attempt === 0) {
         log('retrying');
+        setRendererReady(false);
         setFrameUrl(undefined);
         setAttempt(1);
         return;
@@ -58,6 +70,16 @@ export const WordcraftEditor = memo(function WordcraftEditor({ tab, active, lang
     const timeout = (ms: number, reason: string) => {
       window.clearTimeout(timer);
       timer = window.setTimeout(() => { log('timeout', { waitingFor: stage }); fail(wordcraftTimeoutKind(stage), reason); }, ms);
+    };
+    openInFrame.current = nextTab => {
+      if (stage !== 'renderer-ready') return;
+      openingTab.current = nextTab;
+      openId.current = crypto.randomUUID();
+      const bytes = nextTab.bytes.slice();
+      stage = advanceWordcraftStage(stage, 'open-sent')!;
+      log(stage);
+      iframe?.contentWindow?.postMessage({ type: 'wordcraft:open', id: openId.current, name: `${nextTab.name.replace(/\.docx$/i, '')}.docx`, bytes: bytes.buffer }, window.location.origin, [bytes.buffer]);
+      timeout(45000, 'Wordcraft did not finish opening this document.');
     };
     const onLoad = () => {
       const next = advanceWordcraftStage(stage, 'html-loaded');
@@ -76,12 +98,7 @@ export const WordcraftEditor = memo(function WordcraftEditor({ tab, active, lang
         stage = next;
         log(stage, { backend: typeof data.backend === 'string' ? data.backend : 'unknown' });
         if (typeof data.backend === 'string' && iframe) { iframe.dataset.backend = data.backend; document.documentElement.dataset.wordcraftBackend = data.backend; }
-        openId.current = crypto.randomUUID();
-        const bytes = tab.bytes.slice();
-        stage = advanceWordcraftStage(stage, 'open-sent')!;
-        log(stage);
-        iframe?.contentWindow?.postMessage({ type: 'wordcraft:open', id: openId.current, name: `${tab.name.replace(/\.docx$/i, '')}.docx`, bytes: bytes.buffer }, window.location.origin, [bytes.buffer]);
-        timeout(45000, 'Wordcraft did not finish opening this document.');
+        setRendererReady(true);
       } else if (data.type === 'wordcraft:open-result') {
         if (stage !== 'document-opening' || data.id !== openId.current) return;
         window.clearTimeout(timer);
@@ -89,10 +106,13 @@ export const WordcraftEditor = memo(function WordcraftEditor({ tab, active, lang
         stage = advanceWordcraftStage(stage, 'opened')!;
         log(stage);
         void requestFrame('wordcraft:snapshot').then(encoded => {
-          const error = tab.source === 'blank' ? null : checkDocxOpen(tab.bytes, decodeDocx(encoded));
+          const openedTab = openingTab.current;
+          const error = !openedTab || openedTab.source === 'blank' ? null : checkDocxOpen(openedTab.bytes, decodeDocx(encoded));
           if (error) { latest.current.onCompatibilityWarning?.(error); fail('compatibility', error); }
           else { stage = advanceWordcraftStage(stage, 'checked')!; log(stage); setStartupError(''); setFailed(false); setReady(true); }
         }).catch(error => fail('import', String(error)));
+      } else if (data.type === 'wordcraft:view' && typeof data.backstage === 'boolean') {
+        latest.current.onBackstageChange(data.backstage);
       } else if (data.type === 'wordcraft:failed') {
         if (stage === 'usable') return;
         const step = typeof data.stage === 'string' ? `${data.stage}: ` : '';
@@ -114,6 +134,55 @@ export const WordcraftEditor = memo(function WordcraftEditor({ tab, active, lang
         const id = typeof data.id === 'string' ? data.id : '';
         const task = pending.current.get(id);
         if (task) { pending.current.delete(id); window.clearTimeout(task.timeout); data.error ? task.reject(Error(String(data.error))) : task.resolve(''); }
+      } else if (data.type === 'wordcraft:print-discover') {
+        void Promise.all([wordBridge.printers(), wordBridge.refeedPreferences()])
+          .then(([printers, preferences]) => iframe?.contentWindow?.postMessage({
+            type: 'wordcraft:print-discover-result',
+            dataJson: JSON.stringify({ printers, preferences, language: currentLanguage.current }),
+          }, window.location.origin))
+          .catch(error => iframe?.contentWindow?.postMessage({
+            type: 'wordcraft:print-discover-result',
+            dataJson: JSON.stringify({ error: String(error), language: currentLanguage.current }),
+          }, window.location.origin));
+      } else if (data.type === 'wordcraft:print-properties') {
+        if (typeof data.printer !== 'string') return;
+        void wordBridge.openPrinterProperties(data.printer)
+          .then(() => iframe?.contentWindow?.postMessage({ type: 'wordcraft:print-properties-result', dataJson: '{}' }, window.location.origin))
+          .catch(error => iframe?.contentWindow?.postMessage({
+            type: 'wordcraft:print-properties-result', dataJson: JSON.stringify({ error: String(error) }),
+          }, window.location.origin));
+      } else if (data.type === 'wordcraft:print-submit') {
+        if (!wordcraftBytes(data.bytes) || data.bytes.byteLength > 100 * 1024 * 1024 || typeof data.paramsJson !== 'string') return;
+        let params: Record<string, unknown>;
+        try {
+          const parsed = JSON.parse(data.paramsJson);
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
+          params = parsed;
+        } catch { return; }
+        const printer = typeof params.hostPrinter === 'string' ? params.hostPrinter : '';
+        const mode = typeof params.hostDuplex === 'string' ? params.hostDuplex : '';
+        const copies = typeof params.hostCopies === 'number' && Number.isInteger(params.hostCopies) ? params.hostCopies : 0;
+        const collate = params.collate !== false;
+        const pass = params.manualPass === 'front' || params.manualPass === 'back' ? params.manualPass : undefined;
+        const face = params.hostFace === 'faceUp' || params.hostFace === 'faceDown' ? params.hostFace : undefined;
+        const leadingEdge = params.hostLeadingEdge === 'top' || params.hostLeadingEdge === 'bottom' ? params.hostLeadingEdge : undefined;
+        const reply = (value: Record<string, unknown>) => iframe?.contentWindow?.postMessage({
+          type: 'wordcraft:print-submit-result', dataJson: JSON.stringify({ ...value, ...(pass ? { pass } : {}) }),
+        }, window.location.origin);
+        const validMode = pass ? mode === 'manual' : ['printerDefault', 'oneSided', 'longEdge', 'shortEdge'].includes(mode);
+        if (!printer || copies < 1 || copies > 999 || !validMode) {
+          reply({ error: 'Wordcraft sent invalid printer settings.' });
+          return;
+        }
+        const pdfBase64 = encodeDocx(data.bytes);
+        void (async () => {
+          if (pass) {
+            if (!face || !leadingEdge) throw Error('Wordcraft sent invalid manual duplex settings.');
+            if (pass === 'front') await wordBridge.saveRefeedPreference(printer, face, leadingEdge);
+            return wordBridge.printManualPass(pdfBase64, printer, pass);
+          }
+          return wordBridge.printPdf(pdfBase64, printer, mode, copies, collate);
+        })().then(receipt => reply({ receipt })).catch(error => reply({ error: String(error) }));
       } else if (data.type === 'wordcraft:save') {
         const bytes = data.bytes;
         const id = typeof data.id === 'string' ? data.id : '';
@@ -125,6 +194,8 @@ export const WordcraftEditor = memo(function WordcraftEditor({ tab, active, lang
         }).catch(error => iframe?.contentWindow?.postMessage({ type: 'wordcraft:save-result', id, error: String(error) }, window.location.origin));
       } else if (data.type === 'wordcraft:new') latest.current.onNew();
       else if (data.type === 'wordcraft:open-request') latest.current.onOpen();
+      else if (data.type === 'wordcraft:close-all-save') latest.current.onCloseAll(true);
+      else if (data.type === 'wordcraft:close-all-discard') latest.current.onCloseAll(false);
     };
     window.addEventListener('message', receive);
     iframe?.addEventListener('load', onLoad);
@@ -133,24 +204,31 @@ export const WordcraftEditor = memo(function WordcraftEditor({ tab, active, lang
     setFrameUrl(`./wordcraft/index.html?host=parent&v=${Date.now()}`);
     return () => {
       window.clearTimeout(timer);
+      openInFrame.current = null;
       window.removeEventListener('message', receive);
       iframe?.removeEventListener('load', onLoad);
       for (const task of pending.current.values()) { window.clearTimeout(task.timeout); task.reject(Error('Wordcraft closed.')); }
       pending.current.clear();
     };
-  }, [attempt, tab.id]);
+  }, [attempt]);
 
   useEffect(() => {
-    if (!ready) return;
+    if (!rendererReady || !tab || openId.current) return;
+    latest.current.onBackstageChange(true);
+    openInFrame.current?.(tab);
+  }, [rendererReady, tab?.id]);
+
+  useEffect(() => {
+    if (!ready || !tab) return;
     latest.current.register({ save: () => requestFrame('wordcraft:snapshot'), print: async () => { await requestFrame('wordcraft:command', 'print'); }, snapshotRevision: () => snapshotRev.current, confirmSaved: (name, revision) => {
       if (revision) frame.current?.contentWindow?.postMessage({ type: 'wordcraft:stored', rev: revision, name: `${name.replace(/\.docx$/i, '')}.docx` }, window.location.origin);
     } });
     latest.current.onReady();
     return () => latest.current.register(null);
-  }, [ready]);
+  }, [ready, tab?.id]);
 
   return <div className={`word-editor wordcraft-editor${ready ? ' is-ready' : ''}`} hidden={!active}>
-    <iframe key={attempt} ref={frame} src={frameUrl} title={`${language === 'VI' ? 'Trình soạn thảo Wordcraft' : 'Wordcraft editor'}: ${tab.name}`} allow="clipboard-read; clipboard-write" />
-    {!ready && (!failed || startupError) && <p role="status">{!failed && (language === 'VI' ? 'Đang tải Wordcraft…' : 'Loading Wordcraft…')}{startupError && <button type="button" onClick={() => { setFailed(false); setStartupError(''); setFrameUrl(undefined); setAttempt(value => value + 1); }}>{language === 'VI' ? 'Thử lại' : 'Retry Wordcraft'}</button>}</p>}
+    <iframe key={attempt} ref={frame} src={frameUrl} title={`${language === 'VI' ? 'Trình soạn thảo Wordcraft' : 'Wordcraft editor'}: ${tab?.name ?? 'prewarm'}`} allow="clipboard-read; clipboard-write" />
+    {!ready && (!failed || startupError) && <p role="status">{!failed && (language === 'VI' ? 'Đang tải Wordcraft…' : 'Loading Wordcraft…')}{startupError && <button type="button" onClick={() => { setFailed(false); setStartupError(''); setRendererReady(false); setFrameUrl(undefined); setAttempt(value => value + 1); }}>{language === 'VI' ? 'Thử lại' : 'Retry Wordcraft'}</button>}</p>}
   </div>;
 });

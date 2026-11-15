@@ -79,10 +79,12 @@ The Tauri development command starts the frontend and desktop application. For b
 ```powershell
 npm.cmd test
 npm.cmd run web:build
-cargo test --manifest-path src-tauri/Cargo.toml
+cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1
 ```
 
 `npm.cmd test` runs the Node test suite. `npm.cmd run web:build` checks the bundled Wordcraft assets, type-checks TypeScript, and builds the frontend. `cargo test` runs Rust tests. The `native:smoke` and `wordcraft:webview2-smoke` scripts are available for local Windows smoke checks where their platform requirements are met.
+
+`npm.cmd run wordcraft:build` validates and records the existing `public/wordcraft` runtime bundle without requiring upstream source provenance. Runtime inventory is stored under the ignored `.b6h-state/wordcraft/runtime.json`; source-to-artifact provenance is kept separately and written only after a verified source build. Ordinary `build`, `web:dev`, and Tauri frontend hooks do not compile Wordcraft. For an explicitly approved source build, review the selected checkout (default `wordcraft-upstream/` here or in its parent; override with `B6H_WORDCRAFT_UPSTREAM`), then run `npm.cmd run wordcraft:source-build`.
 
 ## Project layout
 
@@ -100,7 +102,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 Calendar data uses the existing JSON storage path and Tauri commands for full reads/writes, range queries, and incremental saves. Backup import/export uses the Calendar JSON data format; optional category colors and completion metadata are retained when present, while older files remain supported.
 
-The generated architecture map is in `graphify-out/graph.html`; the plain-language report is `graphify-out/GRAPH_REPORT.md`. Refresh the code map after source changes with `graphify update .` (Graphify must be installed locally). These generated files are for development and are not needed to run B6H.
+The generated architecture map is in `graphify-out/graph.html`; the plain-language report is `graphify-out/GRAPH_REPORT.md`, and `graphify-out/callflow.html` shows module call flows. On this Windows host, refresh the code map with `python -m graphify extract . --code-only --cargo --force --mode deep --no-gitignore --out .` and `python -m graphify cluster-only . --no-label`. The source scope is controlled by `.graphifyignore`. These generated files are for development and are not needed to run B6H.
 
 ## Release workflow
 

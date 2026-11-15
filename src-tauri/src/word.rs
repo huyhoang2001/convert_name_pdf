@@ -12,8 +12,8 @@ use std::{
 use uuid::Uuid;
 use zip::ZipArchive;
 
-const MAX_FILE: u64 = 30 * 1024 * 1024;
-const MAX_EXPANDED: u64 = 120 * 1024 * 1024;
+const MAX_FILE: u64 = 200 * 1024 * 1024;
+const MAX_EXPANDED: u64 = 800 * 1024 * 1024;
 static WRITE_LOCK: Mutex<()> = Mutex::new(());
 
 pub fn local_fonts() -> Vec<Value> {
@@ -809,6 +809,48 @@ mod tests {
     fn bad_docx_is_rejected() {
         assert!(docx_bytes(b"not a zip").is_err());
         assert!(docx_bytes(&vec![0; (MAX_FILE + 1) as usize]).is_err());
+    }
+    #[test]
+    fn large_docx_stays_within_file_and_expanded_limits() {
+        let mut cursor = Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut cursor);
+            let stored = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+            writer.start_file("[Content_Types].xml", stored).unwrap();
+            writer.write_all(b"<Types/>").unwrap();
+            writer.start_file("word/document.xml", stored).unwrap();
+            writer.write_all(b"<document/>").unwrap();
+            writer.start_file("word/media/large.bin", stored).unwrap();
+            writer.write_all(&vec![0; 101 * 1024 * 1024]).unwrap();
+            writer.finish().unwrap();
+        }
+        assert!(docx_bytes(&cursor.into_inner()).is_ok());
+
+        let mut cursor = Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut cursor);
+            let compressed = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            writer
+                .start_file("[Content_Types].xml", compressed)
+                .unwrap();
+            writer.write_all(b"<Types/>").unwrap();
+            writer.start_file("word/document.xml", compressed).unwrap();
+            writer.write_all(b"<document/>").unwrap();
+            let chunk = vec![0; 1024 * 1024];
+            for i in 0..801 {
+                writer
+                    .start_file(format!("word/media/{i}.bin"), compressed)
+                    .unwrap();
+                writer.write_all(&chunk).unwrap();
+            }
+            writer.finish().unwrap();
+        }
+        assert_eq!(
+            docx_bytes(&cursor.into_inner()),
+            Err("DOCX expands beyond the supported size.".into())
+        );
     }
     #[test]
     fn valid_docx_and_exclusive_copy_preserve_source() {

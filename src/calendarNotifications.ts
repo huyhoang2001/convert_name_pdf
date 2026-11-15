@@ -65,6 +65,11 @@ export function markCalendarNotificationRead(state: CalendarNotificationState, i
   return { ...state, notifications };
 }
 
+export function clearAllCalendarNotifications(state: CalendarNotificationState): CalendarNotificationState {
+  if (state.notifications.length === 0) return state;
+  return { ...state, notifications: [] };
+}
+
 export function setCalendarNotificationPreference(state: CalendarNotificationState, kind: NotificationKind, enabled: boolean): CalendarNotificationState {
   if (state.preferences[kind] === enabled) return state;
   return { ...state, preferences: { ...state.preferences, [kind]: enabled } };

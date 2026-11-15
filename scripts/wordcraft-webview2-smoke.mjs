@@ -1,9 +1,11 @@
 import { readZip } from '@docx-editor.dev/core/store';
 
 const endpoint = process.env.WORDCRAFT_CDP_URL ?? 'http://127.0.0.1:9223';
+if (process.env.B6H_WORDCRAFT_SMOKE_ISOLATED !== '1') throw Error('Refusing to reload or edit a WebView2 page without B6H_WORDCRAFT_SMOKE_ISOLATED=1 and an isolated test session.');
 const pages = await fetch(`${endpoint}/json/list`).then(response => response.json());
 const page = pages.find(item => item.type === 'page' && /(?:localhost:5175|tauri\.localhost)\//.test(item.url));
 if (!page) throw Error('Isolated Tauri WebView2 page is unavailable; launch with remote debugging on port 9223.');
+if (new URL(page.url).searchParams.get('b6h-wordcraft-smoke') !== 'isolated') throw Error('The selected page is not marked as an isolated Wordcraft smoke session.');
 const socket = new WebSocket(page.webSocketDebuggerUrl);
 await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
 let nextId = 0;
@@ -113,8 +115,16 @@ try {
   await evaluate(`document.querySelector('button.nav-item[aria-label^="Word"]')?.click()`);
   await waitFor(`!!document.querySelector('button.nav-item.active[aria-label^="Word"]')`, 'Word navigation did not activate');
   await waitFor(`!!(document.querySelector('.word-home')?.getClientRects().length || document.querySelector('.wordcraft-editor')?.getClientRects().length)`, 'Word workspace did not open');
+  await waitFor(`!!document.querySelector('.word-editors.is-prewarming .wordcraft-editor iframe')`, 'Wordcraft prewarm iframe did not mount');
+  await waitFor(`window.__wordcraftSmoke.ready === 1`, 'Wordcraft did not prewarm on the home screen');
+  await evaluate(`window.__wordcraftSmoke.prewarmFrame = document.querySelector('.word-editors.is-prewarming .wordcraft-editor iframe')`);
+  const openStarted = Date.now();
   await evaluate(`(() => { const home = document.querySelector('.word-home'); if (home?.getClientRects().length) home.querySelector('.word-home-head button.primary-button')?.click(); })()`);
   const report = JSON.parse(await waitFor(`(() => { const editor = document.querySelector('.wordcraft-editor.is-ready'); return editor?.getClientRects().length && editor.querySelector('iframe')?.getBoundingClientRect().width > 0 && window.__wordcraftSmoke.ready === 1 && window.__wordcraftSmoke.wasm.some(result => result.success) ? JSON.stringify(window.__wordcraftSmoke) : ''; })()`, 'Wordcraft WASM or renderer did not become ready'));
+  assert(await evaluate(`window.__wordcraftSmoke.prewarmFrame === document.querySelector('.wordcraft-editor.is-ready iframe')`), 'First document did not reuse the prewarmed iframe');
+  const firstNewOpenMs = Date.now() - openStarted;
+  const tabSize = await evaluate(`(() => { const tab = document.querySelector('.word-tabbar .word-tabs > div.active'); const box = tab.getBoundingClientRect(); return { width: box.width, height: box.height }; })()`);
+  assert(tabSize.width === 154 && tabSize.height === 29, `Unexpected Word tab size: ${JSON.stringify(tabSize)}`);
   assert(report.wasm.filter(item => item.success).length === 1, `Wordcraft did not initialize exactly once: ${JSON.stringify(report)}`);
   assert(report.wasm.find(item => item.success).errors.length === 0, 'WASM imports object did not satisfy Module.imports()');
   assert(report.ready === 1, 'wordcraft:ready was not received exactly once');
@@ -135,7 +145,7 @@ try {
   const documentXml = readZip(Uint8Array.from(Buffer.from(after.docx, 'base64'))).entries.get('/word/document.xml');
   assert(new TextDecoder().decode(documentXml).includes('WORDCRAFT_SMOKE'), 'Typed marker is missing from the DOCX snapshot');
   assert(report.wasm.find(item => item.success).imports.some(name => name.includes('/snippets/eframe-')), 'Captured WASM imports omit the eframe snippet namespace');
-  console.log(JSON.stringify({ result: 'passed', servedSriResources: sriCount, imports: report.wasm.find(item => item.success).count, namespaces: report.wasm.find(item => item.success).imports.length, successfulInitializations: 1, readyMessages: report.ready, editedSnapshotChanged: true, backend: await evaluate(`document.querySelector('.wordcraft-editor iframe').dataset.backend`) }));
+  console.log(JSON.stringify({ result: 'passed', servedSriResources: sriCount, imports: report.wasm.find(item => item.success).count, namespaces: report.wasm.find(item => item.success).imports.length, successfulInitializations: 1, readyMessages: report.ready, firstNewOpenMs, tabSize, editedSnapshotChanged: true, backend: await evaluate(`document.querySelector('.wordcraft-editor iframe').dataset.backend`) }));
 } finally {
   socket.close();
 }

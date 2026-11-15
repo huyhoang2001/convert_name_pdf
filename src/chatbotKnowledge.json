@@ -219,31 +219,6 @@
     }
   },
   {
-    "id": "workspaces",
-    "prompts": {
-      "EN": "How do I choose an app feature or workspace?",
-      "VI": "Làm sao chọn tính năng hoặc khu vực làm việc trong ứng dụng?"
-    },
-    "terms": [
-      "choose app feature",
-      "select workspace",
-      "open a feature",
-      "workspace selector",
-      "feature selector",
-      "choose a workspace",
-      "chon tinh nang",
-      "chon khu vuc lam viec",
-      "mo tinh nang",
-      "danh sach tinh nang",
-      "chuyen workspace",
-      "chon cong cu"
-    ],
-    "answer": {
-      "EN": "Choose a workspace from the Home cards or select it in the sidebar. Home returns to the workspace cards. The sidebar shows Home first, Calendar & To-do next, and the other workspaces alphabetically; use the control at the bottom to expand or collapse it.",
-      "VI": "Chọn khu vực làm việc từ các thẻ trên Trang chủ hoặc chọn trong thanh bên. Trang chủ đưa bạn về danh sách thẻ tính năng. Thanh bên hiển thị Trang chủ trước, Lịch & Việc cần làm tiếp theo, rồi các khu vực khác theo thứ tự bảng chữ cái; dùng nút phía dưới để mở rộng hoặc thu gọn thanh bên."
-    }
-  },
-  {
     "id": "word-recent",
     "prompts": {
       "EN": "How do I manage recent Word files?",
@@ -386,6 +361,31 @@
     "answer": {
       "EN": "B6H includes Rename PDFs for verified copies of numbered PDFs, Count number for finding gaps in numbered files, Translation and Signature authentication registers, Copies records, Word document editing, and Settings for language, appearance, folders, and chat preferences. Tell me which feature you want to use.",
       "VI": "B6H có Đổi tên PDF để tạo bản sao đã kiểm tra từ PDF đánh số, Đếm số để tìm số bị thiếu, sổ Dịch thuật và Chứng thực chữ ký, sổ Bản sao, trình soạn thảo Word và Cài đặt ngôn ngữ, giao diện, thư mục cùng tùy chọn trò chuyện. Hãy cho tôi biết bạn muốn dùng tính năng nào."
+    }
+  },
+  {
+    "id": "workspaces",
+    "prompts": {
+      "EN": "How do I choose an app feature or workspace?",
+      "VI": "Làm sao chọn tính năng hoặc khu vực làm việc trong ứng dụng?"
+    },
+    "terms": [
+      "choose app feature",
+      "select workspace",
+      "open a feature",
+      "workspace selector",
+      "feature selector",
+      "choose a workspace",
+      "chon tinh nang",
+      "chon khu vuc lam viec",
+      "mo tinh nang",
+      "danh sach tinh nang",
+      "chuyen workspace",
+      "chon cong cu"
+    ],
+    "answer": {
+      "EN": "Choose a workspace from the Home cards or select it in the sidebar. Home returns to the workspace cards. The sidebar shows Home first, Calendar & To-do next, and the other workspaces alphabetically; use the control at the bottom to expand or collapse it.",
+      "VI": "Chọn khu vực làm việc từ các thẻ trên Trang chủ hoặc chọn trong thanh bên. Trang chủ đưa bạn về danh sách thẻ tính năng. Thanh bên hiển thị Trang chủ trước, Lịch & Việc cần làm tiếp theo, rồi các khu vực khác theo thứ tự bảng chữ cái; dùng nút phía dưới để mở rộng hoặc thu gọn thanh bên."
     }
   }
 ]

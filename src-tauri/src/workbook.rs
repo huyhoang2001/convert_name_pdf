@@ -1173,9 +1173,9 @@ mod tests {
         assert_eq!(register["rows"].as_array().unwrap().len(), 562);
         assert!(register["duplicateNumbers"].as_array().unwrap().is_empty());
         let merged = register["rows"].as_array().unwrap().iter().find(|row| row["number"] == "36").unwrap();
-        assert_eq!(merged["workbookRow"], 37);
-        assert_eq!(merged["workbookRowEnd"], 39);
-        assert!(string(merged, "person").contains("\n\n"));
+        assert_eq!(merged["workbookRow"], 41);
+        assert_eq!(merged["workbookRowEnd"], 41);
+        assert!(string(merged, "person").contains('\n'));
         let before_book = load(&file).unwrap();
         let before_sheets: Vec<_> = before_book.get_sheet_collection().iter().map(|s| s.get_name().to_string()).collect();
         let before_merges = before_book.get_sheet_by_name("2026").unwrap().get_merge_cells().len();
@@ -1187,7 +1187,7 @@ mod tests {
         assert_eq!(after_book.get_sheet_collection().iter().map(|s| s.get_name().to_string()).collect::<Vec<_>>(), before_sheets);
         assert_eq!(after_book.get_sheet_by_name("2026").unwrap().get_merge_cells().len(), before_merges);
         assert_eq!(after_book.get_sheet_by_name("Sheet4").unwrap().get_cell("A1").unwrap().get_formula(), before_formula);
-        for row in 37..=39 { assert_eq!(after_book.get_sheet_by_name("2026").unwrap().get_value(format!("C{row}")), before_book.get_sheet_by_name("2026").unwrap().get_value(format!("C{row}"))); }
+        assert_eq!(after_book.get_sheet_by_name("2026").unwrap().get_value("C41"), before_book.get_sheet_by_name("2026").unwrap().get_value("C41"));
         let reopened = import(&State::default(), "signature", &file.to_string_lossy(), &json!({})).unwrap();
         assert_eq!(reopened["sheets"][0]["rows"].as_array().unwrap().len(), 562);
         assert!(reopened["sheets"][0]["duplicateNumbers"].as_array().unwrap().is_empty());

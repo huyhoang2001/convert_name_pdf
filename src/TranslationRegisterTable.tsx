@@ -1,6 +1,6 @@
 import { memo, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { formatRegisterDate } from './registerDate';
+import { formatRegisterDate } from './registerDate.mjs';
 
 export type TranslationTableRow = { id: string; number: string; date: string; person: string; document: string; languages: string; certifier: string; copies: string; fee: string; notes: string; [key: string]: string };
 const formatFee = (value: string) => { const digits = value.replaceAll(',', '').trim(); if (!digits || !/^\d+$/.test(digits)) return value; const amount = Number(digits); return Number.isSafeInteger(amount) ? amount.toLocaleString('en-US') : digits; };

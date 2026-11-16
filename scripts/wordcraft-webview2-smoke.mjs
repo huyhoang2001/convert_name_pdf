@@ -1,7 +1,16 @@
 import { readZip } from '@docx-editor.dev/core/store';
+import { createHash, randomUUID } from 'node:crypto';
+import { readFile, rename, writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { inventory } from './wordcraft-build-state.mjs';
 
 const endpoint = process.env.WORDCRAFT_CDP_URL ?? 'http://127.0.0.1:9223';
 if (process.env.B6H_WORDCRAFT_SMOKE_ISOLATED !== '1') throw Error('Refusing to reload or edit a WebView2 page without B6H_WORDCRAFT_SMOKE_ISOLATED=1 and an isolated test session.');
+const smokeDir = resolve(process.env.B6H_WORDCRAFT_SMOKE_DIR || '');
+const appData = resolve(process.env.APPDATA || '');
+if (!smokeDir.toLowerCase().includes('b6h-word-verification') || !appData.toLowerCase().includes('b6h-word-verification')) throw Error('Refusing DOCX writes unless both APPDATA and B6H_WORDCRAFT_SMOKE_DIR point inside an isolated b6h-word-verification directory.');
+const projectRoot = fileURLToPath(new URL('..', import.meta.url));
 const pages = await fetch(`${endpoint}/json/list`).then(response => response.json());
 const page = pages.find(item => item.type === 'page' && /(?:localhost:5175|tauri\.localhost)\//.test(item.url));
 if (!page) throw Error('Isolated Tauri WebView2 page is unavailable; launch with remote debugging on port 9223.');
@@ -40,11 +49,12 @@ try {
   await send('Runtime.enable');
   await send('Page.addScriptToEvaluateOnNewDocument', { source: `
     if (window === window.top) {
-      window.__wordcraftSmoke = { ready: 0, wasm: [], snapshots: [] };
+      window.__wordcraftSmoke = { ready: 0, wasm: [], snapshots: [], opened: [] };
       window.addEventListener('message', async event => {
         const data = event.data;
         if (data?.type === 'wordcraft:ready') window.__wordcraftSmoke.ready++;
         if (data?.type === '__wordcraftWasmSmoke') window.__wordcraftSmoke.wasm.push(data.result);
+        if (data?.type === 'wordcraft:open-result' && data.id === 'smoke-open') window.__wordcraftSmoke.opened.push({ opened: data.opened === true, error: data.error ?? '' });
         if (data?.type === 'wordcraft:snapshot-result' && data.id?.startsWith('smoke-')) {
           const bytes = data.bytes instanceof ArrayBuffer ? new Uint8Array(data.bytes) : new Uint8Array(data.bytes.buffer, data.bytes.byteOffset, data.bytes.byteLength);
           const digest = await crypto.subtle.digest('SHA-256', bytes);
@@ -96,6 +106,10 @@ try {
   ` });
   await send('Page.reload');
   await waitFor('!!window.__wordcraftSmoke', 'Smoke instrumentation did not initialize');
+  const priorSettings = await evaluate(`window.__TAURI_INTERNALS__.invoke('get_word_settings')`);
+  const templatesDirectory = join(smokeDir, 'templates');
+  const documentsDirectory = join(smokeDir, 'documents');
+  await evaluate(`window.__TAURI_INTERNALS__.invoke('save_word_settings',{value:{...${JSON.stringify(priorSettings)},templatesDirectory:${JSON.stringify(templatesDirectory)},documentsDirectory:${JSON.stringify(documentsDirectory)}}})`);
   const sriCount = await evaluate(`(async () => {
     const response = await fetch(new URL('wordcraft/index.html', location.href));
     if (!response.ok) throw Error('Wordcraft HTML request failed: ' + response.status);
@@ -117,11 +131,11 @@ try {
   await waitFor(`!!(document.querySelector('.word-home')?.getClientRects().length || document.querySelector('.wordcraft-editor')?.getClientRects().length)`, 'Word workspace did not open');
   await waitFor(`!!document.querySelector('.word-editors.is-prewarming .wordcraft-editor iframe')`, 'Wordcraft prewarm iframe did not mount');
   await waitFor(`window.__wordcraftSmoke.ready === 1`, 'Wordcraft did not prewarm on the home screen');
-  await evaluate(`window.__wordcraftSmoke.prewarmFrame = document.querySelector('.word-editors.is-prewarming .wordcraft-editor iframe')`);
+  await evaluate(`(() => { window.__wordcraftPrewarmFrame = document.querySelector('.word-editors.is-prewarming .wordcraft-editor iframe'); return true; })()`);
   const openStarted = Date.now();
   await evaluate(`(() => { const home = document.querySelector('.word-home'); if (home?.getClientRects().length) home.querySelector('.word-home-head button.primary-button')?.click(); })()`);
   const report = JSON.parse(await waitFor(`(() => { const editor = document.querySelector('.wordcraft-editor.is-ready'); return editor?.getClientRects().length && editor.querySelector('iframe')?.getBoundingClientRect().width > 0 && window.__wordcraftSmoke.ready === 1 && window.__wordcraftSmoke.wasm.some(result => result.success) ? JSON.stringify(window.__wordcraftSmoke) : ''; })()`, 'Wordcraft WASM or renderer did not become ready'));
-  assert(await evaluate(`window.__wordcraftSmoke.prewarmFrame === document.querySelector('.wordcraft-editor.is-ready iframe')`), 'First document did not reuse the prewarmed iframe');
+  assert(await evaluate(`window.__wordcraftPrewarmFrame === document.querySelector('.wordcraft-editor.is-ready iframe')`), 'First document did not reuse the prewarmed iframe');
   const firstNewOpenMs = Date.now() - openStarted;
   const tabSize = await evaluate(`(() => { const tab = document.querySelector('.word-tabbar .word-tabs > div.active'); const box = tab.getBoundingClientRect(); return { width: box.width, height: box.height }; })()`);
   assert(tabSize.width === 154 && tabSize.height === 29, `Unexpected Word tab size: ${JSON.stringify(tabSize)}`);
@@ -145,7 +159,30 @@ try {
   const documentXml = readZip(Uint8Array.from(Buffer.from(after.docx, 'base64'))).entries.get('/word/document.xml');
   assert(new TextDecoder().decode(documentXml).includes('WORDCRAFT_SMOKE'), 'Typed marker is missing from the DOCX snapshot');
   assert(report.wasm.find(item => item.success).imports.some(name => name.includes('/snippets/eframe-')), 'Captured WASM imports omit the eframe snippet namespace');
-  console.log(JSON.stringify({ result: 'passed', servedSriResources: sriCount, imports: report.wasm.find(item => item.success).count, namespaces: report.wasm.find(item => item.success).imports.length, successfulInitializations: 1, readyMessages: report.ready, firstNewOpenMs, tabSize, editedSnapshotChanged: true, backend: await evaluate(`document.querySelector('.wordcraft-editor iframe').dataset.backend`) }));
+  const savedPath = join(documentsDirectory, `Wordcraft Smoke ${Date.now()}.docx`);
+  await evaluate(`window.__TAURI_INTERNALS__.invoke('save_word_document',{input:{bytesBase64:window.__wordcraftSmoke.snapshots.find(snapshot=>snapshot.id==='smoke-edited').docx,name:${JSON.stringify(savedPath.split(/[\\/]/).pop().replace(/\.docx$/i,''))},templateName:'Templates',day:String(new Date().getDate()).padStart(2,'0'),month:String(new Date().getMonth()+1).padStart(2,'0'),targetPath:${JSON.stringify(savedPath)}}})`);
+  await waitFor(`window.__TAURI_INTERNALS__.invoke('get_recent_word_documents').then(rows=>rows.some(row=>row.path.endsWith(${JSON.stringify(savedPath)})))`, 'Wordcraft save did not write a managed DOCX');
+  const savedPackage = readZip(new Uint8Array(await readFile(savedPath)));
+  const savedXml = new TextDecoder().decode(savedPackage.entries.get('/word/document.xml'));
+  assert(savedXml.includes('WORDCRAFT_SMOKE'), 'Saved Wordcraft DOCX did not preserve the edited text');
+  await evaluate(`(async()=>{const payload=await window.__TAURI_INTERNALS__.invoke('open_recent_word_document',{file:${JSON.stringify(savedPath)}});const bytes=Uint8Array.from(atob(payload.bytesBase64),char=>char.charCodeAt(0));document.querySelector('.wordcraft-editor iframe').contentWindow.postMessage({type:'wordcraft:open',id:'smoke-open',name:payload.name,bytes:bytes.buffer},location.origin,[bytes.buffer]);return true})()`);
+  await waitFor(`window.__wordcraftSmoke.opened.some(result=>result.opened)`, 'Wordcraft could not open the saved DOCX');
+  await evaluate(`document.querySelector('button.nav-item[aria-label^="Settings"]')?.click()`);
+  await waitFor('!!document.querySelector(".settings-page")?.getClientRects().length', 'Settings workspace did not open');
+  await evaluate(`document.querySelector('button.nav-item[aria-label^="Word"]')?.click()`);
+  await waitFor(`!!document.querySelector('button.nav-item.active[aria-label^="Word"]') && !document.querySelector('.word-workspace')?.hidden`, 'Word workspace did not resume after switching');
+
+  const runtimePath = join(projectRoot, '.b6h-state', 'wordcraft', 'runtime.json');
+  const runtime = JSON.parse(await readFile(runtimePath, 'utf8'));
+  const runtimeInventory = await inventory(join(projectRoot, 'public', 'wordcraft'));
+  const runtimeHash = createHash('sha256').update(JSON.stringify(runtimeInventory)).digest('hex');
+  if (runtime.inventorySha256 !== runtimeHash || JSON.stringify(runtime.outputInventory) !== JSON.stringify(runtimeInventory)) throw Error('The runtime changed during WebView2 smoke; bridge compatibility was not recorded.');
+  runtime.bridgeCompatibility = 'webview2-smoke-passed';
+  runtime.bridgeSmoke = { verifiedAt: new Date().toISOString(), runtimeInventorySha256: runtimeHash, savedDocxSha256: createHash('sha256').update(await readFile(savedPath)).digest('hex') };
+  const runtimeTemp = `${runtimePath}.${process.pid}.${randomUUID()}.tmp`;
+  await writeFile(runtimeTemp, JSON.stringify(runtime, null, 2), { flag: 'wx' });
+  await rename(runtimeTemp, runtimePath);
+  console.log(JSON.stringify({ result: 'passed', servedSriResources: sriCount, imports: report.wasm.find(item => item.success).count, namespaces: report.wasm.find(item => item.success).imports.length, successfulInitializations: 1, readyMessages: report.ready, firstNewOpenMs, tabSize, docxOpened: true, editedSnapshotChanged: true, docxSaved: true, workspaceSwitched: true, backend: await evaluate(`document.querySelector('.wordcraft-editor iframe').dataset.backend`) }));
 } finally {
   socket.close();
 }

@@ -37,7 +37,7 @@ function useChatDrag() {
 }
 
 type Diagnostic = { context: ChatContext; at: number };
-export default function HelpChatbot({ language, keyConfigured, selector, settingsTab }: { language: ChatLanguage; keyConfigured: boolean | null; selector: string; settingsTab: string }) {
+export default function HelpChatbot({ language, keyConfigured, selector, settingsTab, visible = true }: { language: ChatLanguage; keyConfigured: boolean | null; selector: string; settingsTab: string; visible?: boolean }) {
   const [open, setOpen] = useState(false), [input, setInput] = useState('');
   const [session, setSession] = useState<ChatSession>(() => emptyChatSession());
   const [mode, setMode] = useState<'offline' | 'online'>('offline');
@@ -47,6 +47,7 @@ export default function HelpChatbot({ language, keyConfigured, selector, setting
   const launcherRef = useRef<HTMLButtonElement>(null), panelRef = useRef<HTMLElement>(null), inputRef = useRef<HTMLInputElement>(null), endRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef(session), busyRef = useRef(false), epoch = useRef(0), writeQueue = useRef<Promise<void>>(Promise.resolve()), diagnostic = useRef<Diagnostic | null>(null), activeRequest = useRef<{ id: string; mode: ChatMessage['mode'] } | null>(null);
   const updateSession = (value: ChatSession) => { sessionRef.current = value; setSession(value); };
+  useEffect(() => { if (!visible) setOpen(false); }, [visible]);
   const queueWrite = (write: () => Promise<void>) => {
     const next = writeQueue.current.catch(() => undefined).then(write);
     writeQueue.current = next;
@@ -184,7 +185,7 @@ export default function HelpChatbot({ language, keyConfigured, selector, setting
   };
 
   const displayMessage = (message: ChatMessage) => message.status === 'interrupted' ? labels.interrupted : message.status === 'pending' && !message.text ? modeLabels.sending : message.text;
-  return <>
+  return <div hidden={!visible}>
     <button ref={launcherRef} type="button" className="chat-launcher" style={{ left: launcherPosition.x, top: launcherPosition.y }} aria-label={open ? labels.close : labels.open} aria-expanded={open} aria-controls="help-chat-panel" title={`${open ? labels.close : labels.open} · ${labels.drag}`} onPointerDown={drag.down} onPointerMove={drag.move} onPointerUp={drag.up} onClick={() => { if (drag.moved.current) { drag.moved.current = false; return; } setOpen(value => !value); }}><img src="./chatbot.ico" alt="" /></button>
     {open && <section ref={panelRef} id="help-chat-panel" className="chat-panel" style={{ left: drag.position.x, top: drag.position.y }} role="dialog" aria-label={labels.title}>
       <header className="chat-header" title={labels.drag} onPointerDown={drag.down} onPointerMove={drag.move} onPointerUp={drag.up}>
@@ -200,7 +201,7 @@ export default function HelpChatbot({ language, keyConfigured, selector, setting
       <div className="chat-suggestions">{faqs.filter(faq => ['rename', 'count', 'word-multiple-files', 'settings'].includes(faq.id)).map(faq => <button key={faq.id} type="button" disabled={busy || !ready || !canWrite || session.userQuestionCount >= 20} onClick={() => void send(faq.prompts[language])}>{faq.prompts[language]}</button>)}</div>
       <form className="chat-compose" onSubmit={event => { event.preventDefault(); void send(input); }}><input ref={inputRef} value={input} maxLength={1000} onChange={event => setInput(event.target.value)} placeholder={labels.placeholder} aria-label={labels.placeholder} disabled={busy || !ready || !canWrite || session.userQuestionCount >= 20} /><button className="primary-button" type="submit" disabled={!input.trim() || busy || !ready || !canWrite || session.userQuestionCount >= 20}>{busy ? modeLabels.sending : labels.send}</button></form>
     </section>}
-  </>;
+  </div>;
 }
 
 function safeError(reason: unknown) {

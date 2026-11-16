@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, writeFile, readdir, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+if (process.env.B6H_NATIVE_SMOKE_ISOLATED !== '1' || !resolve(process.env.APPDATA || '').toLowerCase().includes('b6h-word-verification')) throw Error('Refusing native smoke operations without an isolated B6H test profile.');
 const root = await mkdtemp(join(tmpdir(), 'b6h-native-smoke-'));
 const source = join(root, 'source');
 const backup = join(root, 'backup');
@@ -15,9 +16,10 @@ await Promise.all(files.map((name, index) => writeFile(join(source, name), `disp
 const digest = async file => createHash('sha256').update(await readFile(file)).digest('hex');
 const original = await Promise.all(files.map(name => digest(join(source, name))));
 
-const pages = await fetch('http://127.0.0.1:9222/json/list').then(response => response.json());
-const page = pages.find(item => item.type === 'page' && item.url.startsWith('http://localhost:5175/'));
-if (!page) throw Error('Tauri development WebView is unavailable');
+const endpoint = process.env.B6H_NATIVE_SMOKE_CDP_URL ?? 'http://127.0.0.1:9222';
+const pages = await fetch(`${endpoint}/json/list`).then(response => response.json());
+const page = pages.find(item => item.type === 'page' && /(?:localhost:5175|tauri\.localhost)\//.test(item.url));
+if (!page) throw Error('Isolated Tauri WebView is unavailable');
 const socket = new WebSocket(page.webSocketDebuggerUrl);
 await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
 let nextId = 0;
@@ -96,4 +98,5 @@ try {
   console.log(JSON.stringify({ result: 'passed', source, backupPath: result.backupPath, outputPath: result.outputPath, sourceHashesUnchanged: true, backupBeforeOutput: true, tokenRejected, unsafeChatRejected, reportPath: result.reportPath, workbookParity: true, signatureWorkbook: true, copiesWorkbook: true }));
 } finally {
   socket.close();
+  await rm(root, { recursive: true, force: true });
 }

@@ -1595,6 +1595,25 @@ pub fn save_theme(value: &str) -> Result<String, String> {
     write("settings.json", &Value::Object(data))?;
     Ok(value.into())
 }
+pub fn signature_stt_mode() -> Result<String, String> {
+    Ok(if settings()?.get("signatureSttMode").and_then(Value::as_str) == Some("manual") { "manual" } else { "auto" }.into())
+}
+pub fn save_signature_stt_mode(value: &str) -> Result<String, String> {
+    if !["auto", "manual"].contains(&value) { return Err("Unsupported STT mode.".into()); }
+    let mut data = settings()?;
+    data.insert("signatureSttMode".into(), json!(value));
+    write("settings.json", &Value::Object(data))?;
+    Ok(value.into())
+}
+pub fn chatbot_visible() -> Result<bool, String> {
+    Ok(settings()?.get("chatbotVisible").and_then(Value::as_bool).unwrap_or(true))
+}
+pub fn save_chatbot_visible(value: bool) -> Result<bool, String> {
+    let mut data = settings()?;
+    data.insert("chatbotVisible".into(), json!(value));
+    write("settings.json", &Value::Object(data))?;
+    Ok(value)
+}
 pub fn word_settings() -> Result<Value, String> {
     let home = PathBuf::from(std::env::var_os("USERPROFILE").ok_or("USERPROFILE is unavailable")?)
         .join("Documents")

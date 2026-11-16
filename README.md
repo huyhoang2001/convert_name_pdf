@@ -42,6 +42,10 @@ Create categories in the mini-calendar sidebar. The category list keeps its head
 
 Use **Export backup** and **Import backup** in the Calendar toolbar to save or restore Calendar JSON data, including category colors and task/event metadata. Keep a backup before replacing data with an imported file.
 
+## Signature Authentication guide
+
+Signature registers retain their imported STT values and gaps. Auto mode continues above the highest established STT; Manual mode can enter an unused number, including a gap. A duplicate prompts before insertion, and matching rows stay grouped and highlighted. Authenticated-document text preserves line breaks and is written in uppercase. Previously used documents can be selected from suggestions; search matches are highlighted in the table. Excel output uses 14-point register text and `dd/mm/yyyy` dates.
+
 ## Safety and local data
 
 B6H stores settings and application data under `%APPDATA%\SAFE PDF RENAME`. Calendar data is JSON (`calendar.json`); no database engine is required. Calendar range queries limit the records sent to the interface while preserving older records in the JSON file. Existing records are not removed when they leave the Board’s 72-hour Done window.
@@ -84,7 +88,9 @@ cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1
 
 `npm.cmd test` runs the Node test suite. `npm.cmd run web:build` checks the bundled Wordcraft assets, type-checks TypeScript, and builds the frontend. `cargo test` runs Rust tests. The `native:smoke` and `wordcraft:webview2-smoke` scripts are available for local Windows smoke checks where their platform requirements are met.
 
-`npm.cmd run wordcraft:build` validates and records the existing `public/wordcraft` runtime bundle without requiring upstream source provenance. Runtime inventory is stored under the ignored `.b6h-state/wordcraft/runtime.json`; source-to-artifact provenance is kept separately and written only after a verified source build. Ordinary `build`, `web:dev`, and Tauri frontend hooks do not compile Wordcraft. For an explicitly approved source build, review the selected checkout (default `wordcraft-upstream/` here or in its parent; override with `B6H_WORDCRAFT_UPSTREAM`), then run `npm.cmd run wordcraft:source-build`.
+`npm.cmd run wordcraft:build` validates and reuses the existing `public/wordcraft` runtime without compiling or synchronizing it. Source-to-runtime provenance is recorded only after a source build passes bundle validation; existing runtime assets without that evidence remain unlinked. Ordinary `build`, `web:dev`, and Tauri frontend hooks do not compile Wordcraft. `npm.cmd run wordcraft:source-build` fingerprints the current checkout, bridge patch, recipe, and toolchain before reusing or rebuilding in `wordcraft-upstream/target`.
+
+Wordcraft Cargo cache builds stop before compilation when the target plus a conservative 3 GiB growth allowance would exceed `B6H_WORDCRAFT_TARGET_LIMIT_GIB` (default 16 GiB). Inspect cache categories with `npm.cmd run wordcraft:cache`; it is dry-run only. `npm.cmd run wordcraft:cache -- --apply` offers only Cargo incremental directories and requires an interactive typed confirmation. Dependency artifacts, fingerprints, build scripts, and runtime assets are never selected for cleanup.
 
 ## Project layout
 

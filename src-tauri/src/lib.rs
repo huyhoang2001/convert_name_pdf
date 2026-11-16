@@ -155,6 +155,22 @@ fn save_theme(theme: String) -> Result<String, String> {
     storage::save_theme(&theme)
 }
 #[tauri::command]
+fn get_signature_stt_mode() -> Result<String, String> {
+    storage::signature_stt_mode()
+}
+#[tauri::command]
+fn save_signature_stt_mode(mode: String) -> Result<String, String> {
+    storage::save_signature_stt_mode(&mode)
+}
+#[tauri::command]
+fn get_chatbot_visible() -> Result<bool, String> {
+    storage::chatbot_visible()
+}
+#[tauri::command]
+fn save_chatbot_visible(visible: bool) -> Result<bool, String> {
+    storage::save_chatbot_visible(visible)
+}
+#[tauri::command]
 fn get_signature_settings() -> Result<serde_json::Value, String> {
     storage::signature_settings()
 }
@@ -362,15 +378,9 @@ async fn refresh_signature_workbook(
 async fn save_signature_workbook(
     input: serde_json::Value,
     app: tauri::AppHandle,
-) -> Result<usize, String> {
+) -> Result<serde_json::Value, String> {
     run_workbook(app, move |state| {
-        workbook::save(
-            state,
-            "signature",
-            &input,
-            &storage::signature_settings()?,
-            "VI",
-        )
+        Ok(workbook::save_signature(state, &input, &storage::signature_settings()?))
     })
     .await
 }
@@ -845,6 +855,10 @@ pub fn run() {
             save_language,
             get_theme,
             save_theme,
+            get_signature_stt_mode,
+            save_signature_stt_mode,
+            get_chatbot_visible,
+            save_chatbot_visible,
             get_signature_settings,
             save_signature_settings,
             get_selector_settings,

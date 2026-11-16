@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fingerprintInputs, inventory, matchesInventory, selectAction } from '../scripts/wordcraft-build-state.mjs';
+import { fingerprintInputs, inventory, matchesInventory, publishDirectory, selectAction, selectBuildAction } from '../scripts/wordcraft-build-state.mjs';
 
 async function withTree(run) {
   const root = await mkdtemp(join(tmpdir(), 'wordcraft-state-'));
@@ -55,6 +55,9 @@ test('verified unchanged Wordcraft output is reused, while deployed output allow
   assert.equal(selectAction('same', manifest, false, true), 'SYNC ONLY');
   assert.equal(selectAction('same', manifest, false, false), 'BUILD REQUIRED');
   assert.equal(selectAction('changed', manifest, true, true), 'BUILD REQUIRED');
+  assert.equal(selectAction('same', { ...manifest, version: 2 }, true, true), 'REUSE');
+  assert.equal(selectBuildAction('same', null, true, true, false), 'UNKNOWN');
+  assert.equal(selectBuildAction('same', null, true, true, true), 'BUILD REQUIRED');
 });
 
 test('output inventory rejects missing and corrupted files', async () => {
@@ -66,5 +69,20 @@ test('output inventory rejects missing and corrupted files', async () => {
     assert.equal(await matchesInventory(root, expected), false);
     await rm(join(root, 'wordcraft.js'));
     assert.equal(await matchesInventory(root, expected), false);
+  });
+});
+
+test('failed runtime validation restores the previous runtime and removes the failed candidate', async () => {
+  await withTree(async root => {
+    const current = join(root, 'runtime');
+    const staged = join(root, 'staged');
+    const backup = join(root, 'previous');
+    await mkdir(current);
+    await mkdir(staged);
+    await writeFile(join(current, 'runtime.js'), 'known-good');
+    await writeFile(join(staged, 'runtime.js'), 'invalid');
+    await assert.rejects(publishDirectory(current, staged, backup, async () => { throw Error('validation failed'); }, async () => {}), /validation failed/);
+    assert.equal(await readFile(join(current, 'runtime.js'), 'utf8'), 'known-good');
+    assert.deepEqual((await readdir(root)).sort(), ['runtime']);
   });
 });

@@ -68,6 +68,7 @@ jobs:
           tag_name: ${{ inputs.release_tag || github.ref_name }}
           name: B6H ${{ inputs.release_tag || github.ref_name }}
           body_path: RELEASE_NOTES.md
+          draft: true
           files: |
             ${{ env.RELEASE_EXE }}
             ${{ env.RELEASE_SHA256 }}

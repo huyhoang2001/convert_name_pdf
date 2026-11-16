@@ -1,16 +1,16 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { cp, mkdir, mkdtemp, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { delimiter, dirname, join, relative, resolve, sep } from 'node:path';
+import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { fingerprintInputs, inventory, matchesInventory, selectAction } from './wordcraft-build-state.mjs';
+import { fingerprintInputs, inventory, matchesInventory, publishDirectory, selectBuildAction } from './wordcraft-build-state.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const configuredUpstream = process.env.B6H_WORDCRAFT_UPSTREAM;
 const upstreamCandidates = configuredUpstream
   ? [resolve(root, configuredUpstream)]
-  : [join(root, 'wordcraft-upstream'), resolve(root, '..', 'wordcraft-upstream')];
+  : [join(root, 'wordcraft-upstream')];
 const upstream = upstreamCandidates.find(path => existsSync(path)) ?? upstreamCandidates[0];
 const built = join(upstream, 'dist/web');
 const output = join(root, 'public/wordcraft');
@@ -20,13 +20,15 @@ const runtimeManifestPath = join(stateDir, 'runtime.json');
 const manifestPath = join(stateDir, 'source-provenance.json');
 const lockPath = join(stateDir, 'build.lock');
 const patchPath = join(root, 'wordcraft-bridge.patch');
+const targetDir = resolve(join(upstream, 'target'));
+if (process.env.CARGO_TARGET_DIR && resolve(process.env.CARGO_TARGET_DIR) !== targetDir) throw Error(`Wordcraft builds must reuse ${targetDir}; refusing CARGO_TARGET_DIR=${process.env.CARGO_TARGET_DIR}`);
+const targetLimitGiB = Number(process.env.B6H_WORDCRAFT_TARGET_LIMIT_GIB || 16);
 const checkPath = process.argv.find(arg => arg.startsWith('--check='))?.slice(8);
 const checkOnly = process.argv.includes('--check') || Boolean(checkPath);
-const expectedCommit = '08afab50b6a1ed19f9af55bb9f74d18f5e17bfa0';
 
 async function saveManifest(inputFingerprint, recipe, outputInventory) {
   const manifestTemp = `${manifestPath}.${process.pid}.${randomUUID()}.tmp`;
-  const manifest = { version: 1, verified: true, inputFingerprint, recipe, outputInventory, verifiedAt: new Date().toISOString() };
+  const manifest = { version: 2, verified: true, inputFingerprint, sourceCommit: recipe.sourceCommit, recipe, outputInventory, outputInventorySha256: createHash('sha256').update(JSON.stringify(outputInventory)).digest('hex'), verification: 'structure+sri+wasm-imports', verifiedAt: new Date().toISOString() };
   try {
     await writeFile(manifestTemp, JSON.stringify(manifest, null, 2), { flag: 'wx' });
     await rename(manifestTemp, manifestPath);
@@ -35,18 +37,22 @@ async function saveManifest(inputFingerprint, recipe, outputInventory) {
   }
 }
 
-async function saveRuntimeManifest(outputInventory) {
-  const manifest = {
-    version: 1,
-    validated: true,
-    inventorySha256: createHash('sha256').update(JSON.stringify(outputInventory)).digest('hex'),
-    outputInventory,
-    validation: 'structure+sri+wasm-imports',
-    bridgeCompatibility: 'not-runtime-smoke-verified',
-    sourceProvenance: 'not-claimed',
-  };
+async function saveRuntimeManifest(outputInventory, sourceProvenance) {
+  const outputHash = createHash('sha256').update(JSON.stringify(outputInventory)).digest('hex');
   let previous;
   try { previous = JSON.parse(await readFile(runtimeManifestPath, 'utf8')); } catch {}
+  const manifest = {
+    version: 2,
+    validated: true,
+    inventorySha256: outputHash,
+    outputInventory,
+    validation: 'structure+sri+wasm-imports',
+    sourceProvenance: sourceProvenance?.outputInventorySha256 === outputHash
+      ? { inputFingerprint: sourceProvenance.inputFingerprint, sourceCommit: sourceProvenance.sourceCommit, verifiedAt: sourceProvenance.verifiedAt }
+      : previous?.inventorySha256 === outputHash && previous.sourceProvenance && typeof previous.sourceProvenance === 'object' ? previous.sourceProvenance : null,
+    bridgeCompatibility: previous?.inventorySha256 === outputHash && previous.bridgeCompatibility === 'webview2-smoke-passed' ? previous.bridgeCompatibility : 'requires-webview2-smoke',
+    bridgeSmoke: previous?.inventorySha256 === outputHash ? previous.bridgeSmoke ?? null : null,
+  };
   if (JSON.stringify(previous) === JSON.stringify(manifest)) return;
   await mkdir(stateDir, { recursive: true });
   const temp = `${runtimeManifestPath}.${process.pid}.${randomUUID()}.tmp`;
@@ -58,15 +64,26 @@ async function saveRuntimeManifest(outputInventory) {
   }
 }
 
+async function directoryBytes(path) {
+  let bytes = 0;
+  for (const file of await filesUnder(path)) bytes += (await stat(file)).size;
+  return bytes;
+}
+
+function targetLimitBytes() {
+  if (!Number.isFinite(targetLimitGiB) || targetLimitGiB < 1) throw Error('B6H_WORDCRAFT_TARGET_LIMIT_GIB must be a number of at least 1');
+  return Math.floor(targetLimitGiB * 1024 ** 3);
+}
+
 async function executableHash(command) {
   const extensions = process.platform === 'win32' ? ['', ...(process.env.PATHEXT || '.EXE;.CMD;.BAT;.COM').split(';')] : [''];
-  for (const directory of (process.env.PATH || '').split(delimiter)) {
-    for (const extension of extensions) {
-      const path = join(directory.replace(/^"|"$/g, ''), `${command}${extension}`);
+  const paths = isAbsolute(command) || command.includes(sep)
+    ? extensions.map(extension => `${command}${extension}`)
+    : (process.env.PATH || '').split(delimiter).flatMap(directory => extensions.map(extension => join(directory.replace(/^"|"$/g, ''), `${command}${extension}`)));
+  for (const path of paths) {
       try {
         if ((await stat(path)).isFile()) return createHash('sha256').update(await readFile(path)).digest('hex');
       } catch {}
-    }
   }
   return 'missing';
 }
@@ -226,7 +243,7 @@ if (checkOnly) {
   }
   let manifest;
   try { manifest = JSON.parse(await readFile(manifestPath, 'utf8')); } catch {}
-  if (manifest?.version !== 1 || manifest.verified !== true) console.log(`Wordcraft source provenance: UNKNOWN; explicit source build requested for ${upstream}`);
+  if (![1, 2].includes(manifest?.version) || manifest.verified !== true) console.log(`Wordcraft source provenance: UNKNOWN; explicit source build requested for ${upstream}`);
   await mkdir(stateDir, { recursive: true });
   let lock;
   try {
@@ -240,12 +257,7 @@ if (checkOnly) {
   try {
     await lock.writeFile(JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }));
     const revision = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: upstream, encoding: 'utf8' });
-    if (revision.status !== 0 || revision.stdout.trim() !== expectedCommit) {
-      if (explicitBuild) throw Error(`Wordcraft source must be ${expectedCommit}`);
-      console.log(`Wordcraft decision: UNKNOWN; source commit is not ${expectedCommit}`);
-      process.exitCode = 2;
-      return;
-    }
+    if (revision.status !== 0 || !/^[0-9a-f]{40}$/i.test(revision.stdout.trim())) throw Error('Could not identify the existing Wordcraft checkout commit');
     const patchPresent = spawnSync('git', ['apply', '--check', '--reverse', patchPath], { cwd: upstream, stdio: 'ignore' }).status === 0;
     if (!patchPresent) {
       if (explicitBuild) throw Error('The existing Wordcraft bridge patch is not present in wordcraft-upstream');
@@ -259,20 +271,40 @@ if (checkOnly) {
       const result = spawnSync(command, args, { cwd: upstream, encoding: 'utf8', windowsHide: true });
       return result.status === 0 ? result.stdout.trim() : `unavailable:${result.error?.code ?? result.status}`;
     };
+    const wasmBindgenLock = (await readFile(join(upstream, 'Cargo.lock'), 'utf8')).match(/\[\[package\]\]\s+name = "wasm-bindgen"\s+version = "([^"]+)"/);
+    const trunkTools = spawnSync(trunk, ['tools', 'show'], { cwd: join(upstream, 'apps/wordcraft-web'), encoding: 'utf8', windowsHide: true });
+    if (!wasmBindgenLock || trunkTools.status !== 0) throw Error('Could not establish the Wordcraft wasm-bindgen or Trunk tool configuration');
+    const trunkVersion = name => trunkTools.stdout.match(new RegExp(`^${name}\\s*\\r?\\n\\s+Installed Version: [^\\r\\n]+\\r?\\n\\s+Default Version: ([^\\r\\n]+)`, 'm'))?.[1]?.trim();
+    const wasmBindgenVersion = process.env.TRUNK_TOOLS_WASM_BINDGEN || wasmBindgenLock[1];
+    const wasmOptVersion = process.env.TRUNK_TOOLS_WASM_OPT || trunkVersion('wasm-opt');
+    if (!wasmOptVersion) throw Error('Could not determine the effective Trunk wasm-opt version');
+    const trunkCache = process.platform === 'win32'
+      ? join(process.env.LOCALAPPDATA || join(process.env.USERPROFILE ?? root, 'AppData/Local'), 'trunkrs/trunk/cache')
+      : join(process.env.XDG_CACHE_HOME || join(process.env.HOME ?? root, '.cache'), 'trunkrs/trunk/cache');
+    const toolPath = async (name, selectedVersion) => {
+      const executable = process.platform === 'win32' ? `${name}.exe` : name;
+      const cached = join(trunkCache, `${name}-${selectedVersion}`, ...(name === 'wasm-opt' ? ['bin'] : []), executable);
+      if (await stat(cached).then(info => info.isFile(), () => false)) return cached;
+      if (await executableHash(executable) !== 'missing' && version(executable, ['--version']).includes(selectedVersion.replace(/^version_/, ''))) return executable;
+      throw Error(`Could not locate Trunk's selected ${name} ${selectedVersion} binary; refusing unverifiable Wordcraft provenance`);
+    };
+    const wasmBindgenPath = await toolPath('wasm-bindgen', wasmBindgenVersion);
+    const wasmOptPath = await toolPath('wasm-opt', wasmOptVersion);
     const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => ['PATH', 'PATHEXT', 'NODE_OPTIONS', 'SOURCE_DATE_EPOCH', 'TZ', 'LANG', 'LC_ALL', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'CC', 'AR', 'CFLAGS', 'LDFLAGS'].includes(key) || /^(CARGO_|RUST|RUSTUP_|TRUNK_|CRAFT_|WASM_)/.test(key)).sort(([a], [b]) => a.localeCompare(b)));
     const recipe = {
       sourceCommit: revision.stdout.trim(),
       upstreamPath: relative(root, upstream).split(sep).join('/') || '.',
       node: process.version,
-      pipeline: 1,
+      pipeline: 2,
       command: `${trunk} build --release`,
       cwd: 'apps/wordcraft-web',
+      cargoTargetDir: relative(upstream, targetDir).split(sep).join('/') || '.',
       tools: {
         trunkBinarySha256: await executableHash(trunk),
         cargo: version('cargo', ['--version']),
         rustc: version('rustc', ['-Vv']),
-        wasmBindgen: version(process.platform === 'win32' ? 'wasm-bindgen.exe' : 'wasm-bindgen', ['--version']),
-        wasmOpt: version(process.platform === 'win32' ? 'wasm-opt.exe' : 'wasm-opt', ['--version']),
+        wasmBindgen: { selection: process.env.TRUNK_TOOLS_WASM_BINDGEN ? 'TRUNK_TOOLS_WASM_BINDGEN' : 'Cargo.lock', version: version(wasmBindgenPath, ['--version']), sha256: await executableHash(wasmBindgenPath) },
+        wasmOpt: { selection: process.env.TRUNK_TOOLS_WASM_OPT ? 'TRUNK_TOOLS_WASM_OPT' : 'Trunk default', version: version(wasmOptPath, ['--version']), sha256: await executableHash(wasmOptPath) },
       },
       environmentFingerprint: createHash('sha256').update(JSON.stringify(environment)).digest('hex'),
     };
@@ -284,8 +316,12 @@ if (checkOnly) {
     const fingerprint = await fingerprintInputs(upstream, fingerprintFiles, recipe);
     const outputMatches = await matchesInventory(output, manifest?.outputInventory);
     const distMatches = outputMatches ? false : await matchesInventory(deployed, manifest?.outputInventory);
-    const action = selectAction(fingerprint, manifest, outputMatches, distMatches);
+    const action = selectBuildAction(fingerprint, manifest, outputMatches, distMatches, explicitBuild);
     if (action === 'REUSE') {
+      const outputInventory = await inventory(output);
+      const provenance = { ...manifest, version: 2, sourceCommit: revision.stdout.trim(), recipe, outputInventory, outputInventorySha256: createHash('sha256').update(JSON.stringify(outputInventory)).digest('hex'), verification: manifest.verification ?? 'structure+sri+wasm-imports' };
+      await saveManifest(fingerprint, recipe, outputInventory);
+      await saveRuntimeManifest(outputInventory, provenance);
       console.log(`Wordcraft artifacts reused: ${output} (${fingerprint.slice(0, 20)}); no compile or sync`);
       return;
     }
@@ -293,6 +329,17 @@ if (checkOnly) {
       console.log(`Wordcraft decision: ${action}; this source/output combination has no reusable verification; no build or synchronization performed. Use --build only after explicit approval.`);
       process.exitCode = 2;
       return;
+    }
+
+    let targetBytesBefore;
+    if (action === 'BUILD REQUIRED') {
+      if (!await stat(targetDir).then(info => info.isDirectory(), () => false)) throw Error(`The existing Wordcraft Cargo target is missing; refusing to create another target directory: ${targetDir}`);
+      targetBytesBefore = await directoryBytes(targetDir);
+      const estimatedGrowth = Math.max(3 * 1024 ** 3, await directoryBytes(join(targetDir, 'wasm32-unknown-unknown', 'release')));
+      const limit = targetLimitBytes();
+      if (targetBytesBefore + estimatedGrowth > limit) {
+        throw Error(`Wordcraft Cargo target is ${(targetBytesBefore / 1024 ** 3).toFixed(2)} GiB; the ${targetLimitGiB} GiB cache limit does not leave the estimated ${(estimatedGrowth / 1024 ** 3).toFixed(2)} GiB build headroom. Review the dry-run cache cleanup before rebuilding.`);
+      }
     }
 
     stagingRoot = await mkdtemp(join(root, 'public/.wordcraft-stage-'));
@@ -303,8 +350,11 @@ if (checkOnly) {
       await prepare(staging, false);
     } else {
       console.log('Wordcraft inputs or verified outputs changed; building the release bundle');
-      const build = spawnSync(trunk, ['build', '--release'], { cwd: join(upstream, 'apps/wordcraft-web'), stdio: 'inherit', windowsHide: true });
+      const build = spawnSync(trunk, ['build', '--release'], { cwd: join(upstream, 'apps/wordcraft-web'), env: { ...process.env, CARGO_TARGET_DIR: targetDir }, stdio: 'inherit', windowsHide: true });
       if (build.status !== 0) throw Error('Trunk failed to build patched Wordcraft');
+      const targetBytesAfter = await directoryBytes(targetDir);
+      console.log(`Wordcraft Cargo target: ${(targetBytesBefore / 1024 ** 3).toFixed(2)} GiB -> ${(targetBytesAfter / 1024 ** 3).toFixed(2)} GiB (limit ${targetLimitGiB} GiB)`);
+      if (targetBytesAfter > targetLimitBytes()) console.warn('Wordcraft Cargo target is over its configured limit; no artifacts were removed. Run the cache dry-run and approve a targeted cleanup if appropriate.');
       if (await fingerprintInputs(upstream, fingerprintFiles, recipe) !== fingerprint) throw Error('Wordcraft inputs changed during compilation; staged output was discarded');
       try { await cp(output, staging, { recursive: true }); }
       catch (error) { if (error.code !== 'ENOENT') throw error; await mkdir(staging, { recursive: true }); }
@@ -315,37 +365,26 @@ if (checkOnly) {
 
     const stagedInventory = await inventory(staging);
     const currentMatches = await matchesInventory(output, stagedInventory);
-    let backup;
     if (action === 'SYNC ONLY' || !currentMatches) {
       const backupPath = join(stagingRoot, 'previous');
-      try { await rename(output, backupPath); backup = backupPath; }
-      catch (error) { if (error.code !== 'ENOENT') throw error; }
+      const provenance = { version: 2, verified: true, inputFingerprint: fingerprint, sourceCommit: revision.stdout.trim(), recipe, outputInventory: stagedInventory, outputInventorySha256: createHash('sha256').update(JSON.stringify(stagedInventory)).digest('hex'), verification: 'structure+sri+wasm-imports', verifiedAt: new Date().toISOString() };
       try {
-        await rename(staging, output);
-        await prepare(output, false);
-        if (JSON.stringify(await inventory(output)) !== JSON.stringify(stagedInventory)) throw Error('Published Wordcraft assets differ from the validated staging bundle');
-        await saveManifest(fingerprint, recipe, stagedInventory);
-        await saveRuntimeManifest(stagedInventory);
+        await publishDirectory(output, staging, backupPath,
+          async path => {
+            await prepare(path, false);
+            if (JSON.stringify(await inventory(path)) !== JSON.stringify(stagedInventory)) throw Error('Published Wordcraft assets differ from the validated staging bundle');
+          },
+          async () => { await saveManifest(fingerprint, recipe, stagedInventory); await saveRuntimeManifest(stagedInventory, provenance); });
       } catch (error) {
-        if (backup) {
-          try {
-            const failedPath = join(stagingRoot, 'failed');
-            try { await rename(output, failedPath); } catch (moveError) { if (moveError.code !== 'ENOENT') throw moveError; }
-            await rename(backup, output);
-            if (await stat(failedPath).then(() => true, () => false)) await rm(failedPath, { recursive: true, force: true });
-          } catch (rollbackError) {
-            preserveRecovery = true;
-            throw new AggregateError([error, rollbackError], `Could not restore the previous Wordcraft bundle; recovery files remain under ${stagingRoot}`);
-          }
-        }
+        if (error instanceof AggregateError) preserveRecovery = true;
         throw error;
       }
     } else {
       console.log('Generated Wordcraft bundle matches deployed assets; no synchronization needed');
+      const provenance = { version: 2, verified: true, inputFingerprint: fingerprint, sourceCommit: revision.stdout.trim(), recipe, outputInventory: stagedInventory, outputInventorySha256: createHash('sha256').update(JSON.stringify(stagedInventory)).digest('hex'), verification: 'structure+sri+wasm-imports', verifiedAt: new Date().toISOString() };
       await saveManifest(fingerprint, recipe, stagedInventory);
-      await saveRuntimeManifest(stagedInventory);
+      await saveRuntimeManifest(stagedInventory, provenance);
     }
-    if (backup) await rm(backup, { recursive: true, force: true });
     console.log(`Wordcraft build state saved: ${manifestPath}`);
   } finally {
     if (stagingRoot && !preserveRecovery) await rm(stagingRoot, { recursive: true, force: true });

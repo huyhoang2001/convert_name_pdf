@@ -12,7 +12,7 @@ metadata:
 Activate before any B6H code edit or command that may generate artifacts. This skill governs ordinary authorized coding and local validation, not authority to change unrelated infrastructure. Use universal-safe-cleanup for disk audit and separately authorized cleanup. Never treat this skill as permission to delete files, change Cargo profiles, install dependencies, alter global settings, or package releases. If the agent host does not automatically select skills, explicitly invoke this skill in each new session; installation alone is not enforcement.
 
 ### Permanent project policy
-- The sole permanent B6H project root is `C:\Users\hinam\Desktop\try 1`. Resolve all B6H commands, paths, metadata, and build state from that existing root.
+- The canonical local B6H project root for this checkout is `C:\Users\hinam\Desktop\convert_name_pdf-main`. Resolve B6H commands, paths, metadata, and build state from this existing root.
 - Never create, clone, initialize, or copy another B6H source project for a new version. Update version metadata in this same project only when the user authorizes a version update; generated executable and distribution filenames may include a release version.
 - Keep `wordcraft-upstream` as the existing checkout under or beside the permanent root, resolve it configurably, and preserve its working-tree changes. Never create another upstream clone or Cargo target directory.
 

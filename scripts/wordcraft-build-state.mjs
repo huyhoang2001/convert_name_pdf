@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { lstat, readFile, readdir, stat } from 'node:fs/promises';
+import { lstat, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 
 const excludedDirectories = new Set(['.git', 'target', 'dist', 'node_modules']);
@@ -47,11 +47,16 @@ export async function fingerprintInputs(root, extraFiles, recipe) {
 }
 
 export function selectAction(fingerprint, manifest, publicMatches, distMatches) {
-  if (manifest?.version !== 1 || manifest.verified !== true) return 'UNKNOWN';
+  if (![1, 2].includes(manifest?.version) || manifest.verified !== true) return 'UNKNOWN';
   if (manifest.inputFingerprint !== fingerprint) return 'BUILD REQUIRED';
   if (publicMatches) return 'REUSE';
   if (distMatches) return 'SYNC ONLY';
   return 'BUILD REQUIRED';
+}
+
+export function selectBuildAction(fingerprint, manifest, publicMatches, distMatches, explicitBuild) {
+  const action = selectAction(fingerprint, manifest, publicMatches, distMatches);
+  return explicitBuild && action === 'UNKNOWN' ? 'BUILD REQUIRED' : action;
 }
 
 export async function matchesInventory(dir, expected) {
@@ -62,4 +67,28 @@ export async function matchesInventory(dir, expected) {
   } catch {
     return false;
   }
+}
+
+export async function publishDirectory(current, staged, backup, validate, commit) {
+  let hasBackup = false;
+  try { await rename(current, backup); hasBackup = true; }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  try {
+    await rename(staged, current);
+    await validate(current);
+    await commit();
+  } catch (error) {
+    if (hasBackup) {
+      try {
+        const failed = `${backup}.failed`;
+        try { await rename(current, failed); } catch (moveError) { if (moveError.code !== 'ENOENT') throw moveError; }
+        await rename(backup, current);
+        if (await stat(failed).then(() => true, () => false)) await rm(failed, { recursive: true });
+      } catch (rollbackError) {
+        throw new AggregateError([error, rollbackError], `Could not restore the previous runtime; recovery files remain at ${backup}`);
+      }
+    }
+    throw error;
+  }
+  if (hasBackup) await rm(backup, { recursive: true });
 }

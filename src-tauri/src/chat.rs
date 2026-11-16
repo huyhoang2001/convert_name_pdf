@@ -364,7 +364,7 @@ mod tests {
     }
     #[test]
     fn ui_ids_and_persisted_question_are_checked_before_online_request() {
-        assert!(valid_ui_ids(&["word-save".into(), "calendar-export".into()]));
+        assert!(valid_ui_ids(&["word-save".into(), "calendar-save".into()]));
         assert!(!valid_ui_ids(&["made-up-control".into()]));
         assert!(!valid_ui_ids(&vec!["word-save".into(); 4]));
         let session = json!({"userQuestionCount":20,"messages":[{"role":"user","requestId":"id-1","text":"Where is Save?","status":"accepted"}]});

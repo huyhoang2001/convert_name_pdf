@@ -1,6 +1,6 @@
-import { egui_text_agent_activate } from './snippets/eframe-d31a8450ea12dfc1/inline0.js?v=39bb3eb085274f11cf6b';
-import * as import1 from "./snippets/eframe-d31a8450ea12dfc1/inline0.js?v=39bb3eb085274f11cf6b"
-import * as import2 from "./snippets/eframe-d31a8450ea12dfc1/inline0.js?v=39bb3eb085274f11cf6b"
+import { egui_text_agent_activate } from './snippets/eframe-d31a8450ea12dfc1/inline0.js?v=b416ffcdf881b3519a75';
+import * as import1 from "./snippets/eframe-d31a8450ea12dfc1/inline0.js?v=b416ffcdf881b3519a75"
+import * as import2 from "./snippets/eframe-d31a8450ea12dfc1/inline0.js?v=b416ffcdf881b3519a75"
 
 function __wbg_get_imports() {
     const import0 = {
@@ -3013,12 +3013,12 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_generic_0000000000000003: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("BeforeUnloadEvent")], shim_idx: 10086, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("BeforeUnloadEvent")], shim_idx: 10078, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_bec871d4346b5b2f___convert__closures_____invoke___web_sys_3f22c79ab60b9950___features__gen_MessageEvent__MessageEvent______true_);
             return ret;
         },
         __wbindgen_generic_0000000000000004: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("ClipboardEvent")], shim_idx: 10086, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("ClipboardEvent")], shim_idx: 10078, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_bec871d4346b5b2f___convert__closures_____invoke___web_sys_3f22c79ab60b9950___features__gen_MessageEvent__MessageEvent______true__4);
             return ret;
         },
@@ -3033,7 +3033,7 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_generic_0000000000000007: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("MessageEvent")], shim_idx: 10086, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("MessageEvent")], shim_idx: 10078, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_bec871d4346b5b2f___convert__closures_____invoke___web_sys_3f22c79ab60b9950___features__gen_MessageEvent__MessageEvent______true__7);
             return ret;
         },

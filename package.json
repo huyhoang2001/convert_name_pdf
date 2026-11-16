@@ -1,6 +1,6 @@
 {
   "name": "safe-pdf-rename",
-  "version": "2.0.20",
+  "version": "2.0.21",
   "description": "Safe Windows PDF renaming utility",
   "author": "Local",
   "private": true,
@@ -9,6 +9,7 @@
     "dev": "set \"PATH=%USERPROFILE%\\.cargo\\bin;%PATH%\" && tauri dev",
     "wordcraft:build": "node scripts/build-wordcraft.mjs",
     "wordcraft:source-build": "node scripts/build-wordcraft.mjs --build",
+    "wordcraft:cache": "node scripts/wordcraft-cache.mjs",
     "web:dev": "node scripts/build-wordcraft.mjs && vite",
     "web:build": "node scripts/build-wordcraft.mjs && tsc -b && vite build && node scripts/build-wordcraft.mjs --check",
     "build": "npm run web:build",

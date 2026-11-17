@@ -44,7 +44,7 @@ Use **Export backup** and **Import backup** in the Calendar toolbar to save or r
 
 ## Signature Authentication guide
 
-Signature registers retain their imported STT values and gaps. Auto mode continues above the highest established STT; Manual mode can enter an unused number, including a gap. A duplicate prompts before insertion, and matching rows stay grouped and highlighted. Authenticated-document text preserves line breaks and is written in uppercase. Previously used documents can be selected from suggestions; search matches are highlighted in the table. Excel output uses 14-point register text and `dd/mm/yyyy` dates.
+Signature registers retain their imported STT values and gaps. Auto mode continues above the highest established STT; Manual mode can enter an unused number, including a gap. New records appear in STT order, fill an empty canonical Excel slot when available, and keep confirmed duplicates beside their group. After adding a record, the table scrolls to and highlights it. A duplicate prompts before insertion, and matching rows stay grouped and highlighted. Authenticated-document text preserves line breaks and is written in uppercase. Previously used documents can be selected from suggestions; search matches are highlighted in the table. Excel output uses 14-point register text and `dd/mm/yyyy` dates.
 
 ## Safety and local data
 

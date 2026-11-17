@@ -231,6 +231,34 @@ fn has_cell_content(sheet: &Worksheet, col: usize, row: u32) -> bool {
         !cell.get_value().to_string().is_empty() || !cell.get_formula().is_empty()
     })
 }
+fn has_business_value(sheet: &Worksheet, col: usize, row: u32) -> bool {
+    sheet.get_cell(((col + 1) as u32, row)).is_some_and(|cell| {
+        cell.get_formula().is_empty() && !cell.get_value().to_string().trim().is_empty()
+    })
+}
+fn write_signature_stt(sheet: &mut Worksheet, col: u32, row: u32, number: u32) {
+    let coordinate = (col, row);
+    let format = sheet.get_style(coordinate).get_number_format().map(|format| format.get_format_code().to_string()).unwrap_or_default();
+    let cell = sheet.get_cell_mut(coordinate);
+    cell.set_value_number(number as f64);
+    if format.is_empty() || format == "General" { sheet.get_style_mut(coordinate).get_number_format_mut().set_format_code("00"); }
+}
+fn normalize_signature_stt(sheet: &mut Worksheet, col: u32, row: u32, number: u32) {
+    let coordinate = (col, row);
+    let Some(cell) = sheet.get_cell(coordinate) else { write_signature_stt(sheet, col, row, number); return };
+    if !cell.get_formula().is_empty() { return; }
+    if cell.get_data_type() == "n" {
+        let format = sheet.get_style(coordinate).get_number_format().map(|format| format.get_format_code().to_string()).unwrap_or_default();
+        if format.is_empty() || format == "General" { sheet.get_style_mut(coordinate).get_number_format_mut().set_format_code("00"); }
+    } else if numeric_stt(cell.get_value().as_ref()) == Some(number) && number < 10 && cell.get_value().as_ref() != format!("{number:02}") {
+        sheet.get_cell_mut(coordinate).set_value_string(format!("{number:02}"));
+    }
+}
+fn clear_business_cell(sheet: &mut Worksheet, col: u32, row: u32) {
+    if sheet.get_cell((col, row)).is_some_and(|cell| cell.get_formula().is_empty()) {
+        sheet.get_cell_mut((col, row)).set_value_string("");
+    }
+}
 fn custom(settings: &Value) -> Vec<(String, String)> {
     settings
         .as_object()
@@ -362,8 +390,8 @@ fn parse_register(kind: &str, sheet: &Worksheet, settings: &Value) -> Option<Val
                 if let Some(stt) = stt { *stt_counts.entry(stt).or_default() += 1; allocation_max = allocation_max.max(stt); }
             }
             let business = if kind == "signature" {
-                indexes.iter().enumerate().any(|(i, index)| i > 0 && (*row_number..=row_end).any(|r| has_cell_content(sheet, *index, r)))
-                    || custom_indexes.iter().any(|(_, index)| index.is_some_and(|col| (*row_number..=row_end).any(|r| has_cell_content(sheet, col, r))))
+                indexes.iter().enumerate().any(|(i, index)| i > 0 && (*row_number..=row_end).any(|r| has_business_value(sheet, *index, r)))
+                    || custom_indexes.iter().any(|(_, index)| index.is_some_and(|col| (*row_number..=row_end).any(|r| has_business_value(sheet, col, r))))
             } else {
                 indexes.iter().enumerate().any(|(i, index)| i > 0 && !row.get(*index).unwrap_or(&String::new()).trim().is_empty())
             };
@@ -891,6 +919,35 @@ mod tests {
         sheet.get_cell_mut("J2").set_formula("SUM(1,1)").set_formula_result_default("2");
         xlsx::writer::xlsx::write(&book, file).unwrap();
     }
+    fn signature_duplicate_fixture(file: &Path, duplicate_count: usize) {
+        let mut book = xlsx::new_file_empty_worksheet();
+        book.new_sheet("Cover").unwrap().get_cell_mut("A1").set_value("Keep this sheet");
+        let sheet = book.new_sheet("Register").unwrap();
+        for (index, header) in header_candidates("signature", &json!({}), "EN").iter().enumerate() { set_cell(sheet, index as u32 + 1, 3, header, false); }
+        for index in 0..duplicate_count {
+            let row = 7 + index as u32;
+            set_cell(sheet, 1, row, "01", false);
+            set_cell(sheet, 2, row, "2026-11-16", false);
+            set_cell(sheet, 3, row, &format!("Record {}", char::from(b'A' + index as u8)), false);
+        }
+        let next = 7 + duplicate_count as u32;
+        set_cell(sheet, 1, next, "02", false);
+        set_cell(sheet, 2, next, "2026-11-16", false);
+        set_cell(sheet, 3, next, "Record 02", false);
+        set_cell(sheet, 1, next + 1, "03", false);
+        set_cell(sheet, 3, next + 1, "Record 03", false);
+        sheet.get_cell_mut("J2").set_formula("SUM(1,1)").set_formula_result_default("2");
+        xlsx::writer::xlsx::write(&book, file).unwrap();
+    }
+    fn signature_multi_group_fixture(file: &Path) {
+        let mut book = xlsx::new_file_empty_worksheet(); let sheet = book.new_sheet("Register").unwrap();
+        for (index, header) in header_candidates("signature", &json!({}), "EN").iter().enumerate() { set_cell(sheet, index as u32 + 1, 3, header, false); }
+        for (row, number, person) in [(7, "01", "One A"), (8, "01", "One B"), (9, "02", "Two A"), (10, "02", "Two B"), (11, "03", "Three")] {
+            set_cell(sheet, 1, row, number, false); set_cell(sheet, 3, row, person, false);
+        }
+        sheet.get_cell_mut("K12").set_formula("A11");
+        xlsx::writer::xlsx::write(&book, file).unwrap();
+    }
     fn new_signature_record(number: &str, id: &str) -> Value {
         json!({"id":id,"number":number,"date":"2026-11-16","person":"New person","document":"","certifier":"","copies":"1","fee":"","notes":""})
     }
@@ -904,6 +961,9 @@ mod tests {
                 if let Some(locator) = ends.and_then(|ends| ends.get(&id)) { row["workbookRowEnd"] = locator.clone(); }
             }
         }
+    }
+    fn delete_signature_record_at(input: &mut Value, row: u32) {
+        input["sheets"][0]["rows"].as_array_mut().unwrap().retain(|record| record["workbookRow"].as_u64() != Some(row as u64));
     }
     #[test]
     fn workbook_operations_share_an_exclusive_lock() {
@@ -971,8 +1031,73 @@ mod tests {
         let higher = save_signature(&state, &input, &settings);
         assert_eq!(higher["status"], "success");
         let saved = load(&file).unwrap();
-        assert_eq!(saved.get_sheet_by_name("Register").unwrap().get_value("A754"), "50");
+        assert_eq!(saved.get_sheet_by_name("Register").unwrap().get_value("A53"), "50");
         assert_eq!(saved.get_sheet_by_name("Register").unwrap().get_value("A755"), "900");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn signature_additions_at_890_boundary_keep_physical_stt_slots_and_refresh_locators() {
+        let root = std::env::temp_dir().join(format!("b6h-signature-stt-890-{}", Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let file = root.join("signature.xlsx");
+        let settings = json!({});
+        let mut book = xlsx::new_file_empty_worksheet();
+        let sheet = book.new_sheet("Register").unwrap();
+        for (index, header) in header_candidates("signature", &settings, "EN").iter().enumerate() { set_cell(sheet, index as u32 + 1, 3, header, false); }
+        for number in 1..=890 {
+            set_cell(sheet, 1, number + 3, &format!("{number:02}"), false);
+            if ![1, 750, 789].contains(&number) {
+                set_cell(sheet, 2, number + 3, "2026-11-16", false);
+                set_cell(sheet, 3, number + 3, &format!("Existing {number}"), false);
+            }
+        }
+        xlsx::writer::xlsx::write(&book, &file).unwrap();
+
+        let state = State::default();
+        let imported = import(&state, "signature", &file.to_string_lossy(), &settings).unwrap();
+        let mut input = json!({"file":imported["file"],"sourceMap":imported["sourceMap"],"sheets":imported["sheets"]});
+        for (number, id, person, confirmed) in [("1", "manual-01", "New 01", false), ("01", "duplicate-01", "Duplicate 01", true), ("789", "manual-789", "New 789", false), ("750", "manual-750", "New 750", false), ("891", "auto-891", "New 891", false), ("900", "manual-900", "New 900", false)] {
+            let mut record = new_signature_record(number, id);
+            record["person"] = json!(person);
+            if confirmed { record["duplicateConfirmed"] = json!(true); }
+            input["sheets"][0]["rows"].as_array_mut().unwrap().push(record);
+        }
+        let saved = save_signature(&state, &input, &settings);
+        assert_eq!(saved["status"], "success", "{saved}");
+        assert_eq!(saved["allocationMaxes"][string(&input["sheets"][0], "id")], 900);
+        let duplicate_row = saved["rowLocators"]["duplicate-01"].as_u64().unwrap() as u32;
+        let row_01 = saved["rowLocators"]["manual-01"].as_u64().unwrap() as u32;
+        let row_750 = saved["rowLocators"]["manual-750"].as_u64().unwrap() as u32;
+        let row_789 = saved["rowLocators"]["manual-789"].as_u64().unwrap() as u32;
+        let row_891 = saved["rowLocators"]["auto-891"].as_u64().unwrap() as u32;
+        let row_900 = saved["rowLocators"]["manual-900"].as_u64().unwrap() as u32;
+        assert_eq!(row_01, 4);
+        assert_eq!(duplicate_row, row_01 + 1);
+        assert_eq!(row_750, 754);
+        assert_eq!(row_789, 793);
+        assert!(row_750 < row_789 && row_789 < row_891 && row_891 < row_900);
+
+        let reopened = load(&file).unwrap();
+        let sheet = reopened.get_sheet_by_name("Register").unwrap();
+        assert_eq!(cell(sheet, 1, row_01), "01");
+        assert_eq!(sheet.get_style((1, duplicate_row)).get_number_format().map(|format| format.get_format_code()), Some("00"));
+        for (row, expected_number, expected_person) in [
+            (row_01, "01", "New 01"), (duplicate_row, "01", "Duplicate 01"),
+            (row_750, "750", "New 750"), (row_789, "789", "New 789"),
+            (row_891, "891", "New 891"), (row_900, "900", "New 900"),
+        ] {
+            assert_eq!(numeric_stt(&cell(sheet, 1, row)), numeric_stt(expected_number), "wrong STT at physical row {row}");
+            assert_eq!(cell(sheet, 3, row), expected_person, "wrong record at physical row {row}");
+        }
+        assert_eq!(cell(sheet, 1, row_750 - 1), "749");
+        assert_eq!(cell(sheet, 1, row_750 + 1), "751");
+        assert_eq!(cell(sheet, 1, row_789 - 1), "788");
+        assert_eq!(cell(sheet, 1, row_789 + 1), "790");
+        let refreshed = import(&state, "signature", &file.to_string_lossy(), &settings).unwrap();
+        for (person, row) in [("New 01", row_01), ("Duplicate 01", duplicate_row), ("New 750", row_750), ("New 789", row_789), ("New 891", row_891), ("New 900", row_900)] {
+            assert_eq!(refreshed["sheets"][0]["rows"].as_array().unwrap().iter().find(|record| record["person"] == person).map(|record| record["workbookRow"].as_u64().unwrap() as u32), Some(row));
+        }
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -1008,12 +1133,196 @@ mod tests {
         assert_eq!(sheet.get_value("A7"), "750");
         assert_eq!(sheet.get_value("C7"), "New person");
         assert_eq!(sheet.get_value("A8"), "800");
-        assert_eq!(sheet.get_value("A9"), "900");
-        assert_eq!(sheet.get_value("A10"), "850");
+        assert_eq!(sheet.get_value("A9"), "850");
+        assert_eq!(sheet.get_value("A10"), "900");
         assert_eq!(sheet.get_value("J2"), "2");
         assert_eq!(sheet.get_cell("J2").unwrap().get_formula(), "SUM(1,1)");
         assert_eq!(sheet.get_style("A7").get_number_format().unwrap().get_format_code(), "0000");
         assert_eq!(saved.get_sheet_by_name("Cover").unwrap().get_value("A1"), "Keep this sheet");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn d01_delete_extra_removes_the_physical_row_and_keeps_the_canonical_record() {
+        let root = std::env::temp_dir().join(format!("b6h-signature-d01-{}", Uuid::new_v4())); fs::create_dir(&root).unwrap();
+        let file = root.join("signature.xlsx"); signature_duplicate_fixture(&file, 2); let state = State::default();
+        let imported = import(&state, "signature", &file.to_string_lossy(), &json!({})).unwrap();
+        let mut input = json!({"file":imported["file"],"sourceMap":imported["sourceMap"],"sheets":imported["sheets"]}); delete_signature_record_at(&mut input, 8);
+        assert_eq!(save_signature(&state, &input, &json!({}))["status"], "success");
+        let saved = load(&file).unwrap(); let sheet = saved.get_sheet_by_name("Register").unwrap();
+        assert_eq!(sheet.get_value("A7"), "01"); assert_eq!(sheet.get_value("C7"), "Record A");
+        assert_eq!(sheet.get_value("A8"), "02"); assert_eq!(sheet.get_value("A9"), "03"); assert_eq!(sheet.get_highest_row(), 9);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn d02_delete_base_promotes_the_first_survivor_to_the_original_slot() {
+        let root = std::env::temp_dir().join(format!("b6h-signature-d02-{}", Uuid::new_v4())); fs::create_dir(&root).unwrap();
+        let file = root.join("signature.xlsx"); signature_duplicate_fixture(&file, 2); let state = State::default();
+        let imported = import(&state, "signature", &file.to_string_lossy(), &json!({})).unwrap();
+        let mut input = json!({"file":imported["file"],"sourceMap":imported["sourceMap"],"sheets":imported["sheets"]}); delete_signature_record_at(&mut input, 7);
+        let result = save_signature(&state, &input, &json!({})); assert_eq!(result["status"], "success");
+        let saved = load(&file).unwrap(); let sheet = saved.get_sheet_by_name("Register").unwrap();
+        assert_eq!(result["rowLocators"][input["sheets"][0]["rows"][0]["id"].as_str().unwrap()], 7);
+        assert_eq!(sheet.get_value("A7"), "01"); assert_eq!(sheet.get_value("C7"), "Record B");
+        assert_eq!(sheet.get_value("A8"), "02"); assert_eq!(sheet.get_value("C8"), "Record 02");
+        assert_eq!(sheet.get_highest_row(), 9); fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn d03_delete_last_record_keeps_stt_and_preserves_template_formula() {
+        let root = std::env::temp_dir().join(format!("b6h-signature-d03-{}", Uuid::new_v4())); fs::create_dir(&root).unwrap();
+        let file = root.join("signature.xlsx"); signature_duplicate_fixture(&file, 1); let state = State::default();
+        let imported = import(&state, "signature", &file.to_string_lossy(), &json!({})).unwrap();
+        let mut input = json!({"file":imported["file"],"sourceMap":imported["sourceMap"],"sheets":imported["sheets"]}); delete_signature_record_at(&mut input, 7);
+        assert_eq!(save_signature(&state, &input, &json!({}))["status"], "success");
+        let saved = load(&file).unwrap(); let sheet = saved.get_sheet_by_name("Register").unwrap();
+        assert_eq!(sheet.get_value("A7"), "01"); assert!(sheet.get_value("C7").trim().is_empty());
+        assert_eq!(sheet.get_value("A8"), "02"); assert_eq!(sheet.get_cell("J2").unwrap().get_formula(), "SUM(1,1)");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn d04_d05_delete_all_duplicates_in_either_order_keeps_one_empty_slot() {
+        for reverse in [false, true] {
+            let root = std::env::temp_dir().join(format!("b6h-signature-d04-{reverse}-{}", Uuid::new_v4())); fs::create_dir(&root).unwrap();
+            let file = root.join("signature.xlsx"); signature_duplicate_fixture(&file, 2); let state = State::default();
+            let imported = import(&state, "signature", &file.to_string_lossy(), &json!({})).unwrap();
+            let mut input = json!({"file":imported["file"],"sourceMap":imported["sourceMap"],"sheets":imported["sheets"]});
+            if reverse { input["sheets"][0]["rows"].as_array_mut().unwrap().reverse(); }
+            input["sheets"][0]["rows"].as_array_mut().unwrap().retain(|record| record["number"] != "01");
+            assert_eq!(save_signature(&state, &input, &json!({}))["status"], "success");
+            let sheet = load(&file).unwrap(); let sheet = sheet.get_sheet_by_name("Register").unwrap();
+            assert_eq!(sheet.get_value("A7"), "01"); assert!(sheet.get_value("C7").trim().is_empty());
+            assert_eq!(sheet.get_value("A8"), "02"); assert_eq!(sheet.get_value("A9"), "03"); assert_eq!(sheet.get_highest_row(), 9);
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn d06_d07_multiple_duplicate_survivors_are_preserved_once() {
+        for deleted in [7u32, 8] {
+            let root = std::env::temp_dir().join(format!("b6h-signature-d06-{deleted}-{}", Uuid::new_v4())); fs::create_dir(&root).unwrap();
+            let file = root.join("signature.xlsx"); signature_duplicate_fixture(&file, 3); let state = State::default();
+            let imported = import(&state, "signature", &file.to_string_lossy(), &json!({})).unwrap();
+            let mut input = json!({"file":imported["file"],"sourceMap":imported["sourceMap"],"sheets":imported["sheets"]}); delete_signature_record_at(&mut input, deleted);
+            assert_eq!(save_signature(&state, &input, &json!({}))["status"], "success");
+            let saved = load(&file).unwrap(); let sheet = saved.get_sheet_by_name("Register").unwrap();
+            if deleted == 7 { assert_eq!(sheet.get_value("C7"), "Record B"); assert_eq!(sheet.get_value("C8"), "Record C"); }
+            else { assert_eq!(sheet.get_value("C7"), "Record A"); assert_eq!(sheet.get_value("C8"), "Record C"); }
+            assert_eq!(sheet.get_value("A9"), "02"); assert_eq!(sheet.get_value("A10"), "03");
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn d09_deleting_highest_keeps_the_empty_slot_and_boundary_after_reopen() {
+        let root = std::env::temp_dir().join(format!("b6h-signature-d09-{}", Uuid::new_v4())); fs::create_dir(&root).unwrap();
+        let file = root.join("signature.xlsx"); signature_duplicate_fixture(&file, 1); let state = State::default();
+        let imported = import(&state, "signature", &file.to_string_lossy(), &json!({})).unwrap();
+        let mut input = json!({"file":imported["file"],"sourceMap":imported["sourceMap"],"sheets":imported["sheets"]});
+        let highest = input["sheets"][0]["rows"].as_array().unwrap().iter().find(|row| row["number"] == "03").unwrap()["workbookRow"].as_u64().unwrap() as u32;
+        delete_signature_record_at(&mut input, highest);
+        assert_eq!(save_signature(&state, &input, &json!({}))["status"], "success");
+        let reopened = import(&State::default(), "signature", &file.to_string_lossy(), &json!({})).unwrap();
+        assert_eq!(reopened["sheets"][0]["allocationMax"], 3);
+        assert_eq!(reopened["sheets"][0]["allocationMax"].as_u64().unwrap() + 1, 4);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn d08_delete_extra_preserves_a_genuine_missing_slot() {
+        let root = std::env::temp_dir().join(format!("b6h-signature-d08-{}", Uuid::new_v4())); fs::create_dir(&root).unwrap();
+        let file = root.join("signature.xlsx"); let mut book = xlsx::new_file_empty_worksheet(); let sheet = book.new_sheet("Register").unwrap();
+        for (index, header) in header_candidates("signature", &json!({}), "EN").iter().enumerate() { set_cell(sheet, index as u32 + 1, 3, header, false); }
+        for (row, number, person) in [(7, "749", "749"), (8, "750", ""), (9, "751", "751 A"), (10, "751", "751 B"), (11, "752", "752")] {
+            set_cell(sheet, 1, row, number, false); if !person.is_empty() { set_cell(sheet, 3, row, person, false); }
+        }
+        xlsx::writer::xlsx::write(&book, &file).unwrap(); let state = State::default(); let imported = import(&state, "signature", &file.to_string_lossy(), &json!({})).unwrap();
+        let mut input = json!({"file":imported["file"],"sourceMap":imported["sourceMap"],"sheets":imported["sheets"]}); delete_signature_record_at(&mut input, 10);
+        assert_eq!(save_signature(&state, &input, &json!({}))["status"], "success");
+        let saved = load(&file).unwrap(); let sheet = saved.get_sheet_by_name("Register").unwrap();
+        assert_eq!(sheet.get_value("A8"), "750"); assert!(sheet.get_value("C8").trim().is_empty());
+        assert_eq!(sheet.get_value("A9"), "751"); assert_eq!(sheet.get_value("A10"), "752");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn d14_multiple_stt_groups_delete_offset_safely() {
+        let root = std::env::temp_dir().join(format!("b6h-signature-d14-{}", Uuid::new_v4())); fs::create_dir(&root).unwrap();
+        let file = root.join("signature.xlsx"); signature_multi_group_fixture(&file); let state = State::default();
+        let imported = import(&state, "signature", &file.to_string_lossy(), &json!({})).unwrap();
+        let mut input = json!({"file":imported["file"],"sourceMap":imported["sourceMap"],"sheets":imported["sheets"]});
+        delete_signature_record_at(&mut input, 8); delete_signature_record_at(&mut input, 9);
+        assert_eq!(save_signature(&state, &input, &json!({}))["status"], "success");
+        let saved = load(&file).unwrap(); let sheet = saved.get_sheet_by_name("Register").unwrap();
+        assert_eq!(sheet.get_value("A7"), "01"); assert_eq!(sheet.get_value("C7"), "One A");
+        assert_eq!(sheet.get_value("A8"), "02"); assert_eq!(sheet.get_value("C8"), "Two B");
+        assert_eq!(sheet.get_value("A9"), "03"); assert_eq!(sheet.get_highest_row(), 10);
+        assert_eq!(sheet.get_cell("K10").unwrap().get_formula(), "A9");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn m15_invalid_stt_values_do_not_modify_the_workbook() {
+        for number in ["0", "-1", "1.5", "1e2", "abc", "100500"] {
+            let root = std::env::temp_dir().join(format!("b6h-signature-m15-{}-{}", number, Uuid::new_v4())); fs::create_dir(&root).unwrap();
+            let file = root.join("signature.xlsx"); signature_duplicate_fixture(&file, 1); let state = State::default();
+            let imported = import(&state, "signature", &file.to_string_lossy(), &json!({})).unwrap();
+            let original = workbook_hash(&file).unwrap(); let mut input = json!({"file":imported["file"],"sourceMap":imported["sourceMap"],"sheets":imported["sheets"]});
+            input["sheets"][0]["rows"].as_array_mut().unwrap().push(new_signature_record(number, "invalid-stt"));
+            assert_eq!(save_signature(&state, &input, &json!({}))["status"], "invalid", "{number}");
+            assert_eq!(workbook_hash(&file).unwrap(), original, "{number}"); fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn d15_m17_repeated_save_and_readd_reuse_the_canonical_slot() {
+        let root = std::env::temp_dir().join(format!("b6h-signature-d15-{}", Uuid::new_v4())); fs::create_dir(&root).unwrap();
+        let file = root.join("signature.xlsx"); signature_duplicate_fixture(&file, 1); let state = State::default();
+        let imported = import(&state, "signature", &file.to_string_lossy(), &json!({})).unwrap();
+        let mut input = json!({"file":imported["file"],"sourceMap":imported["sourceMap"],"sheets":imported["sheets"]}); delete_signature_record_at(&mut input, 7);
+        let result = save_signature(&state, &input, &json!({})); assert_eq!(result["status"], "success"); apply_row_locators(&mut input, &result);
+        assert_eq!(save_signature(&state, &input, &json!({}))["status"], "success");
+        let reopened_state = State::default(); let reopened = import(&reopened_state, "signature", &file.to_string_lossy(), &json!({})).unwrap();
+        let mut readd = json!({"file":reopened["file"],"sourceMap":reopened["sourceMap"],"sheets":reopened["sheets"]});
+        readd["sheets"][0]["rows"].as_array_mut().unwrap().push(new_signature_record("1", "readded-01"));
+        let saved = save_signature(&reopened_state, &readd, &json!({}));
+        assert_eq!(saved["status"], "success"); assert_eq!(saved["rowLocators"]["readded-01"], 7);
+        let book = load(&file).unwrap(); let sheet = book.get_sheet_by_name("Register").unwrap();
+        assert_eq!(sheet.get_value("A7"), "01"); assert_eq!(sheet.get_value("C7"), "New person");
+        assert_eq!(sheet.get_value("A8"), "02"); assert_eq!(sheet.get_highest_row(), 9);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn m01_m03_numeric_stt_slots_keep_excel_type_and_display_minimum_two_digits() {
+        let root = std::env::temp_dir().join(format!("b6h-signature-m01-{}", Uuid::new_v4())); fs::create_dir(&root).unwrap();
+        let file = root.join("signature.xlsx"); let mut book = xlsx::new_file_empty_worksheet(); let sheet = book.new_sheet("Register").unwrap();
+        for (index, header) in header_candidates("signature", &json!({}), "EN").iter().enumerate() { set_cell(sheet, index as u32 + 1, 3, header, false); }
+        for (row, number) in [(7, 1), (8, 9), (9, 10), (10, 750), (11, 1000)] { set_cell(sheet, 1, row, &number.to_string(), true); }
+        xlsx::writer::xlsx::write(&book, &file).unwrap(); let state = State::default();
+        let imported = import(&state, "signature", &file.to_string_lossy(), &json!({})).unwrap();
+        let mut input = json!({"file":imported["file"],"sourceMap":imported["sourceMap"],"sheets":imported["sheets"]});
+        for (number, id) in [("001", "m01"), ("9", "m09"), ("10", "m10"), ("750", "m750"), ("1000", "m1000")] { input["sheets"][0]["rows"].as_array_mut().unwrap().push(new_signature_record(number, id)); }
+        assert_eq!(save_signature(&state, &input, &json!({}))["status"], "success");
+        let saved = load(&file).unwrap(); let sheet = saved.get_sheet_by_name("Register").unwrap();
+        assert_eq!(sheet.get_cell("A7").unwrap().get_value(), "1"); assert_eq!(sheet.get_style("A7").get_number_format().unwrap().get_format_code(), "00");
+        assert_eq!(sheet.get_cell("A8").unwrap().get_value(), "9"); assert_eq!(sheet.get_style("A8").get_number_format().unwrap().get_format_code(), "00");
+        assert_eq!(sheet.get_value("A9"), "10"); assert_eq!(sheet.get_value("A10"), "750"); assert_eq!(sheet.get_value("A11"), "1000");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn d18_ambiguous_business_row_without_stt_is_rejected_without_writing() {
+        let root = std::env::temp_dir().join(format!("b6h-signature-d18-{}", Uuid::new_v4())); fs::create_dir(&root).unwrap();
+        let file = root.join("signature.xlsx"); signature_duplicate_fixture(&file, 1); let mut book = load(&file).unwrap();
+        set_cell(book.get_sheet_by_name_mut("Register").unwrap(), 3, 10, "Unowned continuation", false); xlsx::writer::xlsx::write(&book, &file).unwrap();
+        let state = State::default(); let imported = import(&state, "signature", &file.to_string_lossy(), &json!({})).unwrap();
+        let input = json!({"file":imported["file"],"sourceMap":imported["sourceMap"],"sheets":imported["sheets"]});
+        let result = save_signature(&state, &input, &json!({}));
+        assert_eq!(result["status"], "stale"); assert!(result["message"].as_str().unwrap().contains("no STT"));
+        assert_eq!(load(&file).unwrap().get_sheet_by_name("Register").unwrap().get_value("C10"), "Unowned continuation");
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -1552,6 +1861,10 @@ fn write(book: &xlsx::structs::Spreadsheet, file: &Path) -> Result<(), String> {
 fn write_checked(book: &xlsx::structs::Spreadsheet, file: &Path, expected_hash: &str) -> Result<(), String> {
     let temp = file.with_extension(format!("{}.tmp.xlsx", Uuid::new_v4()));
     if let Err(error) = xlsx::writer::xlsx::write(book, &temp) { let _ = fs::remove_file(&temp); return Err(error.to_string()); }
+    let reopened = match load(&temp) { Ok(book) => book, Err(error) => { let _ = fs::remove_file(&temp); return Err(format!("The saved workbook failed validation: {error}")); } };
+    let expected_sheets = book.get_sheet_collection().iter().map(|sheet| sheet.get_name()).collect::<Vec<_>>();
+    let saved_sheets = reopened.get_sheet_collection().iter().map(|sheet| sheet.get_name()).collect::<Vec<_>>();
+    if expected_sheets != saved_sheets { let _ = fs::remove_file(&temp); return Err("The saved workbook failed sheet integrity validation.".into()); }
     let current_hash = match workbook_hash(file) { Ok(hash) => hash, Err(error) => { let _ = fs::remove_file(&temp); return Err(error); } };
     if current_hash != expected_hash {
         let _ = fs::remove_file(&temp);
@@ -1621,11 +1934,11 @@ fn signature_columns(sheet: &Worksheet, settings: &Value) -> Option<(u32, Vec<us
     None
 }
 fn signature_occupied(sheet: &Worksheet, row: u32, columns: &[usize], custom_columns: &[(String, Option<usize>)]) -> bool {
-    columns.iter().skip(1).any(|column| has_cell_content(sheet, *column, row))
-        || custom_columns.iter().any(|(_, column)| column.is_some_and(|column| has_cell_content(sheet, column, row)))
+    columns.iter().skip(1).any(|column| has_business_value(sheet, *column, row))
+        || custom_columns.iter().any(|(_, column)| column.is_some_and(|column| has_business_value(sheet, column, row)))
 }
 fn signature_slot_occupied(sheet: &Worksheet, row: u32, number_column: usize) -> bool {
-    (0..sheet.get_highest_column().min(220) as usize).any(|column| column != number_column && has_cell_content(sheet, column, row))
+    (0..sheet.get_highest_column().min(220) as usize).any(|column| column != number_column && has_business_value(sheet, column, row))
 }
 fn signature_write_record(sheet: &mut Worksheet, row: u32, row_end: u32, record: &Value, columns: &[usize], custom_columns: &[(String, Option<usize>)]) {
     for target_row in row..=row_end { sheet.get_style_mut((columns[0] as u32 + 1, target_row)).get_font_mut().set_size(14.0); }
@@ -1635,14 +1948,14 @@ fn signature_write_record(sheet: &mut Worksheet, row: u32, row_end: u32, record:
         for target_row in row..=row_end { sheet.get_style_mut((col, target_row)).get_font_mut().set_size(14.0); }
         if *key == "person" && row_end > row {
             let old = (row..=row_end).map(|r| cell(sheet, col, r)).filter(|v| !v.trim().is_empty()).collect::<Vec<_>>().join("\n\n");
-            if old != value { set_cell(sheet, col, row, &value, false); for r in row + 1..=row_end { set_cell(sheet, col, r, "", false); } }
-        } else if cell(sheet, col, row) != value { set_cell(sheet, col, row, &value, ["date", "copies", "fee"].contains(key)); }
+            if old != value && (row..=row_end).all(|r| sheet.get_cell((col, r)).is_none_or(|cell| cell.get_formula().is_empty())) { set_cell(sheet, col, row, &value, false); for r in row + 1..=row_end { clear_business_cell(sheet, col, r); } }
+        } else if sheet.get_cell((col, row)).is_none_or(|cell| cell.get_formula().is_empty()) && cell(sheet, col, row) != value { set_cell(sheet, col, row, &value, ["date", "copies", "fee"].contains(key)); }
     }
     for (id, column) in custom_columns {
         if let Some(column) = column {
             let value = string(record, &format!("custom:{id}"));
             sheet.get_style_mut((*column as u32 + 1, row)).get_font_mut().set_size(14.0);
-            if cell(sheet, *column as u32 + 1, row) != value { set_cell(sheet, *column as u32 + 1, row, &value, false); }
+            if sheet.get_cell((*column as u32 + 1, row)).is_none_or(|cell| cell.get_formula().is_empty()) && cell(sheet, *column as u32 + 1, row) != value { set_cell(sheet, *column as u32 + 1, row, &value, false); }
         }
     }
 }
@@ -1677,16 +1990,21 @@ fn save_signature_inner(state: &State, input: &Value, settings: &Value) -> Resul
         let records = sheet_value.get("rows").and_then(Value::as_array).ok_or_else(|| ("invalid".into(), "Invalid register rows".into()))?;
         if records.len() > 100_000 { return Err(("invalid".into(), "The workbook row capacity was exceeded.".into())); }
         let mut counts = indexed_rows(sheet).iter().skip_while(|(row, _)| *row <= header_row).filter(|(row, _)| merged_span(sheet, columns[0] as u32 + 1, *row).is_none_or(|(_, start, _, _)| start == *row)).filter_map(|(row, values)| numeric_stt(values.get(columns[0]).map(String::as_str).unwrap_or("")).map(|number| (number, *row))).fold(HashMap::<u32, Vec<u32>>::new(), |mut map, (number, row)| { map.entry(number).or_default().push(row); map });
+        let original_numbers: HashSet<u32> = counts.keys().copied().collect();
         let mut row_locations: HashMap<String, (u32, u32)> = records.iter().filter_map(|record| {
             let row = record.get("workbookRow")?.as_u64()? as u32;
             let row_end = record.get("workbookRowEnd").and_then(Value::as_u64).map(|end| end as u32).unwrap_or(row);
             Some((string(record, "id"), (row, row_end)))
         }).collect();
+        let requested_rows: HashSet<u32> = row_locations.values().map(|(row, _)| *row).collect();
+        let pending_removed_numbers: HashSet<u32> = counts.iter().filter_map(|(number, rows)| {
+            (rows.iter().all(|row| !requested_rows.contains(row)) && rows.iter().any(|row| signature_occupied(sheet, *row, &columns, &custom_columns))).then_some(*number)
+        }).collect();
         let mut targets = Vec::new();
         let mut reserved_numbers = HashMap::<u32, u32>::new();
         let mut used_rows = HashSet::new();
         for (record_index, record) in records.iter().enumerate() {
-            let number = numeric_stt(&string(record, "number")).ok_or_else(|| ("invalid".into(), "Enter a supported positive whole-number STT.".into()))?;
+            let number = numeric_stt(&string(record, "number")).ok_or_else(|| if record.get("workbookRow").is_some() { ("stale".into(), "A Signature row has business data but no STT. Refresh and resolve its ownership before saving.".into()) } else { ("invalid".into(), "Enter a supported positive whole-number STT.".into()) })?;
             if let Some((row, row_end)) = row_locations.get(&string(record, "id")).copied() {
                 if numeric_stt(&cell(sheet, columns[0] as u32 + 1, row)) != Some(number) { return Err(("stale".into(), "A register row changed. Refresh the workbook before saving.".into())); }
                 if row_end < row || merged_span(sheet, columns[0] as u32 + 1, row).map(|(_, _, _, end)| end).unwrap_or(row) != row_end { return Err(("stale".into(), "A register row changed. Refresh the workbook before saving.".into())); }
@@ -1706,7 +2024,7 @@ fn save_signature_inner(state: &State, input: &Value, settings: &Value) -> Resul
                     for rows in counts.values_mut() { for existing_row in rows { if *existing_row >= row { *existing_row += 1; } } }
                     let last_col = sheet.get_highest_column().max(columns.iter().max().copied().unwrap_or(0) as u32 + 1);
                     sheet.copy_row_styling(&previous_end, &row, Some(&1), Some(&last_col));
-                    set_cell(sheet, columns[0] as u32 + 1, row, &number.to_string(), true);
+                    write_signature_stt(sheet, columns[0] as u32 + 1, row, number);
                     row_locations.insert(string(record, "id"), (row, row));
                     counts.entry(number).or_default().push(row);
                     if !used_rows.insert(row) { return Err(("stale".into(), "A register row is assigned more than once. Refresh the workbook before saving.".into())); }
@@ -1715,21 +2033,30 @@ fn save_signature_inner(state: &State, input: &Value, settings: &Value) -> Resul
                     continue;
                 }
                 let existing = counts.get(&number);
-                let empty_slot = existing.filter(|rows| rows.len() == 1 && !signature_slot_occupied(sheet, rows[0], columns[0])).map(|rows| rows[0]);
+                let empty_slot = existing.filter(|rows| pending_removed_numbers.contains(&number) || rows.len() == 1 && !signature_slot_occupied(sheet, rows[0], columns[0])).and_then(|rows| rows.first().copied());
                 let conflict_row = reserved_numbers.get(&number).copied().or_else(|| existing.and_then(|rows| rows.first().copied()));
-                let duplicate = reserved_numbers.contains_key(&number) || existing.is_some() && empty_slot.is_none();
+                let duplicate = !pending_removed_numbers.contains(&number) && (reserved_numbers.contains_key(&number) || existing.is_some() && empty_slot.is_none());
                 if duplicate && record.get("duplicateConfirmed").and_then(Value::as_bool) != Some(true) {
                     return Err(("duplicate".into(), format!("{id}|{number}|{}", conflict_row.unwrap_or(0))));
                 }
                 let row = if duplicate || empty_slot.is_none() {
+                    let next_group_row = if duplicate { None } else { counts.iter().filter(|(existing_number, _)| **existing_number > number).flat_map(|(_, rows)| rows.iter().copied()).min() };
                     let indexed = indexed_rows(sheet);
                     let last_register_row = indexed.iter().skip_while(|(row, _)| *row <= header_row).filter(|(row, values)| numeric_stt(values.get(columns[0]).map(String::as_str).unwrap_or("")).is_some() || signature_occupied(sheet, *row, &columns, &custom_columns)).map(|(row, _)| *row).max().unwrap_or(header_row);
-                    let row = last_register_row.saturating_add(1);
+                    let row = next_group_row.unwrap_or_else(|| last_register_row.saturating_add(1));
                     if row > 100_500 { return Err(("invalid".into(), "The workbook row capacity was exceeded.".into())); }
-                    let style_row = if last_register_row > header_row { last_register_row } else { header_row + 1 };
+                    let style_row = if next_group_row.is_some() { row + 1 } else if last_register_row > header_row { last_register_row } else { header_row + 1 };
                     let last_col = sheet.get_highest_column().max(columns.iter().max().copied().unwrap_or(0) as u32 + 1);
+                    if next_group_row.is_some() {
+                        sheet.insert_new_row(&row, &1);
+                        for (_, start, end, _) in targets.iter_mut() { if *start >= row { *start += 1; } if *end >= row { *end += 1; } }
+                        used_rows = used_rows.iter().map(|existing_row| if *existing_row >= row { *existing_row + 1 } else { *existing_row }).collect();
+                        for (start, end) in row_locations.values_mut() { if *start >= row { *start += 1; } if *end >= row { *end += 1; } }
+                        for rows in counts.values_mut() { for existing_row in rows { if *existing_row >= row { *existing_row += 1; } } }
+                    }
                     sheet.copy_row_styling(&style_row, &row, Some(&1), Some(&last_col));
-                    set_cell(sheet, columns[0] as u32 + 1, row, &number.to_string(), true);
+                    write_signature_stt(sheet, columns[0] as u32 + 1, row, number);
+                    counts.entry(number).or_default().push(row);
                     row
                 } else { empty_slot.unwrap() };
                 if !used_rows.insert(row) { return Err(("stale".into(), "A register row is assigned more than once. Refresh the workbook before saving.".into())); }
@@ -1738,16 +2065,54 @@ fn save_signature_inner(state: &State, input: &Value, settings: &Value) -> Resul
                 targets.push((record, row, row, number));
             }
         }
-        let keep: HashSet<u32> = targets.iter().flat_map(|(_, row, end, _)| *row..=*end).collect();
-        for (row, _) in indexed_rows(sheet).iter().filter(|(row, _)| *row > header_row) {
-            if signature_occupied(sheet, *row, &columns, &custom_columns) && !keep.contains(row) {
-                set_cell(sheet, columns[0] as u32 + 1, *row, "", false);
-                for column in columns.iter().skip(1) { set_cell(sheet, *column as u32 + 1, *row, "", false); }
-                for (_, column) in &custom_columns { if let Some(column) = column { set_cell(sheet, *column as u32 + 1, *row, "", false); } }
+        let mut remove_ranges = Vec::<(u32, u32)>::new();
+        let mut clear_canonical = HashSet::<u32>::new();
+        for number in &original_numbers {
+            let Some(mut group_rows) = counts.get(number).cloned() else { continue };
+            group_rows.sort_unstable();
+            let Some(&canonical) = group_rows.first() else { continue };
+            let live = targets.iter().filter(|(_, row, _, stt)| stt == number && group_rows.contains(row)).map(|(_, row, _, _)| *row).collect::<HashSet<_>>();
+            let base_survives = live.contains(&canonical);
+            if !base_survives {
+                if let Some(promote_row) = live.iter().copied().filter(|row| *row != canonical).min() {
+                    if let Some((_, row, row_end, _)) = targets.iter_mut().find(|(_, row, _, stt)| stt == number && *row == promote_row) {
+                        *row = canonical;
+                        *row_end = merged_span(sheet, columns[0] as u32 + 1, canonical).map(|(_, _, _, end)| end).unwrap_or(canonical);
+                    }
+                    let end = merged_span(sheet, columns[0] as u32 + 1, promote_row).map(|(_, _, _, end)| end).unwrap_or(promote_row);
+                    remove_ranges.push((promote_row, end));
+                } else {
+                    clear_canonical.insert(canonical);
+                }
+            }
+            for extra in group_rows.into_iter().skip(1) {
+                if !live.contains(&extra) || (!base_survives && live.iter().filter(|row| **row != canonical).min() == Some(&extra)) {
+                    let end = merged_span(sheet, columns[0] as u32 + 1, extra).map(|(_, _, _, end)| end).unwrap_or(extra);
+                    for row in extra..=end {
+                        if (0..sheet.get_highest_column().min(220) as usize).any(|column| !columns.contains(&column) && !custom_columns.iter().any(|(_, allowed)| *allowed == Some(column)) && has_cell_content(sheet, column, row)) {
+                            return Err(("stale".into(), "An extra STT row contains data outside the Signature register. Refresh and resolve the row before deleting it.".into()));
+                        }
+                    }
+                    remove_ranges.push((extra, end));
+                }
+            }
+        }
+        remove_ranges.sort_unstable_by_key(|(start, _)| std::cmp::Reverse(*start));
+        remove_ranges.dedup();
+        for (start, end) in &remove_ranges { sheet.remove_row(start, &(end - start + 1)); }
+        let adjust_row = |row: u32| row - remove_ranges.iter().filter(|(_, end)| *end < row).map(|(start, end)| end - start + 1).sum::<u32>();
+        for row in clear_canonical {
+            let row = adjust_row(row);
+            let end = merged_span(sheet, columns[0] as u32 + 1, row).map(|(_, _, _, end)| end).unwrap_or(row);
+            for target_row in row..=end {
+                for column in columns.iter().skip(1) { clear_business_cell(sheet, *column as u32 + 1, target_row); }
+                for (_, column) in &custom_columns { if let Some(column) = column { clear_business_cell(sheet, *column as u32 + 1, target_row); } }
             }
         }
         for (record, row, row_end, number) in targets {
-            if cell(sheet, columns[0] as u32 + 1, row).trim().is_empty() { set_cell(sheet, columns[0] as u32 + 1, row, &number.to_string(), true); }
+            let row = adjust_row(row);
+            let row_end = adjust_row(row_end);
+            normalize_signature_stt(sheet, columns[0] as u32 + 1, row, number);
             signature_write_record(sheet, row, row_end, record, &columns, &custom_columns);
             all_locators.insert(string(record, "id"), json!(row));
             all_locator_ends.insert(string(record, "id"), json!(row_end));

@@ -52,7 +52,7 @@ export function nextAvailableSignatureNumber(rows) {
   const used = new Set(rows.map(row => Number(row.number)).filter(number => Number.isSafeInteger(number) && number > 0));
   let next = 1;
   while (used.has(next)) next++;
-  return String(next);
+  return formatSignatureNumber(next);
 }
 
 export function nextSignatureNumberAfterHighWater(rows, highWater = 0) {
@@ -60,13 +60,19 @@ export function nextSignatureNumberAfterHighWater(rows, highWater = 0) {
     const number = Number(row.number);
     return Number.isSafeInteger(number) && number > max ? number : max;
   }, Number.isSafeInteger(highWater) && highWater > 0 ? highWater : 0);
-  return String(highest + 1);
+  return formatSignatureNumber(highest + 1);
+}
+
+export function formatSignatureNumber(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number > 0 ? String(number).padStart(2, '0') : String(value ?? '');
 }
 
 export function insertSignatureRow(rows, row) {
   const number = Number(row.number);
   const lastMatch = rows.findLastIndex(existing => Number(existing.number) === number);
-  return lastMatch < 0 ? [...rows, row] : [...rows.slice(0, lastMatch + 1), row, ...rows.slice(lastMatch + 1)];
+  const index = lastMatch < 0 ? rows.findIndex(existing => Number(existing.number) > number) : lastMatch + 1;
+  return index < 0 ? [...rows, row] : [...rows.slice(0, index), row, ...rows.slice(index)];
 }
 
 export function applySignatureDuplicateFill(row) {

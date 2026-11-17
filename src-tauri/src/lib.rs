@@ -163,6 +163,14 @@ fn save_signature_stt_mode(mode: String) -> Result<String, String> {
     storage::save_signature_stt_mode(&mode)
 }
 #[tauri::command]
+fn get_translation_stt_mode() -> Result<String, String> {
+    storage::translation_stt_mode()
+}
+#[tauri::command]
+fn save_translation_stt_mode(mode: String) -> Result<String, String> {
+    storage::save_translation_stt_mode(&mode)
+}
+#[tauri::command]
 fn get_chatbot_visible() -> Result<bool, String> {
     storage::chatbot_visible()
 }
@@ -324,17 +332,19 @@ async fn refresh_translation_workbook(
 async fn save_translation_workbook(
     input: serde_json::Value,
     app: tauri::AppHandle,
-) -> Result<usize, String> {
+) -> Result<serde_json::Value, String> {
     run_workbook(app, move |state| {
-        workbook::save(
+        Ok(workbook::save_translation(
             state,
-            "translation",
             &input,
             &storage::selector_settings("translation")?,
-            "VI",
-        )
+        ))
     })
     .await
+}
+#[tauri::command]
+fn export_translation_workbook(file: String, data: String, sheets: serde_json::Value) -> Result<String, String> {
+    workbook::export_translation(&file, &data, &sheets)
 }
 #[tauri::command]
 async fn new_translation_workbook(
@@ -857,6 +867,8 @@ pub fn run() {
             save_theme,
             get_signature_stt_mode,
             save_signature_stt_mode,
+            get_translation_stt_mode,
+            save_translation_stt_mode,
             get_chatbot_visible,
             save_chatbot_visible,
             get_signature_settings,
@@ -883,6 +895,7 @@ pub fn run() {
             import_translation_workbook,
             refresh_translation_workbook,
             save_translation_workbook,
+            export_translation_workbook,
             new_translation_workbook,
             import_signature_workbook,
             refresh_signature_workbook,

@@ -1605,6 +1605,16 @@ pub fn save_signature_stt_mode(value: &str) -> Result<String, String> {
     write("settings.json", &Value::Object(data))?;
     Ok(value.into())
 }
+pub fn translation_stt_mode() -> Result<String, String> {
+    Ok(if settings()?.get("translationSttMode").and_then(Value::as_str) == Some("manual") { "manual" } else { "auto" }.into())
+}
+pub fn save_translation_stt_mode(value: &str) -> Result<String, String> {
+    if !["auto", "manual"].contains(&value) { return Err("Unsupported STT mode.".into()); }
+    let mut data = settings()?;
+    data.insert("translationSttMode".into(), json!(value));
+    write("settings.json", &Value::Object(data))?;
+    Ok(value.into())
+}
 pub fn chatbot_visible() -> Result<bool, String> {
     Ok(settings()?.get("chatbotVisible").and_then(Value::as_bool).unwrap_or(true))
 }

@@ -1,10 +1,11 @@
 use chrono::{Duration, NaiveDate};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use sha2::{Digest, Sha256};
 use serde_json::{Map, Value, json};
 use std::{
     collections::{HashMap, HashSet},
     fs::{self, File, OpenOptions},
-    io::Cursor,
+    io::{Cursor, Write},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -386,7 +387,7 @@ fn parse_register(kind: &str, sheet: &Worksheet, settings: &Value) -> Option<Val
             if row_start != *row_number { continue; }
             let stt_raw = row.get(indexes[0]).map(String::as_str).unwrap_or("");
             let stt = numeric_stt(stt_raw);
-            if kind == "signature" {
+            if kind == "signature" || kind == "translation" {
                 if let Some(stt) = stt { *stt_counts.entry(stt).or_default() += 1; allocation_max = allocation_max.max(stt); }
             }
             let business = if kind == "signature" {
@@ -417,10 +418,10 @@ fn parse_register(kind: &str, sheet: &Worksheet, settings: &Value) -> Option<Val
                 } else { row.get(indexes[i]).cloned().unwrap_or_default() };
                 record.insert(
                     (*key).into(),
-                    json!(if *key == "date" { date_text(&raw) } else if kind == "signature" && *key == "document" { raw.to_uppercase() } else { raw }),
+                    json!(if *key == "date" { date_text(&raw) } else if kind == "signature" && *key == "document" { raw.to_uppercase() } else if kind == "translation" && *key == "number" { numeric_stt(&raw).map(|number| format!("{number:02}")).unwrap_or(raw) } else { raw }),
                 );
             }
-            if kind == "signature" { record.insert("workbookRow".into(), json!(row_number)); record.insert("workbookRowEnd".into(), json!(row_end)); }
+            if kind == "signature" || kind == "translation" { record.insert("workbookRow".into(), json!(row_number)); record.insert("workbookRowEnd".into(), json!(row_end)); }
             for (id, index) in &custom_indexes {
                 record.insert(
                     format!("custom:{id}"),
@@ -429,7 +430,7 @@ fn parse_register(kind: &str, sheet: &Worksheet, settings: &Value) -> Option<Val
             }
             records.push(Value::Object(record));
         }
-        if kind == "signature" {
+        if kind == "signature" || kind == "translation" {
             let duplicates: Vec<u32> = stt_counts.into_iter().filter_map(|(stt, count)| (count > 1).then_some(stt)).collect();
             return Some(json!({"rows":records,"allocationMax":allocation_max,"duplicateNumbers":duplicates}));
         }
@@ -461,10 +462,8 @@ pub fn parse_translation_rows(
         let mut record = Map::new();
         record.insert("id".into(), json!(format!("import-{}", Uuid::new_v4())));
         for (i, key) in T_KEYS.iter().enumerate() {
-            record.insert(
-                (*key).into(),
-                json!(row.get(indexes[i]).cloned().unwrap_or_default()),
-            );
+            let value = row.get(indexes[i]).cloned().unwrap_or_default();
+            record.insert((*key).into(), json!(if *key == "number" { numeric_stt(&value).map(|number| format!("{number:02}")).unwrap_or(value) } else { value }));
         }
         result.push(Value::Object(record));
     }
@@ -611,6 +610,13 @@ fn workbook_hash(path: &Path) -> Result<String, String> {
     let bytes = fs::read(path).map_err(|e| format!("Could not read workbook: {e}"))?;
     Ok(format!("{:x}", Sha256::digest(bytes)))
 }
+#[cfg(windows)]
+fn zone_identifier(path: &Path) -> Result<Option<Vec<u8>>, String> {
+    let stream = PathBuf::from(format!("{}:Zone.Identifier", path.display()));
+    match fs::read(stream) { Ok(bytes) => Ok(Some(bytes)), Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None), Err(error) => Err(format!("Could not preserve workbook security provenance: {error}")) }
+}
+#[cfg(not(windows))]
+fn zone_identifier(_: &Path) -> Result<Option<Vec<u8>>, String> { Ok(None) }
 fn lock_signature_workbook(path: &Path) -> Result<File, String> {
     let mut options = OpenOptions::new();
     options.read(true);
@@ -621,6 +627,7 @@ fn lock_signature_workbook(path: &Path) -> Result<File, String> {
 pub fn import(state: &State, kind: &str, file: &str, settings: &Value) -> Result<Value, String> {
     let path = resolve_import_file(file)?;
     let path = fs::canonicalize(path).map_err(|e| e.to_string())?;
+    let source_zone = zone_identifier(&path)?.map(|bytes| BASE64.encode(bytes));
     let book = load(&path)?;
     let mut sheets = Vec::new();
     let mut source = Map::new();
@@ -639,6 +646,7 @@ pub fn import(state: &State, kind: &str, file: &str, settings: &Value) -> Result
             });
             register.insert("id".into(), json!(id));
             register.insert("name".into(), json!(sheet.get_name()));
+            if let Some(zone) = &source_zone { register.insert("sourceZoneIdentifier".into(), json!(zone)); }
             source.insert(id, json!(sheet.get_name()));
             sheets.push(Value::Object(register));
         }
@@ -807,12 +815,16 @@ fn append_register(
         if rows.len() > 100000 {
             return Err("Invalid register rows".into());
         }
+        let max_number = rows.iter().filter_map(|row| numeric_stt(&string(row, "number"))).max().unwrap_or(0);
+        let reserved_number = if kind == "translation" { let boundary: u32 = register.get("allocationMax").and_then(Value::as_u64).unwrap_or(0).try_into().map_err(|_| "Invalid STT allocation boundary")?; if boundary > 100_499 { return Err("Invalid STT allocation boundary".into()); } (boundary > max_number).then_some(boundary) } else { None };
         let mut widths: Vec<f64> = vec![14.0; headers.len()];
         for (row_index, record) in rows.iter().enumerate() {
             for (i, key) in keys.iter().enumerate() {
                 let value = if *key == "number" {
                     if kind == "translation" {
-                        (row_index + 1).to_string()
+                        let raw = string(record, key);
+                        let parsed = if raw.is_empty() { row_index as u32 + 1 } else { numeric_stt(&raw).ok_or("Invalid STT")? };
+                        format!("{parsed:02}")
                     } else if kind == "signature" {
                         let raw = string(record, key);
                         let parsed = if raw.is_empty() { row_index as u32 + 1 } else { numeric_stt(&raw).ok_or("Invalid STT")? };
@@ -861,6 +873,7 @@ fn append_register(
                 )
                 .min(255.0);
         }
+        if let Some(number) = reserved_number { let value = format!("{number:02}"); set_cell(sheet, 1, rows.len() as u32 + 2, &value, false); widths[0] = widths[0].max(value.len() as f64 + 2.0); }
         for record in rows {
             for (j, (id, _)) in custom.iter().enumerate() {
                 let value = string(record, &format!("custom:{id}"));
@@ -877,10 +890,11 @@ fn append_register(
                     .min(255.0);
             }
         }
-        let last = (rows.len() + 1) as u32;
+        let last = (rows.len() + 1 + usize::from(reserved_number.is_some())) as u32;
         decorate(sheet, last, headers.len(), &widths, false);
         for (i, key) in keys.iter().enumerate() {
             let format = match *key {
+                "number" if kind == "translation" => Some("00"),
                 "date" => Some("dd/mm/yyyy"),
                 "copies" => Some("0"),
                 "fee" => Some("#,##0"),
@@ -902,6 +916,7 @@ fn append_register(
 #[cfg(test)]
 mod tests {
     use super::*;
+
     fn signature_fixture(file: &Path, partial_slot: bool) {
         let mut book = xlsx::new_file_empty_worksheet();
         book.new_sheet("Cover").unwrap().get_cell_mut("A1").set_value("Keep this sheet");
@@ -965,6 +980,7 @@ mod tests {
     fn delete_signature_record_at(input: &mut Value, row: u32) {
         input["sheets"][0]["rows"].as_array_mut().unwrap().retain(|record| record["workbookRow"].as_u64() != Some(row as u64));
     }
+
     #[test]
     fn workbook_operations_share_an_exclusive_lock() {
         let state = State::default();
@@ -1852,15 +1868,109 @@ mod tests {
         );
         fs::remove_dir_all(root).unwrap();
     }
-}
-fn write(book: &xlsx::structs::Spreadsheet, file: &Path) -> Result<(), String> {
-    let temp = file.with_extension(format!("{}.tmp.xlsx", Uuid::new_v4()));
-    xlsx::writer::xlsx::write(book, &temp).map_err(|e| e.to_string())?;
-    fs::rename(&temp, file).map_err(|e| e.to_string())
+    #[test]
+    fn translation_save_places_manual_gaps_by_stt_and_returns_locators() {
+        let root = std::env::temp_dir().join(format!("b6h-translation-stt-{}", Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let file = root.join("translation.xlsx");
+        let mut book = xlsx::new_file_empty_worksheet();
+        let sheet = book.new_sheet("Register").unwrap();
+        for (index, header) in header_candidates("translation", &json!({}), "EN").iter().enumerate() { set_cell(sheet, index as u32 + 1, 1, header, false); }
+        set_cell(sheet, 1, 2, "01", false); set_cell(sheet, 3, 2, "First", false);
+        set_cell(sheet, 1, 4, "03", false); set_cell(sheet, 3, 4, "Third", false);
+        xlsx::writer::xlsx::write(&book, &file).unwrap();
+        let state = State::default();
+        let mut input = import(&state, "translation", &file.to_string_lossy(), &json!({})).unwrap();
+        input["sheets"][0]["rows"].as_array_mut().unwrap().push(json!({"id":"manual-02","number":"02","date":"2026-11-16","person":"Second","document":"","languages":"EN - VI","certifier":"","copies":"1","fee":"","notes":""}));
+        let result = save_translation(&state, &input, &json!({}));
+        assert_eq!(result["status"], "success");
+        let row = result["rowLocators"]["manual-02"].as_u64().unwrap() as u32;
+        let saved = load(&file).unwrap();
+        let sheet = saved.get_sheet_by_name("Register").unwrap();
+        assert_eq!(numeric_stt(&cell(sheet, 1, row)), Some(2));
+        assert_eq!(cell(sheet, 3, row), "Second");
+        assert_eq!(numeric_stt(&cell(sheet, 1, row + 1)), Some(3));
+        assert_eq!(result["allocationMaxes"][input["sheets"][0]["id"].as_str().unwrap()], 3);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn translation_duplicate_group_save_and_delete_preserve_canonical_slot() {
+        let root = std::env::temp_dir().join(format!("b6h-translation-duplicate-{}", Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let file = root.join("translation.xlsx");
+        let mut book = xlsx::new_file_empty_worksheet();
+        let sheet = book.new_sheet("Register").unwrap();
+        for (index, header) in header_candidates("translation", &json!({}), "EN").iter().enumerate() { set_cell(sheet, index as u32 + 1, 1, header, false); }
+        set_cell(sheet, 1, 2, "01", false); set_cell(sheet, 3, 2, "Original", false);
+        set_cell(sheet, 1, 3, "02", false); set_cell(sheet, 3, 3, "Next", false);
+        xlsx::writer::xlsx::write(&book, &file).unwrap();
+        let state = State::default();
+        let mut input = import(&state, "translation", &file.to_string_lossy(), &json!({})).unwrap();
+        input["sheets"][0]["rows"].as_array_mut().unwrap().push(json!({"id":"duplicate-01","number":"01","date":"2026-11-16","person":"Duplicate","document":"","languages":"EN - VI","certifier":"","copies":"1","fee":"","notes":"","duplicateConfirmed":true}));
+        let inserted = save_translation(&state, &input, &json!({}));
+        assert_eq!(inserted["status"], "success");
+        apply_row_locators(&mut input, &inserted);
+        let duplicate_row = inserted["rowLocators"]["duplicate-01"].as_u64().unwrap() as u32;
+        assert_eq!(duplicate_row, 3);
+        let sheet = load(&file).unwrap();
+        let sheet = sheet.get_sheet_by_name("Register").unwrap();
+        assert_eq!(cell(sheet, 3, 2), "Original");
+        assert_eq!(cell(sheet, 3, 3), "Duplicate");
+        assert_eq!(numeric_stt(&cell(sheet, 1, 4)), Some(2));
+        let base_id = string(&input["sheets"][0]["rows"][0], "id");
+        input["sheets"][0]["rows"].as_array_mut().unwrap().retain(|row| string(row, "id") != base_id);
+        let promoted = save_translation(&state, &input, &json!({}));
+        assert_eq!(promoted["status"], "success");
+        assert_eq!(promoted["rowLocators"]["duplicate-01"], 2);
+        let reopened = load(&file).unwrap();
+        let sheet = reopened.get_sheet_by_name("Register").unwrap();
+        assert_eq!(cell(sheet, 3, 2), "Duplicate");
+        let refreshed = import(&state, "translation", &file.to_string_lossy(), &json!({})).unwrap();
+        let mut delete_last = refreshed.clone();
+        delete_last["sheets"][0]["rows"].as_array_mut().unwrap().clear();
+        let deleted = save_translation(&state, &delete_last, &json!({}));
+        assert_eq!(deleted["status"], "success");
+        let emptied = load(&file).unwrap();
+        let sheet = emptied.get_sheet_by_name("Register").unwrap();
+        assert_eq!(numeric_stt(&cell(sheet, 1, 2)), Some(1));
+        assert_eq!(cell(sheet, 3, 2), "");
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[cfg(windows)]
+    #[test]
+    fn translation_save_and_export_preserve_mark_of_the_web_but_local_creation_does_not_add_it() {
+        let root = std::env::temp_dir().join(format!("b6h-zone-translation-{}", Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let source = root.join("source.xlsx");
+        let mut book = xlsx::new_file_empty_worksheet();
+        let sheet = book.new_sheet("Register").unwrap();
+        for (index, header) in header_candidates("translation", &json!({}), "EN").iter().enumerate() { set_cell(sheet, index as u32 + 1, 1, header, false); }
+        set_cell(sheet, 1, 2, "01", false); set_cell(sheet, 3, 2, "Imported", false);
+        xlsx::writer::xlsx::write(&book, &source).unwrap();
+        let zone = b"[ZoneTransfer]\r\nZoneId=3\r\n";
+        fs::write(PathBuf::from(format!("{}:Zone.Identifier", source.display())), zone).unwrap();
+        let state = State::default();
+        let mut imported = import(&state, "translation", &source.to_string_lossy(), &json!({})).unwrap();
+        assert!(imported["sheets"][0]["sourceZoneIdentifier"].is_string());
+        imported["sheets"][0]["rows"][0]["person"] = json!("Edited");
+        assert_eq!(save_translation(&state, &imported, &json!({}))["status"], "success");
+        assert_eq!(zone_identifier(&source).unwrap().unwrap(), zone);
+        let encoded = BASE64.encode(fs::read(&source).unwrap());
+        let derived = root.join("derived.xlsx");
+        export_translation(&derived.to_string_lossy(), &encoded, &imported["sheets"]).unwrap();
+        assert_eq!(zone_identifier(&derived).unwrap().unwrap(), zone);
+        let trusted = root.join("trusted.xlsx");
+        create(&state, "translation", &trusted.to_string_lossy(), &json!([{"id":"new","name":"New","rows":[]}]), &json!({}), "EN").unwrap();
+        assert!(zone_identifier(&trusted).unwrap().is_none());
+        fs::remove_dir_all(root).unwrap();
+    }
 }
 fn write_checked(book: &xlsx::structs::Spreadsheet, file: &Path, expected_hash: &str) -> Result<(), String> {
+    let zone = zone_identifier(file)?;
     let temp = file.with_extension(format!("{}.tmp.xlsx", Uuid::new_v4()));
     if let Err(error) = xlsx::writer::xlsx::write(book, &temp) { let _ = fs::remove_file(&temp); return Err(error.to_string()); }
+    #[cfg(windows)]
+    if let Some(zone) = zone { if let Err(error) = fs::write(PathBuf::from(format!("{}:Zone.Identifier", temp.display())), zone) { let _ = fs::remove_file(&temp); return Err(format!("Could not preserve workbook security provenance: {error}")); } }
     let reopened = match load(&temp) { Ok(book) => book, Err(error) => { let _ = fs::remove_file(&temp); return Err(format!("The saved workbook failed validation: {error}")); } };
     let expected_sheets = book.get_sheet_collection().iter().map(|sheet| sheet.get_name()).collect::<Vec<_>>();
     let saved_sheets = reopened.get_sheet_collection().iter().map(|sheet| sheet.get_name()).collect::<Vec<_>>();
@@ -1876,10 +1986,32 @@ fn write_checked(book: &xlsx::structs::Spreadsheet, file: &Path, expected_hash: 
     }
     Ok(())
 }
-fn write_new(book: &xlsx::structs::Spreadsheet, file: &Path) -> Result<(), String> {
+fn write_new(book: &xlsx::structs::Spreadsheet, file: &Path, zone: Option<&[u8]>) -> Result<(), String> {
     let temp = file.with_extension(format!("{}.tmp.xlsx", Uuid::new_v4()));
     xlsx::writer::xlsx::write(book, &temp).map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    if let Some(zone) = zone { if let Err(error) = fs::write(PathBuf::from(format!("{}:Zone.Identifier", temp.display())), zone) { let _ = fs::remove_file(&temp); return Err(format!("Could not preserve workbook security provenance: {error}")); } }
     let result = fs::hard_link(&temp, file).map_err(|e| e.to_string());
+    let _ = fs::remove_file(temp);
+    result
+}
+pub fn export_translation(file: &str, encoded: &str, sheets: &Value) -> Result<String, String> {
+    let path = valid_file(file)?;
+    if path.exists() { return Err("A file already exists at that location.".into()); }
+    let bytes = BASE64.decode(encoded).map_err(|_| "Invalid workbook export data.".to_string())?;
+    if bytes.len() > 100_000_000 { return Err("The workbook export exceeds the supported size.".into()); }
+    let zone = sheets.as_array().into_iter().flatten().find_map(|sheet| sheet.get("sourceZoneIdentifier").and_then(Value::as_str)).map(|value| BASE64.decode(value).map_err(|_| "Invalid source workbook security provenance.".to_string())).transpose()?;
+    let temp = path.with_extension(format!("{}.tmp.xlsx", Uuid::new_v4()));
+    let result = (|| {
+        let mut output = OpenOptions::new().write(true).create_new(true).open(&temp).map_err(|e| e.to_string())?;
+        output.write_all(&bytes).map_err(|e| e.to_string())?;
+        drop(output);
+        load(&temp)?;
+        #[cfg(windows)]
+        if let Some(zone) = zone { fs::write(PathBuf::from(format!("{}:Zone.Identifier", temp.display())), zone).map_err(|e| format!("Could not preserve workbook security provenance: {e}"))?; }
+        fs::hard_link(&temp, &path).map_err(|e| e.to_string())?;
+        Ok(path.to_string_lossy().into_owned())
+    })();
     let _ = fs::remove_file(temp);
     result
 }
@@ -1905,7 +2037,8 @@ pub fn create(
     } else {
         append_register(&mut book, kind, sheets, settings, language)?
     }
-    write_new(&book, &path)?;
+    let zone = sheets.iter().find_map(|sheet| sheet.get("sourceZoneIdentifier").and_then(Value::as_str)).map(|value| BASE64.decode(value).map_err(|_| "Invalid source workbook security provenance.".to_string())).transpose()?;
+    write_new(&book, &path, zone.as_deref())?;
     let source: Map<String, Value> = sheets
         .iter()
         .map(|s| (string(s, "id"), json!(string(s, "name"))))
@@ -1922,12 +2055,12 @@ pub fn create(
             revision,
         ),
     );
-    let row_locators: Map<String, Value> = if kind == "signature" { sheets.iter().flat_map(|sheet| sheet.get("rows").and_then(Value::as_array).into_iter().flatten().enumerate().map(|(index, row)| (string(row, "id"), json!(index + 2)))).collect() } else { Map::new() };
+    let row_locators: Map<String, Value> = if kind == "signature" || kind == "translation" { sheets.iter().flat_map(|sheet| sheet.get("rows").and_then(Value::as_array).into_iter().flatten().enumerate().map(|(index, row)| (string(row, "id"), json!(index + 2)))).collect() } else { Map::new() };
     Ok(json!({"file":file,"sourceMap":source,"rowLocators":row_locators}))
 }
-fn signature_columns(sheet: &Worksheet, settings: &Value) -> Option<(u32, Vec<usize>, Vec<(String, Option<usize>)>)> {
+fn register_columns(sheet: &Worksheet, kind: &str, settings: &Value) -> Option<(u32, Vec<usize>, Vec<(String, Option<usize>)>)> {
     for (row, values) in indexed_rows(sheet) {
-        let Some(columns) = matching_register("signature", &values, settings) else { continue };
+        let Some(columns) = matching_register(kind, &values, settings) else { continue };
         let custom_columns = custom(settings).into_iter().map(|(id, name)| (id, values.iter().position(|value| normalize(value) == normalize(&name)))).collect();
         return Some((row, columns, custom_columns));
     }
@@ -1940,13 +2073,14 @@ fn signature_occupied(sheet: &Worksheet, row: u32, columns: &[usize], custom_col
 fn signature_slot_occupied(sheet: &Worksheet, row: u32, number_column: usize) -> bool {
     (0..sheet.get_highest_column().min(220) as usize).any(|column| column != number_column && has_business_value(sheet, column, row))
 }
-fn signature_write_record(sheet: &mut Worksheet, row: u32, row_end: u32, record: &Value, columns: &[usize], custom_columns: &[(String, Option<usize>)]) {
-    for target_row in row..=row_end { sheet.get_style_mut((columns[0] as u32 + 1, target_row)).get_font_mut().set_size(14.0); }
-    for (index, key) in S_KEYS.iter().enumerate().skip(1) {
-        let value = if *key == "date" { date_serial(&string(record, key)).unwrap_or_else(|| string(record, key)) } else if *key == "certifier" || *key == "document" { string(record, key).to_uppercase() } else { string(record, key) };
+fn register_write_record(sheet: &mut Worksheet, kind: &str, row: u32, row_end: u32, record: &Value, columns: &[usize], custom_columns: &[(String, Option<usize>)]) {
+    let keys: &[&str] = if kind == "translation" { &T_KEYS } else { &S_KEYS };
+    if kind == "signature" { for target_row in row..=row_end { sheet.get_style_mut((columns[0] as u32 + 1, target_row)).get_font_mut().set_size(14.0); } }
+    for (index, key) in keys.iter().enumerate().skip(1) {
+        let value = if *key == "date" { date_serial(&string(record, key)).unwrap_or_else(|| string(record, key)) } else if kind == "signature" && (*key == "certifier" || *key == "document") { string(record, key).to_uppercase() } else { string(record, key) };
         let col = columns[index] as u32 + 1;
-        for target_row in row..=row_end { sheet.get_style_mut((col, target_row)).get_font_mut().set_size(14.0); }
-        if *key == "person" && row_end > row {
+        if kind == "signature" { for target_row in row..=row_end { sheet.get_style_mut((col, target_row)).get_font_mut().set_size(14.0); } }
+        if kind == "signature" && *key == "person" && row_end > row {
             let old = (row..=row_end).map(|r| cell(sheet, col, r)).filter(|v| !v.trim().is_empty()).collect::<Vec<_>>().join("\n\n");
             if old != value && (row..=row_end).all(|r| sheet.get_cell((col, r)).is_none_or(|cell| cell.get_formula().is_empty())) { set_cell(sheet, col, row, &value, false); for r in row + 1..=row_end { clear_business_cell(sheet, col, r); } }
         } else if sheet.get_cell((col, row)).is_none_or(|cell| cell.get_formula().is_empty()) && cell(sheet, col, row) != value { set_cell(sheet, col, row, &value, ["date", "copies", "fee"].contains(key)); }
@@ -1954,19 +2088,19 @@ fn signature_write_record(sheet: &mut Worksheet, row: u32, row_end: u32, record:
     for (id, column) in custom_columns {
         if let Some(column) = column {
             let value = string(record, &format!("custom:{id}"));
-            sheet.get_style_mut((*column as u32 + 1, row)).get_font_mut().set_size(14.0);
+            if kind == "signature" { sheet.get_style_mut((*column as u32 + 1, row)).get_font_mut().set_size(14.0); }
             if sheet.get_cell((*column as u32 + 1, row)).is_none_or(|cell| cell.get_formula().is_empty()) && cell(sheet, *column as u32 + 1, row) != value { set_cell(sheet, *column as u32 + 1, row, &value, false); }
         }
     }
 }
-fn save_signature_inner(state: &State, input: &Value, settings: &Value) -> Result<Value, (String, String)> {
+fn save_register_inner(state: &State, input: &Value, settings: &Value, kind: &str) -> Result<Value, (String, String)> {
     let file = string(input, "file");
     let path = fs::canonicalize(valid_file(&file).map_err(|e| ("invalid".into(), e))?).map_err(|e| ("stale".into(), format!("The imported workbook is no longer available: {e}")))?;
     let sheets = input.get("sheets").and_then(Value::as_array).ok_or_else(|| ("invalid".into(), "Invalid register sheets".into()))?;
     let source = input.get("sourceMap").and_then(Value::as_object).ok_or_else(|| ("invalid".into(), "Invalid source map".into()))?;
     let expected = state.imported.lock().map_err(|e| ("io".into(), e.to_string()))?.get(&path).cloned().ok_or_else(|| ("stale".into(), "Refresh the workbook before saving.".into()))?;
     let given: HashMap<String, String> = source.iter().filter_map(|(key, value)| Some((key.clone(), value.as_str()?.to_string()))).collect();
-    if expected.0 != "signature" || expected.1 != given { return Err(("stale".into(), "Refresh the workbook before saving.".into())); }
+    if expected.0 != kind || expected.1 != given { return Err(("stale".into(), "Refresh the workbook before saving.".into())); }
     let _file_lock = lock_signature_workbook(&path).map_err(|e| ("io".into(), e))?;
     if workbook_hash(&path).map_err(|e| ("io".into(), e))? != expected.2 { return Err(("stale".into(), "The workbook changed outside B6H. Refresh it before saving.".into())); }
     let mut book = load(&path).map_err(|e| ("io".into(), e))?;
@@ -1985,8 +2119,8 @@ fn save_signature_inner(state: &State, input: &Value, settings: &Value) -> Resul
         let Some(old_name) = given.get(&id) else { new_sheets.push(sheet_value.clone()); continue };
         let sheet = book.get_sheet_by_name_mut(old_name).ok_or_else(|| ("stale".into(), "A register sheet changed. Refresh the workbook before saving.".into()))?;
         if old_name != &name { sheet.set_name(&name); }
-        let (header_row, columns, custom_columns) = signature_columns(sheet, settings).ok_or_else(|| ("stale".into(), "The Signature register layout changed. Refresh the workbook before saving.".into()))?;
-        for column in columns.iter().chain(custom_columns.iter().flat_map(|(_, column)| column.iter())) { sheet.get_style_mut((*column as u32 + 1, header_row)).get_font_mut().set_size(14.0); }
+        let (header_row, columns, custom_columns) = register_columns(sheet, kind, settings).ok_or_else(|| ("stale".into(), "The register layout changed. Refresh the workbook before saving.".into()))?;
+        if kind == "signature" { for column in columns.iter().chain(custom_columns.iter().flat_map(|(_, column)| column.iter())) { sheet.get_style_mut((*column as u32 + 1, header_row)).get_font_mut().set_size(14.0); } }
         let records = sheet_value.get("rows").and_then(Value::as_array).ok_or_else(|| ("invalid".into(), "Invalid register rows".into()))?;
         if records.len() > 100_000 { return Err(("invalid".into(), "The workbook row capacity was exceeded.".into())); }
         let mut counts = indexed_rows(sheet).iter().skip_while(|(row, _)| *row <= header_row).filter(|(row, _)| merged_span(sheet, columns[0] as u32 + 1, *row).is_none_or(|(_, start, _, _)| start == *row)).filter_map(|(row, values)| numeric_stt(values.get(columns[0]).map(String::as_str).unwrap_or("")).map(|number| (number, *row))).fold(HashMap::<u32, Vec<u32>>::new(), |mut map, (number, row)| { map.entry(number).or_default().push(row); map });
@@ -2113,7 +2247,7 @@ fn save_signature_inner(state: &State, input: &Value, settings: &Value) -> Resul
             let row = adjust_row(row);
             let row_end = adjust_row(row_end);
             normalize_signature_stt(sheet, columns[0] as u32 + 1, row, number);
-            signature_write_record(sheet, row, row_end, record, &columns, &custom_columns);
+            register_write_record(sheet, kind, row, row_end, record, &columns, &custom_columns);
             all_locators.insert(string(record, "id"), json!(row));
             all_locator_ends.insert(string(record, "id"), json!(row_end));
         }
@@ -2121,15 +2255,21 @@ fn save_signature_inner(state: &State, input: &Value, settings: &Value) -> Resul
         allocation_maxes.insert(id, json!(allocation_max));
     }
     for name in removed { let _ = book.remove_sheet_by_name(&name); }
-    if !new_sheets.is_empty() { append_register(&mut book, "signature", &new_sheets, settings, "VI").map_err(|e| ("invalid".into(), e))?; for register in &new_sheets { if let Some(records) = register.get("rows").and_then(Value::as_array) { for (index, record) in records.iter().enumerate() { all_locators.insert(string(record, "id"), json!(index + 2)); all_locator_ends.insert(string(record, "id"), json!(index + 2)); } } } }
+    if !new_sheets.is_empty() { append_register(&mut book, kind, &new_sheets, settings, "VI").map_err(|e| ("invalid".into(), e))?; for register in &new_sheets { if let Some(records) = register.get("rows").and_then(Value::as_array) { for (index, record) in records.iter().enumerate() { all_locators.insert(string(record, "id"), json!(index + 2)); all_locator_ends.insert(string(record, "id"), json!(index + 2)); } } } }
     write_checked(&book, &path, &expected.2).map_err(|e| if e.contains("changed outside") { ("stale".into(), e) } else { ("io".into(), e) })?;
     let revision = workbook_hash(&path).map_err(|e| ("io".into(), e))?;
     let updated_source: HashMap<String, String> = sheets.iter().map(|sheet| (string(sheet, "id"), string(sheet, "name"))).collect();
-    state.imported.lock().map_err(|e| ("io".into(), e.to_string()))?.insert(path, ("signature".into(), updated_source, revision));
+    state.imported.lock().map_err(|e| ("io".into(), e.to_string()))?.insert(path, (kind.into(), updated_source, revision));
     Ok(json!({"status":"success","rowLocators":all_locators,"rowLocatorEnds":all_locator_ends,"allocationMaxes":allocation_maxes}))
 }
 pub fn save_signature(state: &State, input: &Value, settings: &Value) -> Value {
-    match save_signature_inner(state, input, settings) {
+    save_register(state, input, settings, "signature")
+}
+pub fn save_translation(state: &State, input: &Value, settings: &Value) -> Value {
+    save_register(state, input, settings, "translation")
+}
+fn save_register(state: &State, input: &Value, settings: &Value, kind: &str) -> Value {
+    match save_register_inner(state, input, settings, kind) {
         Ok(result) => result,
         Err((status, message)) if status == "duplicate" => {
             let mut fields = message.split('|');
@@ -2166,6 +2306,8 @@ pub fn save(
         .get(&path)
         .cloned()
         .ok_or("The imported workbook is no longer available.")?;
+    let _file_lock = lock_signature_workbook(&path)?;
+    if workbook_hash(&path)? != expected.2 { return Err("The workbook changed outside B6H. Refresh it before saving.".into()); }
     if expected.0 != kind
         || expected.1
             != source
@@ -2197,7 +2339,7 @@ pub fn save(
     } else {
         append_register(&mut book, kind, sheets, settings, language)?
     }
-    write(&book, &path)?;
+    write_checked(&book, &path, &expected.2)?;
     let revision = workbook_hash(&path)?;
     state.imported.lock().map_err(|e| e.to_string())?.insert(
         path,

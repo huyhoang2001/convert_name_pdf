@@ -38,6 +38,9 @@ jobs:
       - name: Run Node regression tests
         run: npm test
 
+      - name: Build production update runner
+        run: npm run build:update-runner
+
       - name: Run desktop Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked -- --test-threads=1
 

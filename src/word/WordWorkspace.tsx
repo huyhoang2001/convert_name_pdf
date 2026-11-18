@@ -11,6 +11,7 @@ import { displayWordPath } from './paths';
 import { filterTemplates } from './templateFilter';
 import { filterRecentDocuments } from './recentFilter';
 import { adjacentTabId } from './tabNavigation';
+import { markWorkspaceUnsaved } from '../unsavedWork';
 import en from '../locales/en.json';
 
 type T = (key: keyof typeof en) => string;
@@ -64,6 +65,7 @@ export function WordSettingsPanel({ t }: { t: T }) {
 export default function WordWorkspace({ visible, entry, language, t }: { visible: boolean; entry: number; language: 'EN'|'VI'; theme?: 'light'|'dark'; t: T }) {
   const [templates, setTemplates] = useState<TemplateEntry[]>([]), [recent, setRecent] = useState<RecentDocument[]>([]);
   const [tabs, setTabs] = useState<Tab[]>([]), [active, setActive] = useState(''), [split, setSplit] = useState(''), [detail, setDetail] = useState<TemplateEntry | null>(null);
+  useEffect(() => { markWorkspaceUnsaved('word', tabs.some(tab => tab.dirty || tab.saving)); }, [tabs]);
   const [showTemplates, setShowTemplates] = useState(true);
   const [backstageByTab, setBackstageByTab] = useState<Record<string, boolean>>({});
   const showEditorChrome = backstageByTab[active] === false && (!split || backstageByTab[split] === false);

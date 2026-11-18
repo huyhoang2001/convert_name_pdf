@@ -1,12 +1,15 @@
 [package]
 name = "b6h"
-version = "2.0.25"
+version = "3.0.0"
 description = "B6H desktop application"
 authors = ["Local"]
 license = ""
 repository = ""
 edition = "2024"
 rust-version = "1.90"
+
+[features]
+update-test-keys = []
 
 [lib]
 name = "b6h_lib"
@@ -42,6 +45,7 @@ futures-util = "0.3"
 unicode-normalization = "0.1"
 tokio = { version = "1", features = ["time", "macros", "sync"] }
 sha2 = "0.10"
+ring = "0.17.14"
 hex = "0.4"
 base64 = "0.22"
 zip = { version = "2.6", default-features = false, features = ["deflate"] }
@@ -49,4 +53,4 @@ craft-print = { package = "craft-print", git = "https://github.com/storytold/cra
 
 [target.'cfg(windows)'.dependencies]
 winprint = { git = "https://github.com/storytold/winprint.rs", rev = "5f80b9baf6b58937c401656634e42d33f00ddf49", default-features = false }
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Threading"] }

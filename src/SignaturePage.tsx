@@ -10,6 +10,7 @@ import SheetPager from './SheetPager';
 import { isRegisterSaveShortcut } from './copiesForm';
 import RegisterFolderDropTarget from './RegisterFolderDropTarget';
 import { adjacentTabId, isSheetNavigationShortcut } from './word/tabNavigation';
+import { markWorkspaceUnsaved } from './unsavedWork';
 import { applySignatureDuplicateFill, duplicateSignatureNumbers, formatSignatureNumber, insertSignatureRow, nextAvailableSignatureNumber, nextSignatureNumberAfterHighWater, normalizeSignaturePerson, signatureDocumentSuggestions, splitSearchMatches, uppercaseSignatureText } from './signatureText.mjs';
 
 export type SignatureRow = { id: string; number: string; date: string; person: string; document: string; certifier: string; copies: string; fee: string; notes: string; workbookRow?: number; workbookRowEnd?: number; duplicateConfirmed?: boolean; [key: string]: string | number | boolean | undefined };
@@ -42,6 +43,9 @@ function SignaturePage({ api, t, labels = {}, isVisible }: { api: SignatureApi; 
   const [documentSuggestionsOpen, setDocumentSuggestionsOpen] = useState(false), [activeDocumentSuggestion, setActiveDocumentSuggestion] = useState(-1);
   const [sheetDialog, setSheetDialog] = useState<{ action: 'add' | 'rename' | 'delete'; name: string } | null>(null);
   const [file, setFile] = useState(''), [sourceMap, setSourceMap] = useState<Record<string, string>>({}), [dirty, setDirty] = useState(false), [query, setQuery] = useState(''), [message, setMessage] = useState(''), [error, setError] = useState(''), [sttMode, setSttMode] = useState<'auto' | 'manual'>('auto'), [highlightedId, setHighlightedId] = useState(''), [duplicatePending, setDuplicatePending] = useState<SignatureRow | null>(null);
+  const originalForm = form.id ? sheets.flatMap(sheet => sheet.rows).find(row => row.id === form.id) : undefined;
+  const formDirty = originalForm ? keys.some(key => form[key] !== originalForm[key]) : JSON.stringify(form) !== JSON.stringify(emptyRow());
+  useEffect(() => { markWorkspaceUnsaved('signature', dirty || formDirty || duplicatePending !== null); }, [dirty, formDirty, duplicatePending]);
   const active = sheets.find(sheet => sheet.id === activeId), rows = active?.rows ?? [];
   const duplicateNumbers = useMemo(() => duplicateSignatureNumbers(rows), [rows]);
   const visibleRows = useMemo(() => rows.filter(row => row.id === highlightedId || Object.entries(row).filter(([key]) => !['workbookRow', 'workbookRowEnd', 'duplicateConfirmed'].includes(key)).map(([, value]) => value ?? '').join(' ').toLocaleLowerCase().includes(query.toLocaleLowerCase())), [rows, query, highlightedId]);

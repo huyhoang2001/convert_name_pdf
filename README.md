@@ -56,7 +56,9 @@ The in-app help works offline by default. Optional online help uses OpenRouter. 
 
 ## Install and use
 
-For a released portable build, use a 64-bit Windows PC with the WebView2 runtime and download the executable from [GitHub Releases](https://github.com/huyhoang2001/convert_name_pdf/releases/latest). Run the executable and select a workspace from the sidebar. There is no installer. The app can check GitHub Releases for updates.
+Download the current-user Windows x64 installer from [GitHub Releases](https://github.com/huyhoang2001/convert_name_pdf/releases/latest). Verify its SHA-256 checksum against the sidecar published with the installer before running it. The installer and uninstaller use the B6H logo and install without administrator access. The lightweight Setup downloads Microsoft's WebView2 bootstrapper if WebView2 is missing, so internet access may be required.
+
+The free installer is not signed with a commercial Authenticode certificate. Windows may show an unknown-publisher or SmartScreen warning; verify the download came from this repository's official release and matches its SHA-256 before choosing to run it. See [installation and updates](docs/INSTALLATION.md) for details. B6H checks the latest stable GitHub release for cryptographically signed modular updates.
 
 ## Development on Windows
 
@@ -112,4 +114,4 @@ The generated architecture map is in `graphify-out/graph.html`; the plain-langua
 
 ## Release workflow
 
-The Windows release workflow is defined in `.github/workflows/release.yml` and is triggered by version tags. Local development checks do not publish or package a release. Do not create or push a tag unless a release is intended.
+The Windows Installer + Modular Update workflow is defined in `.github/workflows/release.yml`. It runs regression checks, builds the logo-branded x64 Setup with the production update trust root, and creates a draft release. The release maintainer attaches the Ed25519-signed catalog and update artifacts before publishing. See [developer release maintenance](docs/DEVELOPER_RELEASES.md). The Setup is intentionally unsigned by Authenticode; its SHA-256 is published beside it.

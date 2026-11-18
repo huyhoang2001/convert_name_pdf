@@ -32,6 +32,13 @@ fn version(value: &str) -> Result<[u64; 3], String> {
         *parts[2].as_ref().unwrap(),
     ])
 }
+fn legacy_updates_enabled() -> bool {
+    version(env!("CARGO_PKG_VERSION")).is_ok_and(|v| v[0] < 3)
+}
+fn require_legacy_updates() -> Result<(), String> {
+    if legacy_updates_enabled() { Ok(()) }
+    else { Err("Portable executable self-replacement is disabled in B6H 3.0.0 until the signed modular updater is available.".into()) }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -46,6 +53,11 @@ mod tests {
         fs::write(&file, b"MZ test").unwrap();
         assert!(is_exe(&file));
         fs::remove_file(file).unwrap();
+    }
+    #[test]
+    fn v3_disables_legacy_executable_replacement() {
+        assert!(!legacy_updates_enabled());
+        assert!(require_legacy_updates().is_err());
     }
 }
 fn target() -> Result<PathBuf, String> {
@@ -78,6 +90,7 @@ fn message(app: &AppHandle, vi: bool, en: &str, vn: &str) {
         .blocking_show();
 }
 pub fn mark_started() -> Result<(), String> {
+    if !legacy_updates_enabled() { return Ok(()); }
     if cfg!(debug_assertions) {
         return Ok(());
     }
@@ -147,19 +160,8 @@ fn stage(app: &AppHandle, source: &Path, confirmed: bool) -> Result<(), String> 
     app.exit(0);
     Ok(())
 }
-pub fn install_file(app: &AppHandle, file: &str) -> Result<(), String> {
-    let path = Path::new(file);
-    if !path.is_absolute()
-        || !path.is_file()
-        || !path
-            .extension()
-            .is_some_and(|e| e.eq_ignore_ascii_case("exe"))
-    {
-        return Err("Choose a valid Windows executable.".into());
-    }
-    stage(app, path, false)
-}
 pub async fn check(app: AppHandle) -> Result<bool, String> {
+    require_legacy_updates()?;
     if BUSY.swap(true, Ordering::AcqRel) {
         return Ok(false);
     }

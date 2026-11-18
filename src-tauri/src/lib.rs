@@ -4,6 +4,7 @@ mod pdf;
 mod printing;
 mod storage;
 mod update;
+mod modular_update;
 mod word;
 mod workbook;
 use std::sync::Arc;
@@ -512,8 +513,58 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<bool, String> {
     update::check(app).await
 }
 #[tauri::command]
-fn install_update_from_file(app: tauri::AppHandle, file: String) -> Result<(), String> {
-    update::install_file(&app, &file)
+async fn install_update_from_file(app: tauri::AppHandle, file: String) -> Result<modular_update::PackageInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || modular_update::import_package(app, &file))
+        .await
+        .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn discover_online_updates() -> Result<Vec<modular_update::CatalogPackage>, String> {
+    modular_update::discover_online_updates().await
+}
+#[tauri::command]
+async fn download_online_update(app: tauri::AppHandle, component: String, release_id: String) -> Result<modular_update::PackageInfo, String> {
+    modular_update::download_online_update(app, component, release_id).await
+}
+#[tauri::command]
+fn cancel_update_import() {
+    modular_update::cancel_import();
+}
+#[tauri::command]
+fn get_staged_updates() -> Result<Vec<modular_update::PackageInfo>, String> {
+    modular_update::staged_packages()
+}
+#[tauri::command]
+fn get_update_runtime_status() -> Result<modular_update::RuntimeStatus, String> {
+    modular_update::runtime_status()
+}
+#[tauri::command]
+fn get_update_history() -> Result<Vec<modular_update::UpdateHistoryEntry>, String> {
+    modular_update::update_history()
+}
+#[tauri::command]
+fn activate_update(component: String, release_id: String) -> Result<(), String> {
+    modular_update::schedule_package(&component, &release_id)
+}
+#[tauri::command]
+fn rollback_update() -> Result<(), String> {
+    modular_update::schedule_rollback()
+}
+#[tauri::command]
+fn rollback_core_update(app: tauri::AppHandle) -> Result<(), String> {
+    modular_update::start_core_rollback(app)
+}
+#[tauri::command]
+fn launch_core_update(app: tauri::AppHandle) -> Result<(), String> {
+    modular_update::start_core_update(app)
+}
+#[tauri::command]
+fn mark_runtime_ready() -> Result<(), String> {
+    modular_update::mark_runtime_ready()
+}
+#[tauri::command]
+fn restart_application(app: tauri::AppHandle) {
+    app.restart()
 }
 #[tauri::command]
 fn mark_update_started() -> Result<(), String> {
@@ -786,10 +837,41 @@ async fn save_count_report(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .register_uri_scheme_protocol("tauri", |context, request| {
+            let requested = request.uri().path().trim_start_matches('/');
+            let path = if requested.is_empty() { "index.html" } else { requested };
+            let app = context.app_handle();
+            let csp = app.asset_resolver().get("index.html".into()).and_then(|asset| asset.csp_header);
+            let origin = if cfg!(windows) { "http://tauri.localhost" } else { "tauri://localhost" };
+            let response = match modular_update::active_asset(path) {
+                Ok(Some(asset)) => tauri::http::Response::builder()
+                    .status(200)
+                    .header("Content-Type", asset.mime_type)
+                    .header("Access-Control-Allow-Origin", origin)
+                    .header("Cache-Control", "no-cache")
+                    .header("Content-Security-Policy", csp.unwrap_or_default())
+                    .body(asset.bytes),
+                Ok(None) => match app.asset_resolver().get(path.to_string()) {
+                    Some(asset) => {
+                        let mut builder = tauri::http::Response::builder()
+                            .status(200)
+                            .header("Content-Type", asset.mime_type)
+                            .header("Access-Control-Allow-Origin", origin)
+                            .header("Cache-Control", "no-cache");
+                        if let Some(csp) = asset.csp_header { builder = builder.header("Content-Security-Policy", csp); }
+                        builder.body(asset.bytes)
+                    }
+                    None => tauri::http::Response::builder().status(404).body(Vec::new()),
+                },
+                Err(_) => tauri::http::Response::builder().status(500).body(b"Runtime integrity check failed.".to_vec()),
+            };
+            response.unwrap_or_else(|_| tauri::http::Response::builder().status(500).body(Vec::new()).unwrap())
+        })
         .manage(Arc::new(pdf::State::default()))
         .manage(workbook::State::default())
         .manage(Arc::new(word::State::default()))
         .setup(|app| {
+            modular_update::recover_activation().map_err(std::io::Error::other)?;
             install_menu(app.handle())?;
             app.on_menu_event(|app, event| match event.id().0.as_str() {
                 "check-update" => {
@@ -804,16 +886,19 @@ pub fn run() {
                     if let Some(file) = app
                         .dialog()
                         .file()
-                        .add_filter("B6H portable app", &["exe"])
+                        .add_filter("B6H modular update", &["b6hupdate"])
                         .blocking_pick_file()
                     {
                         match file.into_path() {
                             Ok(file) => {
-                                if let Err(error) =
-                                    update::install_file(app, &file.to_string_lossy())
-                                {
-                                    app.dialog().message(error).title("B6H").blocking_show();
-                                }
+                                let app = app.clone();
+                                let error_app = app.clone();
+                                let path = file.to_string_lossy().into_owned();
+                                tauri::async_runtime::spawn(async move {
+                                    if let Ok(Err(error)) = tauri::async_runtime::spawn_blocking(move || modular_update::import_package(app, &path)).await {
+                                        error_app.dialog().message(error).title("B6H").blocking_show();
+                                    }
+                                });
                             }
                             Err(error) => {
                                 app.dialog()
@@ -911,6 +996,18 @@ pub fn run() {
             parse_translation_rows,
             check_for_updates,
             install_update_from_file,
+            discover_online_updates,
+            download_online_update,
+            cancel_update_import,
+            get_staged_updates,
+            get_update_runtime_status,
+            get_update_history,
+            activate_update,
+            rollback_update,
+            rollback_core_update,
+            launch_core_update,
+            mark_runtime_ready,
+            restart_application,
             mark_update_started,
             get_word_settings,
             get_word_local_fonts,

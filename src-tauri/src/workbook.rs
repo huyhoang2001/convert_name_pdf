@@ -632,7 +632,9 @@ fn save_error_code(message: &str) -> &'static str {
 }
 struct RegisterSaveLock {
     #[cfg(windows)]
-    handle: windows_sys::Win32::Foundation::HANDLE,
+    file: File,
+    #[cfg(windows)]
+    overlapped: windows_sys::Win32::System::IO::OVERLAPPED,
     #[cfg(not(windows))]
     _directory: File,
 }
@@ -640,31 +642,31 @@ struct RegisterSaveLock {
 impl Drop for RegisterSaveLock {
     fn drop(&mut self) {
         unsafe {
-            let _ = windows_sys::Win32::System::Threading::ReleaseMutex(self.handle);
-            let _ = windows_sys::Win32::Foundation::CloseHandle(self.handle);
+            use std::os::windows::io::AsRawHandle;
+            use windows_sys::Win32::Storage::FileSystem::UnlockFileEx;
+            let _ = UnlockFileEx(self.file.as_raw_handle(), 0, 1, 0, &mut self.overlapped);
         }
     }
 }
 fn lock_register_save(path: &Path) -> Result<RegisterSaveLock, String> {
     #[cfg(windows)]
     {
-        use std::ptr;
-        use windows_sys::Win32::{
-            Foundation::{WAIT_ABANDONED, WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT},
-            System::Threading::{CreateMutexW, WaitForSingleObject},
-        };
-        let identity = fs::canonicalize(path).map_err(|error| format!("Could not resolve workbook for save coordination: {error}"))?;
-        let identity = identity.to_string_lossy().to_lowercase();
-        let name = format!("Local\\B6HWorkbookSave-{:x}", Sha256::digest(identity.as_bytes()));
-        let name: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
-        let handle = unsafe { CreateMutexW(ptr::null(), 0, name.as_ptr()) };
-        if handle.is_null() { return Err(format!("Could not coordinate workbook save: {}", std::io::Error::last_os_error())); }
-        match unsafe { WaitForSingleObject(handle, 0) } {
-            WAIT_OBJECT_0 | WAIT_ABANDONED => Ok(RegisterSaveLock { handle }),
-            WAIT_TIMEOUT => { unsafe { let _ = windows_sys::Win32::Foundation::CloseHandle(handle); } Err("Another B6H save is active.".into()) },
-            WAIT_FAILED => { let error = std::io::Error::last_os_error(); unsafe { let _ = windows_sys::Win32::Foundation::CloseHandle(handle); } Err(format!("Could not coordinate workbook save: {error}")) },
-            result => { unsafe { let _ = windows_sys::Win32::Foundation::CloseHandle(handle); } Err(format!("Could not coordinate workbook save (wait result {result}).")) },
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Storage::FileSystem::{LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY, LockFileEx};
+        let mut options = OpenOptions::new();
+        options.read(true);
+        options.share_mode(1 | 4);
+        let file = options.open(path).map_err(|error| format!("Could not open workbook for save coordination: {error}"))?;
+        let mut overlapped = windows_sys::Win32::System::IO::OVERLAPPED::default();
+        // Keep the SMB coordination byte beyond practical workbook sizes so other clients can still read the file.
+        overlapped.Anonymous.Anonymous = windows_sys::Win32::System::IO::OVERLAPPED_0_0 { Offset: u32::MAX, OffsetHigh: u32::MAX - 1 };
+        let locked = unsafe { LockFileEx(file.as_raw_handle(), LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY, 0, 1, 0, &mut overlapped) };
+        if locked == 0 {
+            let error = std::io::Error::last_os_error();
+            if error.raw_os_error() == Some(33) { return Err("Another B6H save is active.".into()); }
+            return Err(format!("Could not coordinate workbook save: {error}"));
         }
+        Ok(RegisterSaveLock { file, overlapped })
     }
     #[cfg(not(windows))]
     {
@@ -1554,8 +1556,23 @@ mod tests {
         let mut imported = import(&state, "signature", &file.to_string_lossy(), &json!({})).unwrap();
         imported["sheets"][0]["rows"][0]["person"] = json!("Updated signer");
         let input = json!({"file":imported["file"],"sourceMap":imported["sourceMap"],"sheets":imported["sheets"]});
-        assert_eq!(save_signature(&state, &input, &json!({}))["status"], "success");
+        for _ in 0..20 { assert_eq!(save_signature(&state, &input, &json!({}))["status"], "success"); }
         assert_eq!(cell(load(&file).unwrap().get_sheet_by_name("Register").unwrap(), 3, 8), "Updated signer");
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn register_save_file_lock_serializes_handles_without_sidecars() {
+        let root = std::env::temp_dir().join(format!("b6h-save-lock-{}", Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let file = root.join("workbook.xlsx");
+        fs::write(&file, b"test").unwrap();
+        let first = lock_register_save(&file).unwrap();
+        assert!(lock_register_save(&file).is_err());
+        drop(first);
+        assert!(lock_register_save(&file).is_ok());
         assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
         fs::remove_dir_all(root).unwrap();
     }

@@ -1,6 +1,6 @@
 {
   "name": "safe-pdf-rename",
-  "version": "2.0.25",
+  "version": "3.0.0",
   "description": "Safe Windows PDF renaming utility",
   "author": "Local",
   "private": true,
@@ -12,9 +12,19 @@
     "wordcraft:cache": "node scripts/wordcraft-cache.mjs",
     "web:dev": "node scripts/build-wordcraft.mjs && vite",
     "web:build": "node scripts/build-wordcraft.mjs && tsc -b && vite build && node scripts/build-wordcraft.mjs --check",
+    "build:frontend-update": "tsc -b && vite build --mode frontend-update --outDir dist/frontend-update && node scripts/prepare-frontend-update.mjs",
     "build": "npm run web:build",
-    "tauri:build": "tauri build",
+    "tauri:build": "npm.cmd run build:update-runner && tauri build",
+    "build:update-runner": "node scripts/build-update-runner.mjs",
+    "build:update-runner:test": "node scripts/build-update-runner.mjs --test",
+    "build:installer": "npm.cmd run build:update-runner && tauri build --target x86_64-pc-windows-msvc",
+    "build:installer:test": "npm.cmd run build:update-runner:test && tauri build --target x86_64-pc-windows-msvc --features update-test-keys",
+    "build:installer:core-test": "set B6H_TEST_CORE_VERSION=3.0.1&& npm.cmd run build:update-runner:test && tauri build --target x86_64-pc-windows-msvc --config src-tauri/tauri.core-test.conf.json --features update-test-keys",
+    "build:installer:offline": "npm.cmd run build:update-runner && tauri build --target x86_64-pc-windows-msvc --config src-tauri/tauri.offline.conf.json",
     "native:smoke": "node scripts/native-smoke.mjs",
+    "update:package": "node scripts/update-package.mjs",
+    "update:verify": "node scripts/update-package.mjs verify",
+    "update:catalog": "node scripts/update-package.mjs catalog",
     "wordcraft:webview2-smoke": "node scripts/wordcraft-webview2-smoke.mjs",
     "test": "node --test \"tests/*.test.mjs\""
   },
@@ -35,6 +45,7 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "fflate": "0.8.3",
     "@tauri-apps/cli": "^2.12.4",
     "@types/node": "latest",
     "@types/react": "latest",

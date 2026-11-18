@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "B6H",
-  "version": "2.0.25",
+  "version": "3.0.0",
   "identifier": "com.safe-pdf-rename.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -22,12 +22,23 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; frame-src 'self'; media-src blob: data:; object-src 'none'; base-uri 'self'; form-action 'self'"
     }
   },
   "bundle": {
-    "active": false,
-    "targets": "all",
+    "active": true,
+    "targets": ["nsis"],
+    "resources": {
+      "target/x86_64-pc-windows-msvc/release/b6h-update-runner.exe": "b6h-update-runner.exe"
+    },
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper" },
+      "nsis": {
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico"
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

@@ -10,6 +10,7 @@ import { blankCopiesRow as blankRow, copiesSuggestions, decrementCopiesCount, is
 import RegisterFolderDropTarget from './RegisterFolderDropTarget';
 import { adjacentTabId, isSheetNavigationShortcut } from './word/tabNavigation';
 import { classifyChatError } from './chatbotSession';
+import { markWorkspaceUnsaved } from './unsavedWork';
 
 export type CopiesRow = { id: string; refNo: string; customer: string; description: string; quantity: string; unitPrice: string; totalAmount?: string; manualTotal?: boolean; manualRefNo?: boolean; [key: string]: string | boolean | undefined };
 export type CopiesSheet = { id: string; name: string; title: string; address: string; date: string; rows: CopiesRow[] };
@@ -44,6 +45,9 @@ function CopiesPage({ api, t, labels = {}, isVisible, language }: { api: CopiesA
   const [sheetDialogError, setSheetDialogError] = useState('');
   const [query, setQuery] = useState(''), [file, setFile] = useState(''), [sourceMap, setSourceMap] = useState<Record<string, string>>({}), [dirty, setDirty] = useState(false), [message, setMessage] = useState(''), [error, setError] = useState('');
   const active = sheets.find(sheet => sheet.id === activeId), rows = active?.rows ?? [];
+  const originalForm = form.id ? rows.find(row => row.id === form.id) : undefined;
+  const formDirty = originalForm ? Object.keys(form).some(key => form[key] !== originalForm[key]) : JSON.stringify(form) !== JSON.stringify(blankRow());
+  useEffect(() => { markWorkspaceUnsaved('copies', dirty || formDirty); }, [dirty, formDirty]);
   const suggestions = autocomplete?.sheetId === activeId ? copiesSuggestions(rows, autocomplete.field, form[autocomplete.field]) : [];
   const selectSuggestion = (field: 'customer' | 'description', value: string) => { setForm(current => ({ ...current, [field]: value })); setAutocomplete(null); };
   const suggestionKeyDown = (event: ReactKeyboardEvent, field: 'customer' | 'description') => {

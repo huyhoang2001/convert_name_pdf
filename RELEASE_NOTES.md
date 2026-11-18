@@ -1,7 +1,7 @@
-# B6H v2.0.24
+# B6H v2.0.25
 
-- Made signature and translation workbook saves safer with coordinated saves, atomic replacement, and verified recovery backups.
-- Added specific English and Vietnamese messages for save permission, file sharing, and network errors.
+- Signature and translation workbook saves now update the current workbook without leaving backup or lock sidecar files.
+- Kept workbook validation and atomic replacement during saves.
 - Reused and validated the existing Wordcraft JavaScript/WASM runtime; no Wordcraft source rebuild was needed.
 
 The Windows x64 portable executable and its SHA-256 checksum are attached to this release.

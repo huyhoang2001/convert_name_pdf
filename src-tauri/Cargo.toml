@@ -1,6 +1,6 @@
 [package]
 name = "b6h"
-version = "2.0.24"
+version = "2.0.25"
 description = "B6H desktop application"
 authors = ["Local"]
 license = ""
@@ -49,4 +49,4 @@ craft-print = { package = "craft-print", git = "https://github.com/storytold/cra
 
 [target.'cfg(windows)'.dependencies]
 winprint = { git = "https://github.com/storytold/winprint.rs", rev = "5f80b9baf6b58937c401656634e42d33f00ddf49", default-features = false }
-windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Threading"] }

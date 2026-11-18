@@ -141,7 +141,7 @@ dependencies = [
 
 [[package]]
 name = "b6h"
-version = "2.0.24"
+version = "2.0.25"
 dependencies = [
  "base64 0.22.1",
  "chrono",

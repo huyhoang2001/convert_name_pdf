@@ -630,36 +630,61 @@ fn save_error_code(message: &str) -> &'static str {
     else if ["(os error 53)", "(os error 59)", "(os error 64)", "(os error 67)", "(os error 1219)", "(os error 1231)", "(os error 1232)", "(os error 1236)"].iter().any(|code| message.contains(code)) { "signatureSaveNetwork" }
     else { "signatureWorkbookIo" }
 }
-struct RegisterSaveLock { _file: File, #[cfg(not(windows))] path: PathBuf }
+struct RegisterSaveLock {
+    #[cfg(windows)]
+    handle: windows_sys::Win32::Foundation::HANDLE,
+    #[cfg(not(windows))]
+    _directory: File,
+}
+#[cfg(windows)]
 impl Drop for RegisterSaveLock {
     fn drop(&mut self) {
-        #[cfg(not(windows))]
-        let _ = fs::remove_file(&self.path);
+        unsafe {
+            let _ = windows_sys::Win32::System::Threading::ReleaseMutex(self.handle);
+            let _ = windows_sys::Win32::Foundation::CloseHandle(self.handle);
+        }
     }
 }
 fn lock_register_save(path: &Path) -> Result<RegisterSaveLock, String> {
-    let lock = path.with_extension("xlsx.b6h-lock");
-    let mut options = OpenOptions::new();
-    options.read(true).write(true).create(true);
     #[cfg(windows)]
-    options.share_mode(0);
+    {
+        use std::ptr;
+        use windows_sys::Win32::{
+            Foundation::{WAIT_ABANDONED, WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT},
+            System::Threading::{CreateMutexW, WaitForSingleObject},
+        };
+        let identity = fs::canonicalize(path).map_err(|error| format!("Could not resolve workbook for save coordination: {error}"))?;
+        let identity = identity.to_string_lossy().to_lowercase();
+        let name = format!("Local\\B6HWorkbookSave-{:x}", Sha256::digest(identity.as_bytes()));
+        let name: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
+        let handle = unsafe { CreateMutexW(ptr::null(), 0, name.as_ptr()) };
+        if handle.is_null() { return Err(format!("Could not coordinate workbook save: {}", std::io::Error::last_os_error())); }
+        match unsafe { WaitForSingleObject(handle, 0) } {
+            WAIT_OBJECT_0 | WAIT_ABANDONED => Ok(RegisterSaveLock { handle }),
+            WAIT_TIMEOUT => { unsafe { let _ = windows_sys::Win32::Foundation::CloseHandle(handle); } Err("Another B6H save is active.".into()) },
+            WAIT_FAILED => { let error = std::io::Error::last_os_error(); unsafe { let _ = windows_sys::Win32::Foundation::CloseHandle(handle); } Err(format!("Could not coordinate workbook save: {error}")) },
+            result => { unsafe { let _ = windows_sys::Win32::Foundation::CloseHandle(handle); } Err(format!("Could not coordinate workbook save (wait result {result}).")) },
+        }
+    }
     #[cfg(not(windows))]
-    options.create_new(true);
-    options.open(&lock).map(|file| RegisterSaveLock { _file: file, #[cfg(not(windows))] path: lock }).map_err(|error| format!("Another B6H save is active or the workbook folder does not allow a save lock: {error}"))
+    {
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        let directory = File::open(parent).map_err(|error| format!("Could not coordinate workbook save: {error}"))?;
+        directory.try_lock().map_err(|error| format!("Another B6H save is active or could not be coordinated: {error}"))?;
+        Ok(RegisterSaveLock { _directory: directory })
+    }
 }
 #[cfg(windows)]
-fn replace_workbook(temp: &Path, file: &Path, backup: &Path) -> Result<(), std::io::Error> {
+fn replace_workbook(temp: &Path, file: &Path) -> Result<(), std::io::Error> {
     use std::{os::windows::ffi::OsStrExt, ptr};
     use windows_sys::Win32::Storage::FileSystem::ReplaceFileW;
     let file: Vec<u16> = file.as_os_str().encode_wide().chain(Some(0)).collect();
     let temp: Vec<u16> = temp.as_os_str().encode_wide().chain(Some(0)).collect();
-    let backup: Vec<u16> = backup.as_os_str().encode_wide().chain(Some(0)).collect();
-    let replaced = unsafe { ReplaceFileW(file.as_ptr(), temp.as_ptr(), backup.as_ptr(), 0, ptr::null(), ptr::null()) };
+    let replaced = unsafe { ReplaceFileW(file.as_ptr(), temp.as_ptr(), ptr::null(), 0, ptr::null(), ptr::null()) };
     if replaced == 0 { Err(std::io::Error::last_os_error()) } else { Ok(()) }
 }
 #[cfg(not(windows))]
-fn replace_workbook(temp: &Path, file: &Path, backup: &Path) -> Result<(), std::io::Error> {
-    fs::copy(file, backup)?;
+fn replace_workbook(temp: &Path, file: &Path) -> Result<(), std::io::Error> {
     fs::rename(temp, file)
 }
 pub fn import(state: &State, kind: &str, file: &str, settings: &Value) -> Result<Value, String> {
@@ -1520,40 +1545,43 @@ mod tests {
     }
 
     #[test]
-    fn signature_save_replaces_atomically_and_keeps_a_verified_backup() {
+    fn signature_save_replaces_atomically_without_sidecar_files() {
         let root = std::env::temp_dir().join(format!("b6h-register-backup-{}", Uuid::new_v4()));
         fs::create_dir(&root).unwrap();
         let file = root.join("signature.xlsx");
         signature_fixture(&file, false);
-        let original_hash = workbook_hash(&file).unwrap();
         let state = State::default();
         let mut imported = import(&state, "signature", &file.to_string_lossy(), &json!({})).unwrap();
         imported["sheets"][0]["rows"][0]["person"] = json!("Updated signer");
         let input = json!({"file":imported["file"],"sourceMap":imported["sourceMap"],"sheets":imported["sheets"]});
         assert_eq!(save_signature(&state, &input, &json!({}))["status"], "success");
-        let backup = fs::read_dir(&root).unwrap().filter_map(Result::ok).map(|entry| entry.path()).find(|path| path.file_name().unwrap_or_default().to_string_lossy().contains(".b6h-backup-")).unwrap();
-        assert_eq!(workbook_hash(&backup).unwrap(), original_hash);
         assert_eq!(cell(load(&file).unwrap().get_sheet_by_name("Register").unwrap(), 3, 8), "Updated signer");
-        assert!(!fs::read_dir(&root).unwrap().filter_map(Result::ok).any(|entry| entry.file_name().to_string_lossy().contains(".tmp.xlsx")));
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
         fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
-    fn register_save_lock_preserves_the_original_and_allows_retry() {
+    fn workbook_lock_preserves_the_original_and_allows_retry_without_sidecars() {
         let root = std::env::temp_dir().join(format!("b6h-register-lock-{}", Uuid::new_v4()));
         fs::create_dir(&root).unwrap();
         let file = root.join("signature.xlsx");
         signature_fixture(&file, false);
         let original_hash = workbook_hash(&file).unwrap();
-        let state = State::default();
+        let state = Arc::new(State::default());
         let mut imported = import(&state, "signature", &file.to_string_lossy(), &json!({})).unwrap();
         imported["sheets"][0]["rows"][0]["person"] = json!("Pending signer");
         let input = json!({"file":imported["file"],"sourceMap":imported["sourceMap"],"sheets":imported["sheets"]});
         let lock = lock_register_save(&file).unwrap();
-        assert_eq!(save_signature(&state, &input, &json!({}))["status"], "io");
+        let state_for_thread = Arc::clone(&state);
+        let input_for_thread = input.clone();
+        let result = std::thread::spawn(move || save_signature(&state_for_thread, &input_for_thread, &json!({})))
+            .join().unwrap();
+        assert_eq!(result["status"], "io");
         assert_eq!(workbook_hash(&file).unwrap(), original_hash);
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
         drop(lock);
         assert_eq!(save_signature(&state, &input, &json!({}))["status"], "success");
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -1785,7 +1813,7 @@ mod tests {
         assert!(*register.get_row_dimension(&2).unwrap().get_height() >= 56.0);
         assert!(*register.get_column_dimension("C").unwrap().get_width() > 32.0);
         assert!(register.get_tables().is_empty());
-        assert!(!file.with_extension("b6h-backup.xlsx").exists());
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
@@ -2061,18 +2089,17 @@ fn write_checked(book: &xlsx::structs::Spreadsheet, file: &Path, expected_hash: 
         let _ = fs::remove_file(&temp);
         return Err("The workbook changed outside B6H. Refresh it before saving.".into());
     }
-    let backup = file.with_file_name(format!("{}.b6h-backup-{}.xlsx", file.file_name().unwrap_or_default().to_string_lossy(), Uuid::new_v4()));
-    if let Err(error) = replace_workbook(&temp, file, &backup) {
-        if workbook_hash(file).is_ok_and(|hash| hash == candidate_hash) && workbook_hash(&backup).is_ok_and(|hash| hash == expected_hash) { return Ok(()); }
-        return Err(format!("Could not replace the workbook: {error}. Recovery candidate: {}; backup, if created: {}", temp.display(), backup.display()));
+    if let Err(error) = replace_workbook(&temp, file) {
+        if !workbook_hash(file).is_ok_and(|hash| hash == candidate_hash) {
+            let _ = fs::remove_file(&temp);
+            return Err(format!("Could not replace the workbook: {error}"));
+        }
     }
-    if !workbook_hash(&backup).is_ok_and(|hash| hash == expected_hash) {
-        return Err(format!("The workbook was replaced but its recovery backup could not be verified; inspect {} before retrying", backup.display()));
-    }
-    let committed = load(file).map_err(|error| format!("The workbook was replaced but could not be reopened; recovery backup: {}. {error}", backup.display()))?;
+    let _ = fs::remove_file(&temp);
+    let committed = load(file).map_err(|error| format!("The workbook was replaced but could not be reopened. {error}"))?;
     let committed_sheets = committed.get_sheet_collection().iter().map(|sheet| sheet.get_name()).collect::<Vec<_>>();
     if expected_sheets != committed_sheets || !workbook_hash(file).is_ok_and(|hash| hash == candidate_hash) {
-        return Err(format!("The workbook was replaced but failed post-commit verification; recovery backup: {}", backup.display()));
+        return Err("The workbook was replaced but failed post-commit verification.".into());
     }
     Ok(())
 }

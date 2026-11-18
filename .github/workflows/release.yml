@@ -13,7 +13,6 @@ jobs:
     runs-on: windows-latest
     env:
       B6H_UPDATE_TRUST_ROOTS: '{"b6h-update-ed25519-2026-11":"db1c5981992f0efc47edd9b9f4d5cc9d9e5a29e655d15d3b71b8d5d569c74b0c"}'
-      CARGO_TARGET_DIR: src-tauri/target
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -44,8 +43,10 @@ jobs:
 
       - name: Run update runner recovery tests
         shell: pwsh
+        env:
+          B6H_TEST_SKIP_RUNONCE: '1'
+          CARGO_TARGET_DIR: src-tauri/target
         run: |
-          $env:B6H_TEST_SKIP_RUNONCE = '1'
           cargo test --manifest-path src-tauri/update-runner/Cargo.toml --locked --target x86_64-pc-windows-msvc --features update-test-keys --bin b6h-update-runner -- --test-threads=1
 
       - name: Build modular frontend payload

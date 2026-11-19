@@ -1,4 +1,4 @@
-name: Windows Installer + Modular Update Release
+name: B6H Incremental Production Release
 
 on:
   push:
@@ -8,37 +8,24 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: b6h-production-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  frontend-only:
-    if: ${{ contains(github.event.head_commit.message, '[frontend-only]') }}
-    runs-on: windows-latest
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run targeted Calendar regression tests
-        run: node --test tests/calendarOverdue.test.mjs tests/calendarLogic.test.mjs
-
-      - name: Build frontend update payload
-        run: npm run build:frontend-update
-
   release:
-    if: ${{ !contains(github.event.head_commit.message, '[frontend-only]') }}
     runs-on: windows-latest
+    timeout-minutes: 90
+    environment: b6h-production-release
     env:
       B6H_UPDATE_TRUST_ROOTS: '{"b6h-update-ed25519-2026-11":"db1c5981992f0efc47edd9b9f4d5cc9d9e5a29e655d15d3b71b8d5d569c74b0c"}'
+      CARGO_TARGET_DIR: src-tauri/target
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Check out source
+      - name: Check out tagged source and history
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -46,79 +33,267 @@ jobs:
           node-version: 24
           cache: npm
 
-      - name: Set up Rust
+      - name: Set up Rust MSVC
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
 
-      - name: Verify tag matches app version
+      - name: Reuse npm and Cargo caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            src-tauri/target
+          key: windows-x64-msvc-${{ hashFiles('src-tauri/Cargo.lock', 'src-tauri/update-runner/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            windows-x64-msvc-${{ hashFiles('src-tauri/Cargo.lock', 'src-tauri/update-runner/Cargo.lock') }}-
+
+      - name: Validate signing credential before builds
+        shell: pwsh
+        env:
+          B6H_UPDATE_SIGNING_KEY_B64: ${{ secrets.B6H_UPDATE_SIGNING_KEY_B64 }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:B6H_UPDATE_SIGNING_KEY_B64)) {
+            throw 'Missing protected environment secret B6H_UPDATE_SIGNING_KEY_B64. See docs/DEVELOPER_RELEASES.md.'
+          }
+          $keyPath = Join-Path $env:RUNNER_TEMP 'b6h-update-signing.pem'
+          $publicPath = Join-Path $env:RUNNER_TEMP 'b6h-update-public.pem'
+          $bytes = [Convert]::FromBase64String($env:B6H_UPDATE_SIGNING_KEY_B64)
+          [IO.File]::WriteAllBytes($keyPath, $bytes)
+          node scripts/release-plan.mjs verify-key --key $keyPath --key-id b6h-update-ed25519-2026-11 --public-output $publicPath
+          if ($LASTEXITCODE -ne 0) { throw 'Production signing credential verification failed.' }
+          "keyPath=$keyPath" >> $env:GITHUB_OUTPUT
+          "publicPath=$publicPath" >> $env:GITHUB_OUTPUT
+        id: signing
+
+      - name: Detect changed components and validate release versions
+        id: plan
         shell: pwsh
         run: |
-          $version = node -p "require('./package.json').version"
-          if ($env:GITHUB_REF_NAME -ne "v$version") { throw "Tag $env:GITHUB_REF_NAME does not match package version $version" }
+          $json = node scripts/release-plan.mjs plan --tag $env:GITHUB_REF_NAME
+          if ($LASTEXITCODE -ne 0) { throw 'Release planning failed.' }
+          $plan = $json | ConvertFrom-Json
+          $components = @($plan.components)
+          $runner = @($plan.paths | Where-Object { $_ -like 'src-tauri/update-runner/*' }).Count -gt 0
+          "base=$($plan.base)" >> $env:GITHUB_OUTPUT
+          "components=$($components -join ',')" >> $env:GITHUB_OUTPUT
+          "frontend=$(([bool]($components -contains 'frontend')).ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "core=$(([bool]($components -contains 'core')).ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "wordcraft=$(([bool]($components -contains 'wordcraft')).ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "runner=$(([bool]$runner).ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "version=$($env:GITHUB_REF_NAME.Substring(1))" >> $env:GITHUB_OUTPUT
 
-      - name: Install dependencies
+      - name: Install locked frontend and release tooling dependencies
         run: npm ci
 
-      - name: Run Node regression tests
+      - name: Run release tooling and affected Frontend regressions
         run: npm test
 
-      - name: Build production update runner
-        run: npm run build:update-runner
+      - name: Validate Wordcraft runtime when changed
+        if: steps.plan.outputs.wordcraft == 'true'
+        run: npm run wordcraft:build
 
-      - name: Run desktop Rust tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml --locked -- --test-threads=1
+      - name: Run affected Core update discovery tests
+        if: steps.plan.outputs.core == 'true'
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --lib --features update-test-keys modular_update::tests -- --test-threads=1
 
-      - name: Run update runner recovery tests
+      - name: Run Update Runner recovery tests when its source changed
+        if: steps.plan.outputs.runner == 'true'
         shell: pwsh
         env:
           B6H_TEST_SKIP_RUNONCE: '1'
-          CARGO_TARGET_DIR: src-tauri/target
-        run: |
-          cargo test --manifest-path src-tauri/update-runner/Cargo.toml --locked --target x86_64-pc-windows-msvc --features update-test-keys --bin b6h-update-runner -- --test-threads=1
+        run: cargo test --manifest-path src-tauri/update-runner/Cargo.toml --locked --target x86_64-pc-windows-msvc --features update-test-keys --bin b6h-update-runner -- --test-threads=1
 
-      - name: Build modular frontend payload
+      - name: Build Frontend payload when changed
+        if: steps.plan.outputs.frontend == 'true'
         run: npm run build:frontend-update
 
-      - name: Build production Windows installer
+      - name: Build Core and lightweight installer when changed
+        if: steps.plan.outputs.core == 'true'
         run: npm run build:installer
 
-      - name: Verify production installer and prepare draft assets
+      - name: Prepare signed packages, catalog, and installer assets
+        id: assets
+        shell: pwsh
+        env:
+          B6H_SIGNING_KEY: ${{ steps.signing.outputs.keyPath }}
+          B6H_PUBLIC_KEY: ${{ steps.signing.outputs.publicPath }}
+          B6H_BASE_TAG: ${{ steps.plan.outputs.base }}
+          B6H_VERSION: ${{ steps.plan.outputs.version }}
+          B6H_FRONTEND_CHANGED: ${{ steps.plan.outputs.frontend }}
+          B6H_CORE_CHANGED: ${{ steps.plan.outputs.core }}
+          B6H_WORDCRAFT_CHANGED: ${{ steps.plan.outputs.wordcraft }}
+        run: |
+          $releaseDir = Join-Path $env:RUNNER_TEMP 'b6h-release-assets'
+          $previousDir = Join-Path $env:RUNNER_TEMP 'b6h-previous-release'
+          $coreInput = Join-Path $env:RUNNER_TEMP 'b6h-core-input'
+          New-Item -ItemType Directory -Path $releaseDir,$previousDir -Force | Out-Null
+          $previousDraft = gh release view $env:B6H_BASE_TAG --repo $env:GITHUB_REPOSITORY --json isDraft --jq .isDraft 2>$null
+          if ($LASTEXITCODE -ne 0 -or $previousDraft.Trim() -ne 'false') { throw "Base release $env:B6H_BASE_TAG is not a published stable release." }
+          gh release download $env:B6H_BASE_TAG --repo $env:GITHUB_REPOSITORY --pattern 'catalog.json' --pattern 'catalog.sig' --pattern 'catalog.json.sha256' --pattern 'catalog.sig.sha256' --dir $previousDir
+          if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve the previous signed stable catalog.' }
+          node scripts/update-package.mjs verify-catalog --catalog (Join-Path $previousDir 'catalog.json') --signature (Join-Path $previousDir 'catalog.sig') --key $env:B6H_PUBLIC_KEY --key-id b6h-update-ed25519-2026-11 --packages-dir $previousDir
+          if ($LASTEXITCODE -ne 0) { throw 'The previous stable catalog or one of its packages failed verification.' }
+          gh release download $env:B6H_BASE_TAG --repo $env:GITHUB_REPOSITORY --pattern 'B6H-*-x64-Setup.exe' --pattern 'B6H-*-x64-Setup.exe.sha256' --dir $previousDir
+          if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve the previous compatible installer for reuse or online discovery verification.' }
+          $previousSetups = @(Get-ChildItem $previousDir -Filter 'B6H-*-x64-Setup.exe' -File)
+          if ($previousSetups.Count -ne 1) { throw "Expected one previous installer; found $($previousSetups.Count)." }
+          $previousSetup = $previousSetups[0].FullName
+          $previousSidecar = "$previousSetup.sha256"
+          $previousExpected = (Get-Content -LiteralPath $previousSidecar -Raw).Trim()
+          $previousActual = (Get-FileHash -LiteralPath $previousSetup -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($previousExpected -ne "$previousActual *$($previousSetups[0].Name)" -or $previousSetups[0].Length -ge 50000000 -or (Get-AuthenticodeSignature $previousSetup).Status -ne 'NotSigned') { throw 'The previous installer failed checksum or lightweight Setup validation.' }
+
+          if ($env:B6H_FRONTEND_CHANGED -eq 'true') {
+            $frontend = Join-Path $releaseDir "B6H-v$env:B6H_VERSION-frontend.b6hupdate"
+            node scripts/update-package.mjs pack --component frontend --input dist/frontend-update --output $frontend --key $env:B6H_SIGNING_KEY --key-id b6h-update-ed25519-2026-11 --channel stable --version $env:B6H_VERSION --release-id "frontend-v$env:B6H_VERSION" --previous-catalog (Join-Path $previousDir 'catalog.json')
+            if ($LASTEXITCODE -ne 0) { throw 'Frontend update package generation failed.' }
+          }
+
+          if ($env:B6H_CORE_CHANGED -eq 'true') {
+            $bundles = Get-ChildItem 'src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis' -Filter '*.exe' -File
+            if ($bundles.Count -ne 1) { throw "Expected one lightweight NSIS installer; found $($bundles.Count)." }
+            $setupName = "B6H-v$env:B6H_VERSION-x64-Setup.exe"
+            $setupPath = Join-Path $releaseDir $setupName
+            Copy-Item -LiteralPath $bundles[0].FullName -Destination $setupPath
+            $setupBytes = (Get-Item -LiteralPath $setupPath).Length
+            if ($setupBytes -ge 50000000) { throw "Setup.exe is $setupBytes bytes; limit is 50,000,000." }
+            $hash = (Get-FileHash -LiteralPath $setupPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            Set-Content -LiteralPath "$setupPath.sha256" -Value "$hash *$setupName" -Encoding ascii
+            $coreInputFile = Join-Path $coreInput $setupName
+            New-Item -ItemType Directory -Path $coreInput -Force | Out-Null
+            Copy-Item -LiteralPath $setupPath -Destination $coreInputFile
+            $core = Join-Path $releaseDir "B6H-v$env:B6H_VERSION-core.b6hupdate"
+            node scripts/update-package.mjs pack --component core --input $coreInput --output $core --key $env:B6H_SIGNING_KEY --key-id b6h-update-ed25519-2026-11 --channel stable --version $env:B6H_VERSION --release-id "core-v$env:B6H_VERSION" --previous-catalog (Join-Path $previousDir 'catalog.json')
+            if ($LASTEXITCODE -ne 0) { throw 'Core update package generation failed.' }
+          } else {
+            Copy-Item -LiteralPath $previousSetup -Destination (Join-Path $releaseDir $previousSetups[0].Name)
+            Copy-Item -LiteralPath $previousSidecar -Destination (Join-Path $releaseDir ($previousSetups[0].Name + '.sha256'))
+          }
+
+          if ($env:B6H_WORDCRAFT_CHANGED -eq 'true') {
+            npm run wordcraft:build
+            if ($LASTEXITCODE -ne 0) { throw 'Wordcraft runtime validation failed.' }
+            $wordcraft = Join-Path $releaseDir "B6H-v$env:B6H_VERSION-wordcraft.b6hupdate"
+            node scripts/update-package.mjs pack --component wordcraft --input public/wordcraft --output $wordcraft --key $env:B6H_SIGNING_KEY --key-id b6h-update-ed25519-2026-11 --channel stable --version $env:B6H_VERSION --release-id "wordcraft-v$env:B6H_VERSION" --previous-catalog (Join-Path $previousDir 'catalog.json')
+            if ($LASTEXITCODE -ne 0) { throw 'Wordcraft update package generation failed.' }
+          }
+
+          $packages = @(Get-ChildItem $releaseDir -Filter '*.b6hupdate' -File | ForEach-Object FullName)
+          if ($packages.Count -eq 0) { throw 'The component plan produced no update packages.' }
+          $baseUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/v$env:B6H_VERSION"
+          $catalog = Join-Path $releaseDir 'catalog.json'
+          node scripts/update-package.mjs catalog --packages ($packages -join ',') --previous-catalog (Join-Path $previousDir 'catalog.json') --previous-signature (Join-Path $previousDir 'catalog.sig') --output $catalog --key $env:B6H_SIGNING_KEY --key-id b6h-update-ed25519-2026-11 --channel stable --base-url $baseUrl
+          if ($LASTEXITCODE -ne 0) { throw 'Production catalog signing failed.' }
+          node scripts/update-package.mjs verify-catalog --catalog $catalog --signature (Join-Path $releaseDir 'catalog.sig') --key $env:B6H_PUBLIC_KEY --key-id b6h-update-ed25519-2026-11 --packages-dir $releaseDir
+          if ($LASTEXITCODE -ne 0) { throw 'The new signed catalog or one of its packages failed verification.' }
+
+          $files = @(Get-ChildItem $releaseDir -File | Where-Object Extension -ne '.sha256')
+          foreach ($file in $files) {
+            $expectedHash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            Set-Content -LiteralPath "$($file.FullName).sha256" -Value "$expectedHash *$($file.Name)" -Encoding ascii -Force
+          }
+          $lines = @("Release: v$env:B6H_VERSION", "Components: ${{ steps.plan.outputs.components }}", "Update key ID: b6h-update-ed25519-2026-11", 'Package signatures: verified', 'Catalog signature: verified', 'Package payload hashes: verified', 'Installer Authenticode: NotSigned by design')
+          $evidence = Join-Path $releaseDir 'RELEASE-EVIDENCE.txt'
+          Set-Content -LiteralPath $evidence -Value $lines -Encoding utf8
+          $evidenceHash = (Get-FileHash -LiteralPath $evidence -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath "$evidence.sha256" -Value "$evidenceHash *RELEASE-EVIDENCE.txt" -Encoding ascii
+          "releaseDir=$releaseDir" >> $env:GITHUB_OUTPUT
+          "previousSetup=$previousSetup" >> $env:GITHUB_OUTPUT
+
+      - name: Verify each staged asset checksum and production installer
+        shell: pwsh
+        env:
+          B6H_CORE_CHANGED: ${{ steps.plan.outputs.core }}
+        run: |
+          $dir = '${{ steps.assets.outputs.releaseDir }}'
+          $files = @(Get-ChildItem -LiteralPath $dir -File | Where-Object Extension -ne '.sha256')
+          if ($files.Count -lt 5) { throw "Expected the package/catalog/installer/checksum set; found $($files.Count) files." }
+          foreach ($file in $files) {
+            $sidecar = "$($file.FullName).sha256"
+            if (-not (Test-Path -LiteralPath $sidecar)) { throw "Missing SHA-256 sidecar for $($file.Name)." }
+            $expected = (Get-Content -LiteralPath $sidecar -Raw).Trim()
+            $actual = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($expected -ne "$actual *$($file.Name)") { throw "SHA-256 mismatch for $($file.Name)." }
+          }
+          if ($env:B6H_CORE_CHANGED -eq 'true') {
+            $setup = Get-ChildItem -LiteralPath $dir -Filter 'B6H-v*-x64-Setup.exe' -File
+            $app = 'src-tauri/target/x86_64-pc-windows-msvc/release/b6h.exe'
+            $runner = 'src-tauri/target/x86_64-pc-windows-msvc/release/b6h-update-runner.exe'
+            $forbidden = @('local-test-only', 'B6H_UPDATE_TEST_CA', 'B6H_UPDATE_TEST_ENDPOINT', 'https://localhost:8443', 'B6H_TEST_')
+            $testKeyHex = 'AE0E54C009C07D5C26150D1F4C910A5CB50C9BCB714F40B308AEC040BA1ACCBF'
+            $productionKeyHex = 'db1c5981992f0efc47edd9b9f4d5cc9d9e5a29e655d15d3b71b8d5d569c74b0c'
+            foreach ($binary in @($app, $runner)) {
+              $data = [IO.File]::ReadAllBytes($binary)
+              $text = [Text.Encoding]::ASCII.GetString($data)
+              foreach ($marker in $forbidden) { if ($text.Contains($marker)) { throw "Production binary contains test marker '$marker': $binary" } }
+              if ([Convert]::ToHexString($data).Contains($testKeyHex)) { throw "Production binary contains the local test trust root: $binary" }
+              if (-not $text.Contains('b6h-update-ed25519-2026-11') -or -not [Convert]::ToHexString($data).Contains($productionKeyHex)) { throw "Production trust root is missing from $binary" }
+            }
+            if ($setup.Count -ne 1 -or (Get-AuthenticodeSignature $setup[0].FullName).Status -ne 'NotSigned') { throw 'Expected one unsigned lightweight Setup.exe.' }
+          }
+
+      - name: Create or resume the draft release
+        shell: pwsh
+        env:
+          B6H_RELEASE_DIR: ${{ steps.assets.outputs.releaseDir }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $draft = gh release view $tag --repo $env:GITHUB_REPOSITORY --json isDraft --jq .isDraft 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            if ($draft.Trim() -ne 'true') { throw "Release $tag is already published; refusing to replace its assets." }
+            $assets = @(Get-ChildItem -LiteralPath $env:B6H_RELEASE_DIR -File | ForEach-Object FullName)
+            gh release upload $tag @assets --repo $env:GITHUB_REPOSITORY --clobber
+          } else {
+            gh release create $tag --repo $env:GITHUB_REPOSITORY --draft --verify-tag --latest=false --title "B6H $tag — Installer & Modular Update" --notes-file RELEASE_NOTES.md
+            if ($LASTEXITCODE -ne 0) { throw 'Could not create the draft GitHub release.' }
+            $assets = @(Get-ChildItem -LiteralPath $env:B6H_RELEASE_DIR -File | ForEach-Object FullName)
+            gh release upload $tag @assets --repo $env:GITHUB_REPOSITORY
+          }
+
+      - name: Verify uploaded draft assets before publication
+        shell: pwsh
+        env:
+          B6H_PUBLIC_KEY: ${{ steps.signing.outputs.publicPath }}
+        run: |
+          $verifyDir = Join-Path $env:RUNNER_TEMP 'b6h-uploaded-release'
+          New-Item -ItemType Directory -Path $verifyDir -Force | Out-Null
+          gh release download $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --dir $verifyDir
+          if ($LASTEXITCODE -ne 0) { throw 'Could not download the draft release assets for verification.' }
+          foreach ($file in Get-ChildItem -LiteralPath $verifyDir -File | Where-Object Extension -ne '.sha256') {
+            $sidecar = "$($file.FullName).sha256"
+            if (-not (Test-Path -LiteralPath $sidecar)) { throw "Uploaded release is missing the checksum for $($file.Name)." }
+            $expected = (Get-Content -LiteralPath $sidecar -Raw).Trim()
+            $actual = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($expected -ne "$actual *$($file.Name)") { throw "Uploaded checksum mismatch for $($file.Name)." }
+          }
+          node scripts/update-package.mjs verify-catalog --catalog (Join-Path $verifyDir 'catalog.json') --signature (Join-Path $verifyDir 'catalog.sig') --key $env:B6H_PUBLIC_KEY --key-id b6h-update-ed25519-2026-11 --packages-dir $verifyDir
+          if ($LASTEXITCODE -ne 0) { throw 'Uploaded catalog and packages failed signature/integrity verification.' }
+
+      - name: Publish verified release as Latest
+        id: publish
+        run: gh release edit $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --draft=false --latest
+
+      - name: Verify Settings discovery from the previous compatible installation
+        shell: pwsh
+        env:
+          B6H_ONLINE_DISCOVERY_SMOKE: '1'
+          B6H_EXPECTED_COMPONENTS: ${{ steps.plan.outputs.components }}
+          B6H_VERSION: ${{ steps.plan.outputs.version }}
+          B6H_PREVIOUS_SETUP: ${{ steps.assets.outputs.previousSetup }}
+        run: node scripts/verify-online-discovery.mjs --setup "$env:B6H_PREVIOUS_SETUP" --version $env:B6H_VERSION --expected $env:B6H_EXPECTED_COMPONENTS
+
+      - name: Return release to draft if online discovery fails
+        if: failure() && steps.publish.outcome == 'success'
+        run: gh release edit $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --draft --latest=false
+
+      - name: Remove ephemeral signing material
+        if: always()
         shell: pwsh
         run: |
-          $version = node -p "require('./package.json').version"
-          $nsis = Get-ChildItem "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis" -Filter '*.exe' -File
-          if ($nsis.Count -ne 1) { throw "Expected one NSIS installer; found $($nsis.Count)." }
-          $setup = "B6H-v$version-x64-Setup.exe"
-          Copy-Item $nsis[0].FullName $setup
-          $bytes = (Get-Item $setup).Length
-          if ($bytes -ge 50000000) { throw "Setup.exe is $bytes bytes; limit is 50,000,000." }
-          $app = "src-tauri/target/x86_64-pc-windows-msvc/release/b6h.exe"
-          $runner = "src-tauri/target/x86_64-pc-windows-msvc/release/b6h-update-runner.exe"
-          $forbidden = @('local-test-only', 'B6H_UPDATE_TEST_CA', 'B6H_UPDATE_TEST_ENDPOINT', 'https://localhost:8443', 'B6H_TEST_')
-          $testKeyHex = 'AE0E54C009C07D5C26150D1F4C910A5CB50C9BCB714F40B308AEC040BA1ACCBF'
-          $productionKeyHex = 'db1c5981992f0efc47edd9b9f4d5cc9d9e5a29e655d15d3b71b8d5d569c74b0c'
-          foreach ($binary in @($app, $runner)) {
-            $data = [IO.File]::ReadAllBytes($binary)
-            $text = [Text.Encoding]::ASCII.GetString($data)
-            foreach ($marker in $forbidden) { if ($text.Contains($marker)) { throw "Production binary contains test marker '$marker': $binary" } }
-            $hex = [Convert]::ToHexString($data)
-            if ($hex.Contains($testKeyHex)) { throw "Production binary contains the local test trust root: $binary" }
-            if (-not $text.Contains('b6h-update-ed25519-2026-11') -or -not $text.Contains($productionKeyHex)) { throw "Production trust root is missing from $binary" }
+          foreach ($name in @('b6h-update-signing.pem', 'b6h-update-public.pem')) {
+            $path = Join-Path $env:RUNNER_TEMP $name
+            if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
           }
-          $hash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLowerInvariant()
-          Set-Content "$setup.sha256" "$hash *$setup" -Encoding ascii
-          $signature = Get-AuthenticodeSignature $setup
-          if ($signature.Status -ne 'NotSigned') { throw "Expected unsigned Setup.exe; Authenticode status is $($signature.Status)." }
-          @("Version: $version", "Setup bytes: $bytes", "Setup SHA-256: $hash", "Authenticode: $($signature.Status)", "Update key ID: b6h-update-ed25519-2026-11", "Test keys/endpoints/hooks: absent from app and runner") | Set-Content RELEASE-EVIDENCE.txt -Encoding utf8
-
-      - name: Create draft GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: B6H ${{ github.ref_name }} — Installer & Modular Update
-          body_path: RELEASE_NOTES.md
-          draft: true
-          prerelease: false
-          files: |
-            B6H-${{ github.ref_name }}-x64-Setup.exe
-            B6H-${{ github.ref_name }}-x64-Setup.exe.sha256
-            RELEASE-EVIDENCE.txt

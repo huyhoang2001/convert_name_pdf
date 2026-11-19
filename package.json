@@ -25,6 +25,9 @@
     "update:package": "node scripts/update-package.mjs",
     "update:verify": "node scripts/update-package.mjs verify",
     "update:catalog": "node scripts/update-package.mjs catalog",
+    "update:verify-catalog": "node scripts/update-package.mjs verify-catalog",
+    "release:prepare": "node scripts/release-plan.mjs prepare",
+    "release:plan": "node scripts/release-plan.mjs plan",
     "wordcraft:webview2-smoke": "node scripts/wordcraft-webview2-smoke.mjs",
     "test": "node --test \"tests/*.test.mjs\""
   },

@@ -15,6 +15,7 @@ Activate before any B6H code edit or command that may generate artifacts. This s
 - The canonical local B6H project root for this checkout is `C:\Users\hinam\Desktop\convert_name_pdf-main`. Resolve B6H commands, paths, metadata, and build state from this existing root.
 - Never create, clone, initialize, or copy another B6H source project for a new version. Update version metadata in this same project only when the user authorizes a version update; generated executable and distribution filenames may include a release version.
 - Keep `wordcraft-upstream` as the existing checkout under or beside the permanent root, resolve it configurably, and preserve its working-tree changes. Never create another upstream clone or Cargo target directory.
+- Use the explicit `x86_64-pc-windows-msvc` target for Windows installer and production Core builds. Prefer the existing `npm.cmd run build:installer` entry point; do not use the un-targeted `npm.cmd run tauri:build` for production, because it populates a separate default-host release cache.
 
 ### Verified low-disk Rust development policy (2026-11-15)
 
@@ -22,6 +23,22 @@ Activate before any B6H code edit or command that may generate artifacts. This s
 - Preserve `[profile.dev]` in that manifest with `opt-level = 0`, `debug = "line-tables-only"`, `incremental = false`, `debug-assertions = true`, and `overflow-checks = true`; keep `[profile.dev.package."*"] debug = false`. This policy applies to the desktop dev profile, not the separate Wordcraft workspace or release profile.
 - Before a profile/toolchain change or cold rebuild, inspect Cargo config and relevant environment overrides, measure both target directories and free space, and budget for cache invalidation plus linker temporary files. Reuse `src-tauri/target`; stop when the measured free space does not cover the estimate with margin. Do not delete old artifacts without the cleanup approval gate.
 - Verified locally with `cargo build --manifest-path src-tauri/Cargo.toml --locked --offline` and `cargo test --manifest-path src-tauri/Cargo.toml --locked --offline --lib` (83 passed, 3 ignored). The first build after this profile change took 467 seconds; an unchanged repeat took 1.2 seconds. Re-measure on future changes rather than treating these timings as guarantees.
+
+### Development build defaults
+
+- Use `npm.cmd run dev` for ordinary desktop development and Vite hot reload. Its frontend hook validates/reuses Wordcraft assets; do not request a Wordcraft source build for unrelated B6H edits.
+- For frontend-only update payloads, use `npm.cmd run build:frontend-update`. It must remain a frontend-only path with zero Cargo compilation, zero NSIS builds, and zero Wordcraft source compilation.
+- Run tests that cover the changed behavior. Do not run the full Wordcraft native workspace suite (`cargo xtask test`, `cargo xtask ci`, or `cargo test --workspace`) for unrelated B6H work or minor UI edits. For Wordcraft Rust changes, use the narrowest affected package/test filter, such as `cargo test --manifest-path wordcraft-upstream/Cargo.toml -p <crate> --lib <test_filter>`.
+- Build the Wordcraft WASM runtime with `npm.cmd run wordcraft:source-build` only when actual Wordcraft source changes need runtime verification and the reuse check determines a build is required. Group related Wordcraft edits before this expensive step when practical. Continue to reuse the existing `wordcraft-upstream/target` and verified WASM release cache.
+- Require explicit owner authorization before production installer/Core packaging, production update-package generation, or signing. Use the existing explicit x64 target for authorized Windows production builds; do not accumulate default-host release artifacts as a packaging side effect of ordinary development.
+
+### Incremental production releases
+
+- For an authorized release, run `npm.cmd run release:prepare` after intended application changes are committed. It compares against the latest stable ancestor tag, selects changed Frontend/Core/Wordcraft components, uses the next unused maintenance version, and updates only the affected component version metadata. Review the generated release notes and diff before committing and tagging.
+- A release tag must be the next unused `vX.Y.Z`, match every changed component version, and contain component changes since the previous stable tag. The workflow derives its plan from the diff; do not use commit-message markers or release tags for docs-only changes.
+- `.github/workflows/release.yml` is the production release path. It builds only affected update packages, builds the lightweight Setup only for Core changes, reuses the previous compatible Setup otherwise, validates/reuses the checked-in Wordcraft runtime, merges unchanged packages from the previously signed catalog, verifies package/catalog signatures and SHA-256 values, uploads a draft, and publishes only after the uploaded assets verify.
+- Production signing uses the existing trusted Ed25519 key ID `b6h-update-ed25519-2026-11`. Local signing uses `%LOCALAPPDATA%\B6H\release-signing\update-private.pem`; Actions requires the protected `b6h-production-release` environment secret `B6H_UPDATE_SIGNING_KEY_B64`. Verify the key against the compiled public trust root before builds. If that environment secret is missing or mismatched, stop before compilation and follow `docs/DEVELOPER_RELEASES.md`; never fall back to test keys.
+- Preserve catalog entries for compatible unchanged components and their original immutable GitHub asset URLs. Never overwrite published release assets or create a tag that would trigger an incomplete release.
 
 ### Graphify-assisted source navigation
 

@@ -23,6 +23,8 @@ const CORE_VERSION: &str = match option_env!("B6H_TEST_CORE_VERSION") {
 };
 #[cfg(not(feature = "update-test-keys"))]
 const CORE_VERSION: &str = env!("CARGO_PKG_VERSION");
+const BUNDLED_FRONTEND_VERSION: &str = include_str!("../frontend-version.txt");
+const BUNDLED_WORDCRAFT_VERSION: &str = include_str!("../wordcraft-version.txt");
 const MAX_ARCHIVE: u64 = 256 * 1024 * 1024;
 const MAX_EXPANDED: u64 = 512 * 1024 * 1024;
 const MAX_FILES: usize = 10_000;
@@ -377,8 +379,8 @@ pub async fn discover_online_updates() -> Result<Vec<CatalogPackage>, String> {
 fn is_newer_than_active(component: &str, version: &str, active: &RuntimeStatus) -> bool {
     let current = match component {
         "core" => Some(active.core_version.as_str()),
-        "frontend" => active.active_frontend.as_deref().or(Some(CORE_VERSION)),
-        "wordcraft" => active.active_wordcraft.as_deref(),
+        "frontend" => active.active_frontend.as_deref().or(Some(BUNDLED_FRONTEND_VERSION.trim())),
+        "wordcraft" => active.active_wordcraft.as_deref().or(Some(BUNDLED_WORDCRAFT_VERSION.trim())),
         _ => return false,
     };
     current.is_none_or(|current| version_cmp(version, current) == Some(std::cmp::Ordering::Greater))
@@ -1762,6 +1764,8 @@ mod tests {
         };
         assert!(!is_newer_than_active("frontend", "3.0.2", &bundled));
         assert!(is_newer_than_active("frontend", "3.0.3", &bundled));
+        assert!(!is_newer_than_active("wordcraft", BUNDLED_WORDCRAFT_VERSION.trim(), &bundled));
+        assert!(is_newer_than_active("wordcraft", "3.0.1", &bundled));
     }
 
     #[test]

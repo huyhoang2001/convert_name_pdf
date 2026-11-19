@@ -1,30 +1,28 @@
 # Developer release maintenance
 
-## Release signing
+## Signing identity
 
-The public Ed25519 update trust root is `b6h-update-ed25519-2026-11`. It is compiled into both the desktop app and Core update runner through `B6H_UPDATE_TRUST_ROOTS`. The public root is not secret. The matching private key is kept outside the repository at `%LOCALAPPDATA%\B6H\release-signing\update-private.pem`, with its directory ACL restricted to the current user and SYSTEM. Never commit, upload, or include that private key in release assets. Back it up securely; losing it requires a new trusted application release before the update signing key can be rotated.
+Production update signing uses the existing Ed25519 identity `b6h-update-ed25519-2026-11`. Its public key is compiled into B6H and the Update Runner; the matching public key must remain unchanged. The local private key is stored at `%LOCALAPPDATA%\B6H\release-signing\update-private.pem`. Do not print, commit, or attach private key material to release assets. Stable releases must fail closed if the existing key is unavailable or does not match the compiled trust root; never generate a replacement or use test keys.
+
+The tag workflow signs in the protected `b6h-production-release` GitHub Environment. A repository owner must create that environment in **Settings > Environments**, require the appropriate release reviewer, and add the existing PEM as environment secret `B6H_UPDATE_SIGNING_KEY_B64` for `huyhoang2001/convert_name_pdf`. On the trusted Windows machine, encode the local key directly into `gh secret set` without displaying it:
+
+```powershell
+$keyPath = Join-Path $env:LOCALAPPDATA 'B6H\release-signing\update-private.pem'
+[Convert]::ToBase64String([IO.File]::ReadAllBytes($keyPath)) | gh secret set B6H_UPDATE_SIGNING_KEY_B64 --env b6h-production-release --repo huyhoang2001/convert_name_pdf
+Remove-Variable keyPath
+```
+
+The workflow verifies the imported key against the compiled public trust root before any build. The secret is held only by the protected environment and ephemeral runner files; the workflow removes those files at job end. Do not paste the secret into chat, logs, workflow files, or repository files. Local signing remains available using the same protected key when explicitly authorized.
 
 The NSIS Setup is intentionally unsigned by Authenticode. Do not add a paid signing dependency. Release notes and installation instructions disclose the expected Windows unknown-publisher or SmartScreen warning.
 
-## Build and publish
+## Incremental release flow
 
-The `v*.*.*` GitHub Actions workflow runs Node and Rust checks, reuses the checked-in Wordcraft runtime, builds the test-free Windows x64 Setup and creates a **draft** release. It checks the production app and runner for local test keys, localhost update endpoints, and fault-injection hooks, enforces the 50 MB Setup limit, records SHA-256, and confirms the expected Authenticode status.
+Commit the intended application changes first. Run `npm.cmd run release:prepare`, review the generated component versions, `README.md`, and `RELEASE_NOTES.md`, then commit that preparation and push a matching next unused `vX.Y.Z` tag. The tag workflow compares with the previous stable tag; docs and release-tool changes alone do not create a release. It fails before compilation if the protected signing secret is missing or does not match.
 
-Before publishing a release:
+The workflow tests release tooling, validates only changed components, builds the Frontend payload only for Frontend changes, and builds Core plus its lightweight x64 Setup only for Core changes. Wordcraft runtime validation reuses checked-in assets and compiles Wordcraft only when its actual source inputs require it. It does not build the large Offline Installer. Unchanged signed catalog entries and their immutable original URLs are retained; changed components receive newer package versions and sequences. The workflow verifies package and catalog signatures, historic catalog packages, SHA-256 sidecars, the uploaded draft assets, and Settings online discovery from the prior compatible Setup before marking the GitHub release Latest.
 
-1. Confirm version metadata and a production trust root in both binaries.
-2. Review the build and test results and verify the draft Setup, checksum, logo branding, and `NotSigned` Authenticode status.
-3. For a release with no component changes beyond its bundled baseline, create and sign an empty stable catalog. For later releases, package only changed Frontend, Wordcraft, or Core payloads with `scripts/update-package.mjs`, using the production key ID and stable channel. A Core package must contain a newer matching Setup.
-4. Verify each package with the matching public key, verify the catalog signature and all catalog package lengths and SHA-256 values, and attach the catalog, detached signature, sidecars, and packages to the draft release.
-5. Publish the release only after the catalog and required assets are present. Verify the public release assets and online discovery from B6H.
-
-Example empty v3.0.0 catalog command:
-
-```powershell
-node scripts/update-package.mjs catalog --empty --output .b6h-state/release/catalog.json --key "$env:LOCALAPPDATA\B6H\release-signing\update-private.pem" --key-id b6h-update-ed25519-2026-11 --channel stable --sequence 1 --base-url https://github.com/huyhoang2001/convert_name_pdf/releases/download/v3.0.0
-```
-
-The command writes `catalog.json`, `catalog.sig`, and SHA-256 sidecars. Upload only those production-signed outputs. Never upload `.b6h-state/update-test-keys`, test packages/catalogs, local test certificates, or isolated E2E outputs. Test signing remains behind the `update-test-keys` feature and is excluded from release builds.
+Never overwrite assets on a published release or move a stable tag. An incomplete workflow leaves the release unpublished or returns it to draft. Investigate and rerun the failed tagged workflow only after correcting the cause.
 
 ## Local checks and preserved runtime
 

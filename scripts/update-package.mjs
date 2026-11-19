@@ -1,7 +1,8 @@
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { basename, join, relative, resolve, sep } from 'node:path';
+import { tmpdir } from 'node:os';
 import { unzipSync, zipSync } from 'fflate';
 
 const MAX_ARCHIVE = 256 * 1024 * 1024;
@@ -10,13 +11,22 @@ const MAX_FILES = 10_000;
 const args = process.argv.slice(2);
 const option = name => { const i = args.indexOf(name); return i < 0 ? undefined : args[i + 1]; };
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
+const compareVersion = (left, right) => {
+  const parse = value => {
+    const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(value);
+    if (!match) throw Error(`Invalid stable component version: ${value}`);
+    return match.slice(1).map(Number);
+  };
+  const a = parse(left), b = parse(right);
+  return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+};
 const keyId = () => {
   const id = option('--key-id') ?? 'local-test-only';
   if (!/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(id)) throw Error('Invalid signing key ID.');
   if ((option('--channel') ?? 'local-test') === 'stable' && id === 'local-test-only') throw Error('Stable packages require a production signing key ID.');
   return id;
 };
-const writeChecksum = async path => writeFile(`${path}.sha256`, `${sha256(await readFile(path))} *${basename(path)}\n`);
+const writeChecksum = async path => writeFile(`${path}.sha256`, `${sha256(await readFile(path))} *${basename(path)}\n`, { flag: 'wx' });
 
 function safePath(path) {
   return typeof path === 'string' && path.length > 0 && path.length <= 240 &&
@@ -54,7 +64,12 @@ async function pack() {
   if (!['frontend', 'wordcraft', 'core'].includes(component) || !option('--input') || !option('--output') || !option('--key')) throw Error('Usage: pack --component frontend|wordcraft|core --input DIR --output FILE.b6hupdate --key PRIVATE.pem');
   const signingKeyId = keyId();
   const channel = option('--channel') ?? 'local-test';
-  const sequence = Number(option('--sequence') ?? 1);
+  let previousSequence = 0;
+  if (option('--previous-catalog')) {
+    const previous = JSON.parse(await readFile(resolve(option('--previous-catalog')), 'utf8'));
+    previousSequence = previous.packages?.find(item => item.component === component)?.sequence ?? 0;
+  }
+  const sequence = Number(option('--sequence') ?? previousSequence + 1);
   if (!Number.isSafeInteger(sequence) || sequence < 1) throw Error('Package sequence must be a positive integer.');
   const names = (await filesUnder(input)).map(path => [relative(input, path).split(sep).join('/'), path]).sort(([a], [b]) => a.localeCompare(b));
   if (!names.length || names.length > MAX_FILES) throw Error('Invalid package file count.');
@@ -74,7 +89,7 @@ async function pack() {
   const archive = zipSync({ 'manifest.json': manifest, 'manifest.sig': Buffer.from(signature.toString('base64')), ...payload }, { level: 6 });
   if (archive.length > MAX_ARCHIVE) throw Error('Package exceeds the archive size limit.');
   await mkdir(resolve(output, '..'), { recursive: true });
-  await writeFile(output, archive);
+  await writeFile(output, archive, { flag: 'wx' });
   await writeChecksum(output);
   console.log(`Created ${output} (${archive.length} bytes, ${files.length} files)`);
 }
@@ -86,14 +101,40 @@ async function catalog() {
   const baseUrl = option('--base-url');
   if ((!packagePaths.length && !args.includes('--empty')) || (packagePaths.length && args.includes('--empty')) || !option('--output') || !option('--key') || !baseUrl) throw Error('Usage: catalog --packages FILE1,FILE2 | --empty --output catalog.json --key PRIVATE.pem --base-url https://github.com/owner/repo/releases/download/tag');
   const signingKeyId = keyId();
-  const catalogSequence = Number(option('--sequence') ?? 1);
-  if (!Number.isSafeInteger(catalogSequence) || catalogSequence < 1) throw Error('Catalog sequence must be a positive integer.');
   const base = new URL(baseUrl);
   if (base.protocol !== 'https:' || ((option('--channel') ?? 'local-test') === 'stable' && base.hostname !== 'github.com')) throw Error('Stable catalogs must use HTTPS GitHub release URLs.');
   const packages = [];
   const components = new Set();
   const privateKey = createPrivateKey(await readFile(keyPath));
   const publicKey = createPublicKey(privateKey);
+  let previousCatalog;
+  if (option('--previous-catalog')) {
+    const previousPath = resolve(option('--previous-catalog'));
+    const signaturePath = resolve(option('--previous-signature') ?? join(resolve(previousPath, '..'), 'catalog.sig'));
+    previousCatalog = JSON.parse(await readFile(previousPath, 'utf8'));
+    const previousSignature = Buffer.from((await readFile(signaturePath, 'utf8')).trim(), 'base64');
+    if (!verify(null, await readFile(previousPath), publicKey, previousSignature)) throw Error('Previous stable catalog signature is invalid.');
+    if (previousCatalog.schemaVersion !== 1 || previousCatalog.productId !== 'com.safe-pdf-rename.desktop' || previousCatalog.platform !== 'windows' || previousCatalog.arch !== 'x86_64' || previousCatalog.channel !== (option('--channel') ?? 'local-test') || previousCatalog.keyId !== signingKeyId || !Number.isSafeInteger(previousCatalog.sequence) || previousCatalog.sequence < 1 || !Array.isArray(previousCatalog.packages) || previousCatalog.packages.length > 3) throw Error('Previous catalog is incompatible with this release.');
+    for (const item of previousCatalog.packages) {
+      if (!['frontend', 'wordcraft', 'core'].includes(item.component) || components.has(item.component) || !Number.isSafeInteger(item.sequence) || item.sequence < 1 || !Number.isSafeInteger(item.archiveBytes) || item.archiveBytes < 1 || !/^[0-9a-f]{64}$/.test(item.sha256) || new URL(item.url).hostname !== 'github.com' || !item.url.startsWith('https://github.com/')) throw Error('Previous catalog contains an invalid package entry.');
+      components.add(item.component);
+    }
+  }
+  const catalogSequence = Number(option('--sequence') ?? (previousCatalog ? previousCatalog.sequence + 1 : 1));
+  if (!Number.isSafeInteger(catalogSequence) || catalogSequence < 1 || previousCatalog && catalogSequence <= previousCatalog.sequence) throw Error('Catalog sequence must be a positive integer newer than the previous catalog.');
+  const previousByComponent = new Map((previousCatalog?.packages ?? []).map(item => [item.component, item]));
+  const replacing = new Set();
+  for (const path of packagePaths) {
+    const bytes = await readFile(path);
+    if (bytes.length > MAX_ARCHIVE) throw Error(`Package exceeds archive limit: ${basename(path)}`);
+    const files = unzipSync(bytes);
+    const manifest = JSON.parse(Buffer.from(files['manifest.json'] ?? []).toString('utf8'));
+    if (!['frontend', 'wordcraft', 'core'].includes(manifest.component)) throw Error(`Invalid component in ${basename(path)}.`);
+    replacing.add(manifest.component);
+  }
+  components.clear();
+  if (previousCatalog) for (const item of previousCatalog.packages) if (!replacing.has(item.component)) packages.push(item);
+  for (const component of packages.map(item => item.component)) components.add(component);
   for (const path of packagePaths) {
     const bytes = await readFile(path);
     if (bytes.length > MAX_ARCHIVE) throw Error(`Package exceeds archive limit: ${basename(path)}`);
@@ -103,6 +144,8 @@ async function catalog() {
     if (!verify(null, manifestBytes, publicKey, Buffer.from(Buffer.from(files['manifest.sig']).toString('utf8').trim(), 'base64'))) throw Error(`Package signature is invalid: ${basename(path)}`);
     const manifest = JSON.parse(manifestBytes.toString('utf8'));
     if (manifest.keyId !== signingKeyId || manifest.channel !== (option('--channel') ?? 'local-test') || components.has(manifest.component)) throw Error(`Package signing identity, channel, or component is invalid: ${basename(path)}`);
+    const previous = previousByComponent.get(manifest.component);
+    if (previous && (manifest.sequence <= previous.sequence || compareVersion(manifest.version, previous.version) <= 0)) throw Error(`Replacement ${manifest.component} package is not strictly newer than the previous catalog entry.`);
     components.add(manifest.component);
     for (const file of manifest.files ?? []) {
       const payload = files[`payload/${file.path}`];
@@ -116,15 +159,12 @@ async function catalog() {
   const signature = sign(null, catalogBytes, privateKey);
   await mkdir(resolve(output, '..'), { recursive: true });
   const signaturePath = join(resolve(output, '..'), 'catalog.sig');
-  await writeFile(output, catalogBytes); await writeFile(signaturePath, `${signature.toString('base64')}\n`);
+    await writeFile(output, catalogBytes, { flag: 'wx' }); await writeFile(signaturePath, `${signature.toString('base64')}\n`, { flag: 'wx' });
   await writeChecksum(output); await writeChecksum(signaturePath);
   console.log(`Created signed catalog with ${packages.length} package(s)`);
 }
 
-async function verifyPackage() {
-  const packagePath = resolve(option('--package') ?? '');
-  const keyPath = resolve(option('--key') ?? '');
-  if (!option('--package') || !option('--key')) throw Error('Usage: verify --package FILE.b6hupdate --key PUBLIC.pem');
+async function verifyPackagePath(packagePath, keyPath) {
   const py = String.raw`import base64, hashlib, json, pathlib, re, stat, sys, zipfile
 p=pathlib.Path(sys.argv[1])
 if p.stat().st_size>256*1024*1024: raise ValueError('Package exceeds the archive size limit.')
@@ -176,13 +216,69 @@ with zipfile.ZipFile(p) as z:
     if (total > MAX_EXPANDED) throw Error('Package exceeds the expanded size limit.');
   }
   if (total !== manifest.payloadBytes || expected.size !== result.files.length + 2) throw Error('Package payload inventory does not match its signed manifest.');
+  return manifest;
+}
+
+async function verifyPackage() {
+  const packagePath = resolve(option('--package') ?? '');
+  const keyPath = resolve(option('--key') ?? '');
+  if (!option('--package') || !option('--key')) throw Error('Usage: verify --package FILE.b6hupdate --key PUBLIC.pem');
+  const manifest = await verifyPackagePath(packagePath, keyPath);
   console.log(`Verified ${basename(packagePath)} (${manifest.component} ${manifest.version}, ${manifest.files.length} files)`);
+}
+
+async function verifyCatalog() {
+  const catalogPath = resolve(option('--catalog') ?? '');
+  const signaturePath = resolve(option('--signature') ?? join(resolve(catalogPath, '..'), 'catalog.sig'));
+  const keyPath = resolve(option('--key') ?? '');
+  const packageDir = resolve(option('--packages-dir') ?? resolve(catalogPath, '..'));
+  if (!option('--catalog') || !option('--key')) throw Error('Usage: verify-catalog --catalog catalog.json --signature catalog.sig --key PUBLIC.pem [--packages-dir DIR]');
+  const catalogBytes = await readFile(catalogPath);
+  const signature = Buffer.from((await readFile(signaturePath, 'utf8')).trim(), 'base64');
+  const publicKey = createPublicKey(await readFile(keyPath));
+  if (!verify(null, catalogBytes, publicKey, signature)) throw Error('Catalog signature is invalid.');
+  const catalog = JSON.parse(catalogBytes.toString('utf8'));
+  if (catalog.schemaVersion !== 1 || catalog.productId !== 'com.safe-pdf-rename.desktop' || catalog.platform !== 'windows' || catalog.arch !== 'x86_64' || catalog.channel !== 'stable' || !Number.isSafeInteger(catalog.sequence) || catalog.sequence < 1 || !Array.isArray(catalog.packages) || catalog.packages.length > 3 || option('--key-id') && catalog.keyId !== option('--key-id')) throw Error('Catalog is incompatible.');
+  for (const path of [catalogPath, signaturePath]) {
+    const sidecar = `${path}.sha256`;
+    const text = await readFile(sidecar, 'utf8').then(value => value.trim(), () => '');
+    if (text) {
+      const [expected, name] = text.split(/\s+/);
+      if (name !== `*${basename(path)}` || sha256(await readFile(path)) !== expected) throw Error(`SHA-256 sidecar mismatch: ${basename(path)}`);
+    }
+  }
+  const components = new Set();
+  const temp = await mkdtemp(join(tmpdir(), 'b6h-catalog-verify-'));
+  try {
+    for (const item of catalog.packages) {
+      if (!['frontend', 'wordcraft', 'core'].includes(item.component) || components.has(item.component) || !Number.isSafeInteger(item.sequence) || item.sequence < 1 || !Number.isSafeInteger(item.archiveBytes) || item.archiveBytes < 1 || !/^[0-9a-f]{64}$/.test(item.sha256) || !/^https:\/\/github\.com\/[^/]+\/[^/]+\/releases\/download\/v\d+\.\d+\.\d+\/[^/]+\.b6hupdate$/.test(item.url)) throw Error('Catalog package metadata is invalid.');
+      components.add(item.component);
+      const name = basename(new URL(item.url).pathname);
+      let path = join(packageDir, name);
+      if (!await readFile(path).then(() => true, () => false)) {
+        const response = await fetch(item.url);
+        if (!response.ok) throw Error(`Catalog package is unavailable: ${item.url} (${response.status}).`);
+        path = join(temp, name);
+        await writeFile(path, Buffer.from(await response.arrayBuffer()));
+      }
+      const archive = await readFile(path);
+      if (archive.length !== item.archiveBytes || sha256(archive) !== item.sha256) throw Error(`Catalog package checksum mismatch: ${name}`);
+      const packageSidecar = await readFile(`${path}.sha256`, 'utf8').then(value => value.trim(), () => '');
+      if (packageSidecar && packageSidecar !== `${item.sha256} *${name}`) throw Error(`Package SHA-256 sidecar mismatch: ${name}`);
+      const manifest = await verifyPackagePath(path, keyPath);
+      if (manifest.component !== item.component || manifest.version !== item.version || manifest.releaseId !== item.releaseId || manifest.sequence !== item.sequence || manifest.keyId !== catalog.keyId || manifest.channel !== catalog.channel) throw Error(`Catalog package metadata does not match ${name}.`);
+    }
+    console.log(`Verified signed catalog ${basename(catalogPath)} (sequence ${catalog.sequence}, ${catalog.packages.length} packages)`);
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
 }
 
 try {
   if (args[0] === 'keygen') await keygen();
   else if (args[0] === 'pack') await pack();
   else if (args[0] === 'verify') await verifyPackage();
+  else if (args[0] === 'verify-catalog') await verifyCatalog();
   else if (args[0] === 'catalog') await catalog();
   else throw Error('Usage: node scripts/update-package.mjs keygen|pack|verify|catalog ...');
 } catch (error) {

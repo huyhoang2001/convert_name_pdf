@@ -224,7 +224,7 @@ jobs:
             $runner = 'src-tauri/target/x86_64-pc-windows-msvc/release/b6h-update-runner.exe'
             $forbidden = @('local-test-only', 'B6H_UPDATE_TEST_CA', 'B6H_UPDATE_TEST_ENDPOINT', 'https://localhost:8443', 'B6H_TEST_')
             $testKeyHex = 'AE0E54C009C07D5C26150D1F4C910A5CB50C9BCB714F40B308AEC040BA1ACCBF'
-            $productionKeyHex = 'db1c5981992f0efc47edd9b9f4d5cc9d9e5a29e655d15d3b71b8d5d569c74b0c'
+            $productionKeyHex = 'db1c5981992f0efc47edd9b9f4d5cc9d9e5a29e655d15d3b71b8d5d569c74b0c'.ToUpperInvariant()
             foreach ($binary in @($app, $runner)) {
               $data = [IO.File]::ReadAllBytes($binary)
               $text = [Text.Encoding]::ASCII.GetString($data)

@@ -1,8 +1,8 @@
 {
   "package.json": {
-    "mtime": 1795067155.044845,
-    "seen": 1795068939.009831,
-    "ast_hash": "748fb2a46ee1a9432a84216fc1371f57",
+    "mtime": 1795070231.9516087,
+    "seen": 1795071177.4288213,
+    "ast_hash": "82654ddcdf9b0c458526f8e18637c938",
     "semantic_hash": ""
   },
   "scripts/native-smoke.mjs": {
@@ -18,16 +18,16 @@
     "semantic_hash": "0654223933834a2c2cfe16fe40a0515d"
   },
   "src-tauri/Cargo.toml": {
-    "mtime": 1795064692.357491,
-    "seen": 1795068939.00987,
-    "ast_hash": "1f37ae723f8b66e50ffd597441d109f5",
+    "mtime": 1795070231.9561362,
+    "seen": 1795071177.4289174,
+    "ast_hash": "0ae151d25bc8587bd52443c198812ded",
     "semantic_hash": ""
   },
   "src-tauri/build.rs": {
-    "mtime": 1794750177.0,
-    "seen": 1794764579.6792486,
-    "ast_hash": "1be34a5c61c2c35365de3dab14298f0b",
-    "semantic_hash": "1be34a5c61c2c35365de3dab14298f0b"
+    "mtime": 1795071108.1109262,
+    "seen": 1795071177.428922,
+    "ast_hash": "8b7e291747dc0c2ab1ff60989653156b",
+    "semantic_hash": ""
   },
   "src-tauri/capabilities/default.json": {
     "mtime": 1794750177.0,
@@ -91,9 +91,9 @@
     "semantic_hash": ""
   },
   "src-tauri/tauri.conf.json": {
-    "mtime": 1795058641.0327077,
-    "seen": 1795062036.3338482,
-    "ast_hash": "262ac509afb63b3497b8f1fd16848d21",
+    "mtime": 1795071143.818615,
+    "seen": 1795071177.429,
+    "ast_hash": "38c99e147f89fe6722fcb5e4ffe23f90",
     "semantic_hash": ""
   },
   "src/ChatKeySettings.tsx": {
@@ -301,9 +301,9 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1795058641.0495083,
-    "seen": 1795062036.334044,
-    "ast_hash": "692fd95f0850c26d848a3a9166d1e921",
+    "mtime": 1795070231.9591477,
+    "seen": 1795071177.4295676,
+    "ast_hash": "71ba87b407daf50267b25a864a3f6052",
     "semantic_hash": ""
   },
   "index.html": {
@@ -830,9 +830,9 @@
     "semantic_hash": "2247cb71b60ca0d26042a2b69caeeaee"
   },
   "RELEASE_NOTES.md": {
-    "mtime": 1795058641.0515213,
-    "seen": 1795062036.3340454,
-    "ast_hash": "599935ecf8e68066f63981ea6bd7a4a4",
+    "mtime": 1795071154.210101,
+    "seen": 1795071177.4295733,
+    "ast_hash": "98a0080c731a67842ef781065ef4ed5a",
     "semantic_hash": ""
   },
   "src/signatureText.d.mts": {
@@ -945,10 +945,10 @@
     "semantic_hash": "cecb53f1c849116f105ebd4b11941197"
   },
   "src-tauri/update-runner/build.rs": {
-    "mtime": 1795001917.173571,
-    "seen": 1795017884.8455656,
-    "ast_hash": "639e04c270fef8589636e0416761a67b",
-    "semantic_hash": "639e04c270fef8589636e0416761a67b"
+    "mtime": 1795071116.2110603,
+    "seen": 1795071177.4290206,
+    "ast_hash": "a37af3e111d609478b59575b0f99cf0e",
+    "semantic_hash": ""
   },
   "src/UpdateManager.tsx": {
     "mtime": 1795064746.8248358,
@@ -975,9 +975,9 @@
     "semantic_hash": ""
   },
   "docs/DEVELOPER_RELEASES.md": {
-    "mtime": 1795068647.6857727,
-    "seen": 1795068939.0101125,
-    "ast_hash": "04042fa5c80019e42e2f94e87966ebed",
+    "mtime": 1795069045.201382,
+    "seen": 1795071177.4295785,
+    "ast_hash": "8719427e292aeaa2451c218a3428dab4",
     "semantic_hash": ""
   },
   "docs/INSTALLATION.md": {
@@ -1023,9 +1023,9 @@
     "semantic_hash": ""
   },
   "scripts/release-plan.mjs": {
-    "mtime": 1795068774.1734967,
-    "seen": 1795068939.0098495,
-    "ast_hash": "2d8d00f7d54d977b0b1409a818b1926d",
+    "mtime": 1795071150.6721663,
+    "seen": 1795071177.4288673,
+    "ast_hash": "c0cf3a6ff40861b766ed4d991eaa541b",
     "semantic_hash": ""
   },
   "scripts/verify-online-discovery.mjs": {
@@ -1035,15 +1035,15 @@
     "semantic_hash": ""
   },
   "tests/releasePlan.test.mjs": {
-    "mtime": 1795067324.968089,
-    "seen": 1795068939.0100708,
-    "ast_hash": "393e41a5b148b184b4559fdb02111705",
+    "mtime": 1795068981.8747816,
+    "seen": 1795071177.4294257,
+    "ast_hash": "c9a802b8a92e60da5acef5a5493a3de8",
     "semantic_hash": ""
   },
   "src-tauri/frontend-version.txt": {
-    "mtime": 1795068183.9699004,
-    "seen": 1795068939.0101185,
-    "ast_hash": "e4338b064f76fa094a4e82bcf0040fe0",
+    "mtime": 1795070231.9546287,
+    "seen": 1795071177.429598,
+    "ast_hash": "895661fb4afa992a391c33b5534d0f9f",
     "semantic_hash": ""
   },
   "src-tauri/wordcraft-version.txt": {
@@ -1053,9 +1053,9 @@
     "semantic_hash": ""
   },
   "package-lock.json": {
-    "mtime": 1795058641.0430315,
-    "seen": 1795062036.3340857,
-    "ast_hash": "83a107cb05b0c12d56fdb3a21ae12cb3",
+    "mtime": 1795070231.9546287,
+    "seen": 1795071177.429703,
+    "ast_hash": "62ed401cff1063abec705d6b16696e04",
     "semantic_hash": ""
   }
 }

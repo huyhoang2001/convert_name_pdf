@@ -45,6 +45,7 @@ futures-util = "0.3"
 unicode-normalization = "0.1"
 tokio = { version = "1", features = ["time", "macros", "sync"] }
 sha2 = "0.10"
+semver = "1"
 ring = "0.17.14"
 hex = "0.4"
 base64 = "0.22"

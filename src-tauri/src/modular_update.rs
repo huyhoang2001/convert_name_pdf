@@ -175,7 +175,6 @@ struct GitHubAsset {
 
 #[derive(Debug, Deserialize)]
 struct GitHubRelease {
-    tag_name: String,
     assets: Vec<GitHubAsset>,
 }
 
@@ -306,14 +305,6 @@ async fn github_release() -> Result<(GitHubRelease, reqwest::Client), String> {
 
 pub async fn discover_online_updates() -> Result<Vec<CatalogPackage>, String> {
     let (release, client) = github_release().await?;
-    if version_cmp(
-        release.tag_name.trim_start_matches('v'),
-        env!("CARGO_PKG_VERSION"),
-    )
-    .is_none_or(|order| order == std::cmp::Ordering::Less)
-    {
-        return Ok(Vec::new());
-    }
     let asset = |name: &str| {
         release
             .assets
@@ -386,7 +377,7 @@ pub async fn discover_online_updates() -> Result<Vec<CatalogPackage>, String> {
 fn is_newer_than_active(component: &str, version: &str, active: &RuntimeStatus) -> bool {
     let current = match component {
         "core" => Some(active.core_version.as_str()),
-        "frontend" => active.active_frontend.as_deref(),
+        "frontend" => active.active_frontend.as_deref().or(Some(CORE_VERSION)),
         "wordcraft" => active.active_wordcraft.as_deref(),
         _ => return false,
     };
@@ -1631,19 +1622,9 @@ pub fn cancel_import() {
 }
 
 fn version_cmp(left: &str, right: &str) -> Option<std::cmp::Ordering> {
-    fn parse(value: &str) -> Option<[u64; 3]> {
-        let parts: Vec<_> = value.split('.').map(str::parse::<u64>).collect();
-        (parts.len() == 3 && parts.iter().all(Result::is_ok)).then(|| {
-            [
-                *parts[0].as_ref().unwrap(),
-                *parts[1].as_ref().unwrap(),
-                *parts[2].as_ref().unwrap(),
-            ]
-        })
-    }
-    parse(left)
-        .zip(parse(right))
-        .map(|(left, right)| left.cmp(&right))
+    let left = semver::Version::parse(left).ok()?;
+    let right = semver::Version::parse(right).ok()?;
+    Some(left.cmp_precedence(&right))
 }
 
 pub fn staged_packages() -> Result<Vec<PackageInfo>, String> {
@@ -1744,6 +1725,19 @@ mod tests {
             Some(std::cmp::Ordering::Greater)
         );
         assert_eq!(version_cmp("3.0", "3.0.1"), None);
+        assert_eq!(
+            version_cmp("3.0.9", "3.0.10"),
+            Some(std::cmp::Ordering::Less)
+        );
+        assert_eq!(version_cmp("03.0.0", "3.0.0"), None);
+        assert_eq!(
+            version_cmp("3.0.0-rc.1", "3.0.0"),
+            Some(std::cmp::Ordering::Less)
+        );
+        assert_eq!(
+            version_cmp("3.0.0+one", "3.0.0+two"),
+            Some(std::cmp::Ordering::Equal)
+        );
         assert!(core_satisfies("3.0.1", "3.0.0"));
         assert!(!core_satisfies("3.0.0", "3.0.1"));
         assert!(!core_satisfies("3.0.1", "three"));
@@ -1759,6 +1753,15 @@ mod tests {
         assert!(is_newer_than_active("core", "3.0.2", &active));
         assert!(is_newer_than_active("wordcraft", "3.0.1", &active));
         assert!(!is_newer_than_active("invalid", "3.0.2", &active));
+        let bundled = RuntimeStatus {
+            core_version: "3.0.2".into(),
+            active_frontend: None,
+            active_wordcraft: None,
+            can_rollback: false,
+            can_rollback_core: false,
+        };
+        assert!(!is_newer_than_active("frontend", "3.0.2", &bundled));
+        assert!(is_newer_than_active("frontend", "3.0.3", &bundled));
     }
 
     #[test]

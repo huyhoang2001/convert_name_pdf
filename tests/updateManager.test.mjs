@@ -21,13 +21,16 @@ test('Update Manager exposes installed, available, and history sections without 
   assert.doesNotMatch(source, /updateRollback|rollbackCore|function rollback\(/);
   assert.match(source, /updateReadyToActivate/);
   assert.match(source, /updateEmpty/);
+  assert.match(source, /archiveBytes/);
+  assert.match(source, /updateCurrentVersion/);
+  assert.match(source, /formatBytes\(update\.archiveBytes\)/);
   assert.match(startup, /mark_runtime_ready/);
   assert.match(startup, /b6h-update-ready/);
 });
 
 test('Update Manager labels are localized in English and Vietnamese', async () => {
   const [en, vi] = await Promise.all(['en', 'vi'].map(async language => JSON.parse(await readFile(new URL(`../src/locales/${language}.json`, import.meta.url), 'utf8'))));
-  for (const key of ['updateInstalledComponents', 'updateAvailable', 'updateStatus', 'updateActive', 'updateEmpty', 'updateHistoryEmpty', 'updateSuccess', 'updateFailed', 'updateHistoryImport', 'updateHistoryActivate']) {
+  for (const key of ['updateInstalledComponents', 'updateAvailable', 'updateStatus', 'updateActive', 'updateEmpty', 'updateHistoryEmpty', 'updateSuccess', 'updateFailed', 'updateHistoryImport', 'updateHistoryActivate', 'updateCurrentVersion', 'updateDownloadSize', 'updateLatestStatus']) {
     assert.ok(en[key], `English label ${key}`);
     assert.ok(vi[key], `Vietnamese label ${key}`);
   }

@@ -11,9 +11,9 @@ type Update = { component: string; version: string; releaseId: string; files: nu
 type RuntimeStatus = { coreVersion: string; activeFrontend: string | null; activeWordcraft: string | null };
 type HistoryEntry = { at: string; action: string; component: string; version: string; releaseId: string };
 type Progress = { phase: string; component?: string; bytesProcessed: number; totalBytes: number };
-type OnlineUpdate = { component: string; version: string; releaseId: string; sequence: number };
+type OnlineUpdate = { component: string; version: string; releaseId: string; sequence: number; archiveBytes: number };
 type UpdateNotice = { component: string; version: string | null; success: boolean };
-type AvailableUpdate = { component: string; version: string; releaseId: string; staged: boolean };
+type AvailableUpdate = { component: string; version: string; releaseId: string; staged: boolean; archiveBytes?: number };
 
 const noticeKey = 'b6h-update-completed';
 const componentKeys: Record<string, keyof typeof en> = {
@@ -106,7 +106,7 @@ export default function UpdateManager({ t }: { t: (key: keyof typeof en) => stri
       const active = await refresh();
       const unique = new Map(found.map(update => [`${update.component}:${update.releaseId}`, update]));
       setOnline([...unique.values()].filter(update => activeVersion(update.component, active) !== update.version));
-      if (!found.length) { setStatus(t('updateNoOnline')); setStatusKind('info'); }
+      if (!found.length) { setStatus(t('updateLatestStatus')); setStatusKind('info'); }
     } catch (error) {
       setStatus(`${t('updateFailed')}: ${String(error)}`);
       setStatusKind('error');
@@ -163,7 +163,7 @@ export default function UpdateManager({ t }: { t: (key: keyof typeof en) => stri
     if (activeVersionFor(update.component) === update.version) continue;
     const key = `${update.component}:${update.releaseId}`;
     const staged = updates.find(item => item.component === update.component && item.releaseId === update.releaseId);
-    available.set(key, { component: update.component, version: update.version, releaseId: update.releaseId, staged: !!staged });
+    available.set(key, { component: update.component, version: update.version, releaseId: update.releaseId, staged: !!staged, archiveBytes: update.archiveBytes });
   }
   for (const update of updates) {
     if (activeVersionFor(update.component) === update.version) continue;
@@ -189,8 +189,8 @@ export default function UpdateManager({ t }: { t: (key: keyof typeof en) => stri
 
     <section className="update-manager-section">
       <h3>{t('updateAvailable')}</h3>
-      {available.size ? <div className="settings-config-table-wrap"><table className="settings-config-table"><thead><tr><th>{t('updateComponent')}</th><th>{t('updateVersion')}</th><th>{t('updateRelease')}</th><th>{t('updateStatus')}</th><th>{t('updateAction')}</th></tr></thead><tbody>
-        {[...available.values()].map(update => <tr key={`${update.component}:${update.releaseId}`}><td>{label(update.component)}</td><td>{update.version}</td><td>{update.releaseId}</td><td>{t(update.staged ? 'updateReadyToActivate' : 'updateReadyToDownload')}</td><td><button className={update.staged ? 'primary-button' : 'page-button'} type="button" disabled={busy} onClick={() => void (update.staged ? activate(update) : downloadOnline(update))}>{t(update.staged ? 'updateActivate' : 'updateDownload')}</button></td></tr>)}
+      {available.size ? <div className="settings-config-table-wrap"><table className="settings-config-table"><thead><tr><th>{t('updateComponent')}</th><th>{t('updateCurrentVersion')}</th><th>{t('updateVersion')}</th><th>{t('updateDownloadSize')}</th><th>{t('updateRelease')}</th><th>{t('updateStatus')}</th><th>{t('updateAction')}</th></tr></thead><tbody>
+        {[...available.values()].map(update => <tr key={`${update.component}:${update.releaseId}`}><td>{label(update.component)}</td><td>{version(update.component) ?? t('updateVersionUnavailable')}</td><td>{update.version}</td><td>{update.archiveBytes == null ? '—' : formatBytes(update.archiveBytes)}</td><td>{update.releaseId}</td><td>{t(update.staged ? 'updateReadyToActivate' : 'updateReadyToDownload')}</td><td><button className={update.staged ? 'primary-button' : 'page-button'} type="button" disabled={busy} onClick={() => void (update.staged ? activate(update) : downloadOnline(update))}>{t(update.staged ? 'updateActivate' : 'updateDownload')}</button></td></tr>)}
       </tbody></table></div> : <p className="settings-config-hint">{t('updateEmpty')}</p>}
     </section>
 
@@ -205,5 +205,10 @@ export default function UpdateManager({ t }: { t: (key: keyof typeof en) => stri
 }
 
 function activeVersion(component: string, runtime: RuntimeStatus) {
-  return component === 'core' ? runtime.coreVersion : component === 'frontend' ? runtime.activeFrontend : component === 'wordcraft' ? runtime.activeWordcraft : null;
+  return component === 'core' ? runtime.coreVersion : component === 'frontend' ? runtime.activeFrontend ?? app.version : component === 'wordcraft' ? runtime.activeWordcraft : null;
+}
+
+function formatBytes(bytes: number) {
+  const unit = bytes < 1024 ? 0 : bytes < 1024 ** 2 ? 1 : 2;
+  return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(bytes / 1024 ** unit)} ${['B', 'KB', 'MB'][unit]}`;
 }

@@ -74,6 +74,32 @@
 :root[data-theme="dark"] .calendar-event[style]{color:#fff!important}
 :root[data-theme="dark"] .calendar-workspace .error{color:#fff}
 :root[data-theme="dark"] .calendar-feedback{color:#e7edf5}
+.calendar-deadline-warning{display:inline-flex;align-items:center;gap:3px;width:max-content;max-width:100%;margin:3px 0;padding:2px 6px;border-radius:5px;background:#fff1f2;color:#b42332;font-size:11px;font-weight:700;line-height:1.25;white-space:normal}
+.calendar-deadline-warning.overdue{background:#fee2e2;color:#991b1b}
+.calendar-deadline-warning.overdue.age-4_7{background:#fecaca;color:#8f1717}
+.calendar-deadline-warning.overdue.age-8_30{background:#fca5a5;color:#7f1d1d}
+.calendar-deadline-warning.overdue.age-31plus{background:#ef4444;color:#fff}
+.calendar-deadline-warning.due_today,.calendar-deadline-warning.due_soon{background:#fff7db;color:#8a4b08}
+.calendar-deadline-warning.due_in{background:#eef2f7;color:#536176}
+.calendar-deadline-warning.compact{flex:none;margin:0 0 0 3px;padding:1px 4px;font-size:9px;white-space:nowrap}
+.calendar-overdue-filter{display:flex;align-items:center;gap:7px;white-space:nowrap}
+.calendar-toolbar .calendar-overdue-filter.active{border-color:#b42332;background:#b42332;color:#fff}
+.calendar-overdue-filter b{min-width:18px;padding:1px 5px;border-radius:10px;background:#fee2e2;color:#991b1b;font-size:11px;text-align:center}
+.calendar-toolbar .calendar-overdue-filter.active b{background:#fff;color:#991b1b}
+.calendar-overdue-summary{padding:4px 9px;border:1px solid #f1c6ca;border-radius:7px;background:#fff7f7;color:#991b1b;font-size:11px;font-weight:700;white-space:nowrap}
+.calendar-lane-cards .calendar-deadline-warning{flex:none;overflow:hidden}
+.calendar-stack-card .calendar-deadline-warning{overflow:hidden;text-overflow:ellipsis}
+.calendar-allday-chip .calendar-deadline-warning{margin-left:6px}
+.timeline-task .calendar-deadline-warning{align-self:flex-start}
+:root[data-theme="dark"] .calendar-deadline-warning.overdue{background:#581c24;color:#fecaca}
+:root[data-theme="dark"] .calendar-deadline-warning.overdue.age-4_7{background:#6e2027;color:#fecaca}
+:root[data-theme="dark"] .calendar-deadline-warning.overdue.age-8_30{background:#842b32;color:#fff1f2}
+:root[data-theme="dark"] .calendar-deadline-warning.overdue.age-31plus{background:#b42332;color:#fff}
+:root[data-theme="dark"] .calendar-deadline-warning.due_today,:root[data-theme="dark"] .calendar-deadline-warning.due_soon{background:#422f12;color:#fcd782}
+:root[data-theme="dark"] .calendar-deadline-warning.due_in{background:#364253;color:#d1d9e4}
+:root[data-theme="dark"] .calendar-toolbar .calendar-overdue-filter.active{background:#b42332;color:#fff}
+:root[data-theme="dark"] .calendar-overdue-filter b{background:#581c24;color:#fecaca}
+:root[data-theme="dark"] .calendar-overdue-summary{border-color:#7f2934;background:#3b2027;color:#fecaca}
 .calendar-grid .calendar-cell-items{max-height:126px;scrollbar-gutter:auto}
 .calendar-grid.week .calendar-cell-items,.calendar-grid.day .calendar-cell-items{max-height:336px}
 .calendar-workspace *{scrollbar-width:none;-ms-overflow-style:none}

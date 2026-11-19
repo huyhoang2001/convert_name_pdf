@@ -36,6 +36,8 @@ Task statuses progress through To Do, In Progress, In Review, and Done. Priority
 
 When a task is marked Done, B6H records the completion time and status transition history. A completed task remains in the Board’s Done column for 72 hours from its latest completion, then is hidden from the Board without being deleted. Reopening and completing it again starts a new 72-hour period. Completed tasks and events remain available in Calendar and Timeline history. Legacy completed records without a trustworthy completion timestamp use a separately identified observation time for the initial Board visibility window.
 
+Unfinished tasks and events keep their workflow status after the due date. B6H shows localized due-today, due-soon, and overdue warnings on Board cards, Calendar, Timeline, and item details. Date-only deadlines become overdue at local midnight after the due date; timed events become overdue at their existing end time. The Board’s Overdue filter and count include unresolved items carried forward from earlier year partitions without moving or duplicating their records. Mark an item Done or reschedule its due date to clear its overdue warning.
+
 ### Categories and backups
 
 Create categories in the mini-calendar sidebar. The category list keeps its heading and add controls visible and scrolls its rows after five. The Accent palette sets the color for new categories or recolors selected categories. Rename preserves a category’s color; confirmed deletion removes the category and leaves its associated records uncategorized. The toolbar category filter remains separate from category recoloring selection.

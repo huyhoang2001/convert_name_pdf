@@ -1,7 +1,7 @@
-# B6H v3.0.0 — Installer & Modular Update
+# B6H v3.0.1 — Frontend Maintenance
 
-- Added a lightweight current-user Windows x64 Setup.exe branded with the official B6H logo. The installer is under 50 MB and does not require administrator access.
-- Added signed, independently updateable Frontend, Wordcraft, and Core components. Production update catalogs and packages use Ed25519 signatures, SHA-256 integrity checks, compatibility validation, and rollback/recovery support.
-- The signed initial stable catalog is empty because v3.0.0 already includes all three components; modular packages are published when a component changes.
-- Preserved application settings, JSON storage, workbook behavior, and existing workflows. The validated Wordcraft JavaScript/WASM runtime was reused; the large offline installer was not rebuilt.
-- The Setup is unsigned by Authenticode because B6H is free and open source. Windows may show an unknown-publisher or SmartScreen warning. Verify the published SHA-256 checksum and download only from this official GitHub release.
+- Added automatic due-today, due-soon, and overdue warnings for unfinished Calendar & To-do items, with localized Board filtering and counts across Board, Calendar, Timeline, and item details.
+- Kept overdue items actionable across yearly partitions without changing their status, JSON records, ownership, or the 72-hour Done retention rule.
+- Refined the Home Page heading and sidebar mascot presentation.
+- Published a production-signed Frontend update package. The v3.0.0 Windows x64 Setup.exe and its SHA-256 sidecar are reused for new users; Rust Core, Wordcraft, and Setup.exe were not rebuilt.
+- The Setup is unsigned by Authenticode because B6H is free and open source. Windows may show an unknown-publisher or SmartScreen warning. Verify its published SHA-256 checksum and download only from this official GitHub release.

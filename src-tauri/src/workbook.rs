@@ -200,6 +200,9 @@ fn date_serial(value: &str) -> Option<String> {
             .to_string(),
     )
 }
+fn date_display(value: &str) -> Option<String> {
+    Some(NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()?.format("%d/%m/%Y").to_string())
+}
 fn cell(sheet: &Worksheet, col: u32, row: u32) -> String {
     sheet
         .get_cell((col, row))
@@ -258,6 +261,26 @@ fn normalize_signature_stt(sheet: &mut Worksheet, col: u32, row: u32, number: u3
 fn clear_business_cell(sheet: &mut Worksheet, col: u32, row: u32) {
     if sheet.get_cell((col, row)).is_some_and(|cell| cell.get_formula().is_empty()) {
         sheet.get_cell_mut((col, row)).set_value_string("");
+    }
+}
+fn register_date_is_text(sheet: &Worksheet, col: u32, row: u32) -> bool {
+    if let Some(cell) = sheet.get_cell((col, row)) {
+        if !cell.get_formula().is_empty() { return false; }
+        if !cell.get_value().to_string().trim().is_empty() { return cell.get_data_type() != "n"; }
+    }
+    let format = sheet.get_style((col, row)).get_number_format().map(|format| format.get_format_code().to_string()).unwrap_or_default();
+    format == "@"
+}
+fn write_register_date(sheet: &mut Worksheet, col: u32, row: u32, value: &str) {
+    if value.is_empty() { clear_business_cell(sheet, col, row); return; }
+    if let Some(display) = date_display(value) {
+        if register_date_is_text(sheet, col, row) {
+            if cell(sheet, col, row) != display { set_cell(sheet, col, row, &display, false); }
+        } else {
+            let serial = date_serial(value).expect("validated ISO date has an Excel serial");
+            if cell(sheet, col, row) != serial { set_cell(sheet, col, row, &serial, true); }
+            sheet.get_style_mut((col, row)).get_number_format_mut().set_format_code("dd/mm/yyyy");
+        }
     }
 }
 fn custom(settings: &Value) -> Vec<(String, String)> {
@@ -1675,6 +1698,91 @@ mod tests {
     }
 
     #[test]
+    fn existing_register_saves_format_native_dates_and_preserve_text_dates() {
+        let root = std::env::temp_dir().join(format!("b6h-register-date-save-{}", Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let dates = ["2026-01-05", "2026-05-01", "2026-11-09", "2026-11-19", "2026-12-31", "2028-02-29"];
+        let state = State::default();
+        for kind in ["signature", "translation"] {
+            let file = root.join(format!("{kind}.xlsx"));
+            let mut rows = dates.iter().enumerate().map(|(index, date)| json!({
+                "id": format!("{kind}-{index}"), "number": format!("{:02}", index + 1), "date": date,
+                "person": format!("Person {index}"), "document": "Record", "languages": "EN - VI",
+                "certifier": "Signer", "copies": "1", "fee": "", "notes": ""
+            })).collect::<Vec<_>>();
+            rows.push(json!({"id":format!("{kind}-text"),"number":"07","date":"2026-01-05","person":"Text date","document":"Record","languages":"EN - VI","certifier":"Signer","copies":"1","fee":"","notes":""}));
+            rows.push(json!({"id":format!("{kind}-empty"),"number":"08","date":"","person":"Empty date","document":"Record","languages":"EN - VI","certifier":"Signer","copies":"1","fee":"","notes":""}));
+            rows.push(json!({"id":format!("{kind}-text-empty"),"number":"09","date":"","person":"Text date schema","document":"Record","languages":"EN - VI","certifier":"Signer","copies":"1","fee":"","notes":""}));
+            create(&state, kind, &file.to_string_lossy(), &json!([{"id":"register","name":"Register","rows":rows}]), &json!({}), "EN").unwrap();
+
+            let mut book = load(&file).unwrap();
+            let stt_before = {
+                let sheet = book.get_sheet_by_name_mut("Register").unwrap();
+                for row in 2..=10 { sheet.get_style_mut((2, row)).get_number_format_mut().set_format_code("m/d/yyyy"); }
+                sheet.get_cell_mut("B8").set_value_string("05/01/2026");
+                sheet.get_style_mut("B8").get_number_format_mut().set_format_code("@");
+                sheet.get_cell_mut("B9").set_value_string("");
+                sheet.get_cell_mut("B10").set_value_string("");
+                sheet.get_style_mut("B10").get_number_format_mut().set_format_code("@");
+                (2..=10).map(|row| cell(sheet, 1, row)).collect::<Vec<_>>()
+            };
+            let cover = book.new_sheet("Cover").unwrap();
+            cover.get_cell_mut("A1").set_formula("SUM(1,1)").set_formula_result_default("2");
+            cover.get_style_mut("B1").get_number_format_mut().set_format_code("0.000");
+            xlsx::writer::xlsx::write(&book, &file).unwrap();
+
+            let imported = import(&state, kind, &file.to_string_lossy(), &json!({})).unwrap();
+            assert_eq!(imported["sheets"][0]["rows"][0]["date"], dates[0]);
+            assert_eq!(imported["sheets"][0]["rows"][1]["date"], dates[1]);
+            assert_eq!(imported["sheets"][0]["rows"][6]["date"], dates[0]);
+            assert_eq!(imported["sheets"][0]["rows"][7]["date"], "");
+            assert_eq!(imported["sheets"][0]["rows"][8]["date"], "");
+            let mut input = json!({"file":imported["file"],"sourceMap":imported["sourceMap"],"sheets":imported["sheets"]});
+            input["sheets"][0]["rows"][1]["date"] = json!("2026-06-01");
+            input["sheets"][0]["rows"][6]["date"] = json!("2026-11-19");
+            input["sheets"][0]["rows"][8]["date"] = json!("2026-05-01");
+            for _ in 0..2 { assert_eq!(save_register(&state, &input, &json!({}), kind)["status"], "success"); }
+
+            let saved = load(&file).unwrap();
+            let sheet = saved.get_sheet_by_name("Register").unwrap();
+            for (index, record) in input["sheets"][0]["rows"].as_array().unwrap().iter().take(6).enumerate() {
+                let row = index as u32 + 2;
+                let expected = date_serial(record["date"].as_str().unwrap()).unwrap();
+                let date_cell = sheet.get_cell((2, row)).unwrap();
+                assert_eq!(date_cell.get_data_type(), "n", "{kind} row {row}");
+                assert_eq!(date_cell.get_value().to_string(), expected, "{kind} row {row}");
+                assert_eq!(sheet.get_style((2, row)).get_number_format().unwrap().get_format_code(), "dd/mm/yyyy", "{kind} row {row}");
+                assert_eq!(input["sheets"][0]["rows"][index]["workbookRow"], row);
+            }
+            assert_eq!(sheet.get_cell("B8").unwrap().get_data_type(), "s");
+            assert_eq!(sheet.get_value("B8"), "19/11/2026");
+            assert_eq!(sheet.get_style("B8").get_number_format().unwrap().get_format_code(), "@");
+            assert_eq!(sheet.get_value("B9"), "");
+            assert_eq!(sheet.get_cell("B10").unwrap().get_data_type(), "s");
+            assert_eq!(sheet.get_value("B10"), "01/05/2026");
+            assert_eq!(sheet.get_style("B10").get_number_format().unwrap().get_format_code(), "@");
+            assert_eq!(cell(sheet, 1, 2), stt_before[0]);
+            assert_eq!(cell(sheet, 1, 9), stt_before[7]);
+            assert_eq!(saved.get_sheet_by_name("Cover").unwrap().get_cell("A1").unwrap().get_formula(), "SUM(1,1)");
+            assert_eq!(saved.get_sheet_by_name("Cover").unwrap().get_style("B1").get_number_format().unwrap().get_format_code(), "0.000");
+            let reopened = import(&state, kind, &file.to_string_lossy(), &json!({})).unwrap();
+            assert_eq!(reopened["sheets"][0]["rows"][0]["date"], dates[0]);
+            assert_eq!(reopened["sheets"][0]["rows"][1]["date"], "2026-06-01");
+            assert_eq!(reopened["sheets"][0]["rows"][6]["date"], "2026-11-19");
+            assert_eq!(reopened["sheets"][0]["rows"][7]["date"], "");
+            assert_eq!(reopened["sheets"][0]["rows"][8]["date"], "2026-05-01");
+            let reopened_input = json!({"file":reopened["file"],"sourceMap":reopened["sourceMap"],"sheets":reopened["sheets"]});
+            let second_save = save_register(&state, &reopened_input, &json!({}), kind);
+            for (index, record) in reopened_input["sheets"][0]["rows"].as_array().unwrap().iter().enumerate() {
+                assert_eq!(record["workbookRow"], index as u32 + 2);
+                assert_eq!(second_save["rowLocators"][record["id"].as_str().unwrap()], index as u32 + 2);
+            }
+        }
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 2);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn signature_create_and_save_write_document_and_certifier_uppercase_at_14_points() {
         let root = std::env::temp_dir().join(format!("b6h-signature-certifier-case-{}", Uuid::new_v4()));
         fs::create_dir(&root).unwrap();
@@ -2211,8 +2319,12 @@ fn register_write_record(sheet: &mut Worksheet, kind: &str, row: u32, row_end: u
     let keys: &[&str] = if kind == "translation" { &T_KEYS } else { &S_KEYS };
     if kind == "signature" { for target_row in row..=row_end { sheet.get_style_mut((columns[0] as u32 + 1, target_row)).get_font_mut().set_size(14.0); } }
     for (index, key) in keys.iter().enumerate().skip(1) {
-        let value = if *key == "date" { date_serial(&string(record, key)).unwrap_or_else(|| string(record, key)) } else if kind == "signature" && (*key == "certifier" || *key == "document") { string(record, key).to_uppercase() } else { string(record, key) };
         let col = columns[index] as u32 + 1;
+        if *key == "date" {
+            if sheet.get_cell((col, row)).is_none_or(|cell| cell.get_formula().is_empty()) { write_register_date(sheet, col, row, &string(record, key)); }
+            continue;
+        }
+        let value = if kind == "signature" && (*key == "certifier" || *key == "document") { string(record, key).to_uppercase() } else { string(record, key) };
         if kind == "signature" { for target_row in row..=row_end { sheet.get_style_mut((col, target_row)).get_font_mut().set_size(14.0); } }
         if kind == "signature" && *key == "person" && row_end > row {
             let old = (row..=row_end).map(|r| cell(sheet, col, r)).filter(|v| !v.trim().is_empty()).collect::<Vec<_>>().join("\n\n");

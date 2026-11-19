@@ -8,66 +8,8 @@ mod modular_update;
 mod word;
 mod workbook;
 use std::sync::Arc;
-use tauri::{
-    Manager, State,
-    menu::{MenuBuilder, MenuItem, SubmenuBuilder},
-};
+use tauri::{Manager, State};
 use tauri_plugin_dialog::DialogExt;
-
-fn install_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
-    let vi = storage::language().unwrap_or_else(|_| "EN".into()) == "VI";
-    let label = |en: &'static str, vn: &'static str| if vi { vn } else { en };
-    let file = SubmenuBuilder::new(app, label("File", "Tệp"))
-        .quit()
-        .build()?;
-    let edit = SubmenuBuilder::new(app, label("Edit", "Chỉnh sửa"))
-        .undo()
-        .redo()
-        .separator()
-        .cut()
-        .copy()
-        .paste()
-        .select_all()
-        .build()?;
-    let view =
-        SubmenuBuilder::new(app, label("View", "Xem")).text("reload", label("Reload", "Tải lại"));
-    let devtools = MenuItem::with_id(
-        app,
-        "devtools",
-        label("Developer tools", "Công cụ phát triển"),
-        true,
-        Some("Ctrl+F12"),
-    )?;
-    let view = view.item(&devtools);
-    let view = view
-        .separator()
-        .text("fullscreen", label("Fullscreen", "Toàn màn hình"))
-        .build()?;
-    let window = SubmenuBuilder::new(app, label("Window", "Cửa sổ"))
-        .minimize()
-        .close_window()
-        .separator()
-        .text(
-            "check-update",
-            label("Check for updates...", "Kiểm tra bản cập nhật..."),
-        )
-        .text(
-            "install-update",
-            label(
-                "Install update from file...",
-                "Cài đặt bản cập nhật từ tệp...",
-            ),
-        )
-        .build()?;
-    let help = SubmenuBuilder::new(app, label("Help", "Trợ giúp"))
-        .text("about", label("About B6H", "Giới thiệu B6H"))
-        .build()?;
-    let menu = MenuBuilder::new(app)
-        .items(&[&file, &edit, &view, &window, &help])
-        .build()?;
-    app.set_menu(menu)?;
-    Ok(())
-}
 
 #[tauri::command]
 async fn scan(root: String) -> Result<pdf::Scan, String> {
@@ -142,10 +84,8 @@ fn get_language() -> Result<String, String> {
     storage::language()
 }
 #[tauri::command]
-fn save_language(language: String, app: tauri::AppHandle) -> Result<String, String> {
-    let value = storage::save_language(&language)?;
-    install_menu(&app).map_err(|e| e.to_string())?;
-    Ok(value)
+fn save_language(language: String) -> Result<String, String> {
+    storage::save_language(&language)
 }
 #[tauri::command]
 fn get_theme() -> Result<String, String> {
@@ -559,7 +499,7 @@ fn launch_core_update(app: tauri::AppHandle) -> Result<(), String> {
     modular_update::start_core_update(app)
 }
 #[tauri::command]
-fn mark_runtime_ready() -> Result<(), String> {
+fn mark_runtime_ready() -> Result<Option<modular_update::UpdateNotice>, String> {
     modular_update::mark_runtime_ready()
 }
 #[tauri::command]
@@ -872,7 +812,6 @@ pub fn run() {
         .manage(Arc::new(word::State::default()))
         .setup(|app| {
             modular_update::recover_activation().map_err(std::io::Error::other)?;
-            install_menu(app.handle())?;
             app.on_menu_event(|app, event| match event.id().0.as_str() {
                 "check-update" => {
                     let app = app.clone();

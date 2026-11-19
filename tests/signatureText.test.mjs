@@ -10,6 +10,17 @@ test('formats and parses valid register dates as dd/mm/yyyy', () => {
   assert.equal(parseRegisterDate('31/02/2026'), '');
 });
 
+test('parses and formats ambiguous business dates in day-first order', () => {
+  for (const [display, iso] of [
+    ['05/01/2026', '2026-01-05'], ['01/05/2026', '2026-05-01'],
+    ['09/11/2026', '2026-11-09'], ['19/11/2026', '2026-11-19'],
+    ['31/12/2026', '2026-12-31'], ['29/02/2028', '2028-02-29'],
+  ]) {
+    assert.equal(parseRegisterDate(display), iso);
+    assert.equal(formatRegisterDate(iso), display);
+  }
+});
+
 test('manual STT can fill the first gap', () => {
   assert.equal(nextAvailableSignatureNumber(Array.from({ length: 30 }, (_, index) => ({ number: String(index + 1) }))), '31');
   assert.equal(nextAvailableSignatureNumber([1, 2, 3, 5, 6].map(number => ({ number: String(number) }))), '04');

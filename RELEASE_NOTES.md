@@ -1,7 +1,7 @@
-# B6H v3.0.1 — Frontend Maintenance
+# B6H v3.0.2 — Maintenance Release
 
-- Added automatic due-today, due-soon, and overdue warnings for unfinished Calendar & To-do items, with localized Board filtering and counts across Board, Calendar, Timeline, and item details.
-- Kept overdue items actionable across yearly partitions without changing their status, JSON records, ownership, or the 72-hour Done retention rule.
-- Refined the Home Page heading and sidebar mascot presentation.
-- Published a production-signed Frontend update package. The v3.0.0 Windows x64 Setup.exe and its SHA-256 sidecar are reused for new users; Rust Core, Wordcraft, and Setup.exe were not rebuilt.
+- Enforced locale-independent `dd/mm/yyyy` display for native Excel date cells saved by Signature Authentication and Translation while preserving native Excel date values and existing text-date fields.
+- Improved update lifecycle feedback, active-version filtering, history display, and localized status messages. Manual rollback controls are removed from Settings while automatic recovery and backend rollback remain available.
+- Kept the existing Home page menu removal and Calendar & To-do overdue visibility behavior.
+- Published a production-signed Frontend and Core update package. The Windows x64 Setup.exe and its SHA-256 sidecar are included for new users; the validated Wordcraft runtime was reused.
 - The Setup is unsigned by Authenticode because B6H is free and open source. Windows may show an unknown-publisher or SmartScreen warning. Verify its published SHA-256 checksum and download only from this official GitHub release.

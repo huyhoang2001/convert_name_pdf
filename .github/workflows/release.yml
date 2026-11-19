@@ -114,11 +114,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: B6H v3.0.0 — Installer & Modular Update
+          name: B6H ${{ github.ref_name }} — Installer & Modular Update
           body_path: RELEASE_NOTES.md
           draft: true
           prerelease: false
           files: |
-            B6H-v3.0.0-x64-Setup.exe
-            B6H-v3.0.0-x64-Setup.exe.sha256
+            B6H-${{ github.ref_name }}-x64-Setup.exe
+            B6H-${{ github.ref_name }}-x64-Setup.exe.sha256
             RELEASE-EVIDENCE.txt

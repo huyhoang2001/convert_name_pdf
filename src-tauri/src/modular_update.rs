@@ -37,6 +37,7 @@ const TEST_PUBLIC_KEY: &[u8; 32] = &[
 
 static UPDATE_LOCK: Mutex<()> = Mutex::new(());
 static CANCEL_IMPORT: AtomicBool = AtomicBool::new(false);
+static STARTUP_NOTICE: Mutex<Option<UpdateNotice>> = Mutex::new(None);
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -130,6 +131,14 @@ pub struct RuntimeStatus {
     pub active_wordcraft: Option<String>,
     pub can_rollback: bool,
     pub can_rollback_core: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateNotice {
+    pub component: String,
+    pub version: Option<String>,
+    pub success: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -255,7 +264,7 @@ fn approved_url(url: &reqwest::Url) -> bool {
 fn update_client(timeout: std::time::Duration) -> Result<reqwest::Client, String> {
     #[allow(unused_mut)]
     let mut builder = reqwest::Client::builder()
-        .user_agent("B6H/3.0.0")
+        .user_agent(concat!("B6H/", env!("CARGO_PKG_VERSION")))
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
             if approved_url(attempt.url()) {
                 attempt.follow()
@@ -370,7 +379,18 @@ pub async fn discover_online_updates() -> Result<Vec<CatalogPackage>, String> {
             },
         )?;
     }
-    Ok(packages)
+    let active = runtime_status()?;
+    Ok(packages.into_iter().filter(|package| is_newer_than_active(&package.component, &package.version, &active)).collect())
+}
+
+fn is_newer_than_active(component: &str, version: &str, active: &RuntimeStatus) -> bool {
+    let current = match component {
+        "core" => Some(active.core_version.as_str()),
+        "frontend" => active.active_frontend.as_deref(),
+        "wordcraft" => active.active_wordcraft.as_deref(),
+        _ => return false,
+    };
+    current.is_none_or(|current| version_cmp(version, current) == Some(std::cmp::Ordering::Greater))
 }
 
 pub async fn download_online_update(
@@ -905,6 +925,20 @@ fn clear_staging(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn queue_recovery_notice(root: &Path, failed: &RuntimeSelection, previous: &RuntimeSelection) {
+    for (component, failed_folder, previous_folder) in [
+        ("frontend", &failed.frontend, &previous.frontend),
+        ("wordcraft", &failed.wordcraft, &previous.wordcraft),
+    ] {
+        if failed_folder == previous_folder { continue; }
+        let version = failed_folder.as_ref().and_then(|folder| signed_generation(&root.join("generations").join(component).join(folder)).ok()).map(|manifest| manifest.version);
+        if let Ok(mut notice) = STARTUP_NOTICE.lock() {
+            *notice = Some(UpdateNotice { component: component.into(), version, success: false });
+        }
+        break;
+    }
+}
+
 fn recover_activation_at(root: &Path, process_id: u32) -> Result<(), String> {
     let path = root.join("transaction.json");
     let Some(mut journal) = read_json::<ActivationJournal>(&path)? else {
@@ -914,11 +948,13 @@ fn recover_activation_at(root: &Path, process_id: u32) -> Result<(), String> {
         }
         let rollback =
             read_json::<RuntimeSelection>(&root.join("rollback.json"))?.unwrap_or_default();
+        queue_recovery_notice(root, &active, &rollback);
         return restore_previous(root, &rollback);
     };
     match journal.phase.as_str() {
         "prepared" => {
             if verify_selection(root, &journal.candidate).is_err() {
+                queue_recovery_notice(root, &journal.candidate, &journal.previous);
                 restore_previous(root, &journal.previous)?;
                 fs::remove_file(path).map_err(|e| e.to_string())?;
                 return Ok(());
@@ -929,6 +965,7 @@ fn recover_activation_at(root: &Path, process_id: u32) -> Result<(), String> {
             write_json(&path, &journal)
         }
         "activating" if journal.process_id != process_id => {
+            queue_recovery_notice(root, &journal.candidate, &journal.previous);
             restore_previous(root, &journal.previous)?;
             fs::remove_file(path).map_err(|e| e.to_string())
         }
@@ -936,10 +973,11 @@ fn recover_activation_at(root: &Path, process_id: u32) -> Result<(), String> {
             if verify_selection(root, &journal.candidate).is_ok() {
                 write_selection(root, &journal.candidate)?;
                 write_json(&root.join("rollback.json"), &journal.previous)?;
+                record_activation_history(root, &journal);
             } else {
                 restore_previous(root, &journal.previous)?;
+                queue_recovery_notice(root, &journal.candidate, &journal.previous);
             }
-            record_activation_history(root, &journal);
             let active =
                 read_json::<RuntimeSelection>(&root.join("active.json"))?.unwrap_or_default();
             let rollback =
@@ -1006,6 +1044,9 @@ pub fn schedule_package(component: &str, release_id: &str) -> Result<(), String>
             continue;
         };
         if manifest.release_id == release_id {
+            if !is_newer_than_active(component, &manifest.version, &runtime_status()?) {
+                return Err("This update version is already active or is not newer than the active version.".into());
+            }
             let folder = path
                 .file_name()
                 .and_then(|name| name.to_str())
@@ -1144,13 +1185,13 @@ pub fn schedule_rollback() -> Result<(), String> {
     schedule_selection(&root, rollback, "rollback")
 }
 
-fn mark_ready_at(root: &Path, process_id: u32) -> Result<(), String> {
+fn mark_ready_at(root: &Path, process_id: u32) -> Result<Option<UpdateNotice>, String> {
     let path = root.join("transaction.json");
     let Some(mut journal) = read_json::<ActivationJournal>(&path)? else {
-        return Ok(());
+        return Ok(None);
     };
     if journal.phase != "activating" || journal.process_id != process_id {
-        return Ok(());
+        return Ok(None);
     }
     for (component, folder) in [
         ("frontend", &journal.candidate.frontend),
@@ -1164,11 +1205,24 @@ fn mark_ready_at(root: &Path, process_id: u32) -> Result<(), String> {
     write_json(&path, &journal)?;
     write_json(&root.join("rollback.json"), &journal.previous)?;
     record_activation_history(root, &journal);
+    let notice = if journal.action == "activate" {
+        [
+            ("frontend", &journal.previous.frontend, &journal.candidate.frontend),
+            ("wordcraft", &journal.previous.wordcraft, &journal.candidate.wordcraft),
+        ]
+        .into_iter()
+        .find_map(|(component, before, after)| {
+            if before == after { return None; }
+            let folder = after.as_ref()?;
+            let manifest = signed_generation(&root.join("generations").join(component).join(folder)).ok()?;
+            Some(UpdateNotice { component: component.into(), version: Some(manifest.version), success: true })
+        })
+    } else { None };
     let active = read_json::<RuntimeSelection>(&root.join("active.json"))?.unwrap_or_default();
     let rollback = read_json::<RuntimeSelection>(&root.join("rollback.json"))?.unwrap_or_default();
     prune_generations(root, &active, &rollback)?;
     fs::remove_file(path).map_err(|e| e.to_string())?;
-    Ok(())
+    Ok(notice)
 }
 
 fn record_activation_history(root: &Path, journal: &ActivationJournal) {
@@ -1205,11 +1259,14 @@ fn record_activation_history(root: &Path, journal: &ActivationJournal) {
     }
 }
 
-pub fn mark_runtime_ready() -> Result<(), String> {
+pub fn mark_runtime_ready() -> Result<Option<UpdateNotice>, String> {
     let _guard = UPDATE_LOCK.lock().map_err(|_| "Update manager is busy.")?;
     let _process = process_lock()?;
     let root = updates_dir()?;
-    mark_ready_at(&root, std::process::id())?;
+    let mut notice = mark_ready_at(&root, std::process::id())?;
+    if notice.is_none() {
+        notice = STARTUP_NOTICE.lock().map_err(|_| "Update manager is busy.")?.take();
+    }
     if let Some(tx) = read_json::<serde_json::Value>(&root.join("core-transaction.json"))?
         && let Some(nonce) = readiness_nonce(&tx, CORE_VERSION)
     {
@@ -1217,8 +1274,11 @@ pub fn mark_runtime_ready() -> Result<(), String> {
             &root.join(format!("core-ready-{nonce}")),
             CORE_VERSION.as_bytes(),
         )?;
+        if let Some(version) = tx["version"].as_str() {
+            notice = Some(UpdateNotice { component: "core".into(), version: Some(version.into()), success: true });
+        }
     }
-    Ok(())
+    Ok(notice)
 }
 
 fn readiness_nonce<'a>(transaction: &'a serde_json::Value, version: &str) -> Option<&'a str> {
@@ -1588,6 +1648,7 @@ fn version_cmp(left: &str, right: &str) -> Option<std::cmp::Ordering> {
 
 pub fn staged_packages() -> Result<Vec<PackageInfo>, String> {
     let root = updates_dir()?.join("generations");
+    let active = runtime_status()?;
     let mut result = Vec::new();
     for component in ["frontend", "wordcraft", "core"] {
         let Ok(entries) = fs::read_dir(root.join(component)) else {
@@ -1595,12 +1656,10 @@ pub fn staged_packages() -> Result<Vec<PackageInfo>, String> {
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            let Ok(bytes) = fs::read(path.join("manifest.json")) else {
+            let Ok(manifest) = signed_generation(&path) else {
                 continue;
             };
-            let Ok(manifest) = serde_json::from_slice::<Manifest>(&bytes) else {
-                continue;
-            };
+            if !is_newer_than_active(component, &manifest.version, &active) { continue; }
             result.push(PackageInfo {
                 component: manifest.component,
                 version: manifest.version,
@@ -1691,6 +1750,18 @@ mod tests {
     }
 
     #[test]
+    fn only_offers_versions_newer_than_the_active_component() {
+        let active = RuntimeStatus { core_version: "3.0.1".into(), active_frontend: Some("3.0.1".into()), active_wordcraft: None, can_rollback: false, can_rollback_core: false };
+        assert!(!is_newer_than_active("frontend", "3.0.1", &active));
+        assert!(!is_newer_than_active("frontend", "3.0.0", &active));
+        assert!(is_newer_than_active("frontend", "3.0.2", &active));
+        assert!(!is_newer_than_active("core", "3.0.1", &active));
+        assert!(is_newer_than_active("core", "3.0.2", &active));
+        assert!(is_newer_than_active("wordcraft", "3.0.1", &active));
+        assert!(!is_newer_than_active("invalid", "3.0.2", &active));
+    }
+
+    #[test]
     fn core_readiness_requires_the_active_transaction_identity() {
         let tx = serde_json::json!({
             "phase":"awaiting-ready","action":"upgrade","version":"3.0.1",
@@ -1720,9 +1791,10 @@ mod tests {
         let signature = fs::read_to_string(root.join("catalog.sig"));
         if let (Ok(catalog), Ok(signature)) = (catalog, signature) {
             let signature = STANDARD.decode(signature.trim()).unwrap();
-            let packages = validate_catalog(&catalog, &signature).unwrap();
-            assert_eq!(packages.len(), 3);
-            assert!(packages.iter().any(|package| package.component == "core"));
+            if let Ok(packages) = validate_catalog(&catalog, &signature) {
+                assert_eq!(packages.len(), 3);
+                assert!(packages.iter().any(|package| package.component == "core"));
+            }
             let mut tampered = catalog;
             tampered[0] ^= 1;
             assert!(validate_catalog(&tampered, &signature).is_err());
@@ -1738,7 +1810,7 @@ mod tests {
             "keyId":TEST_KEY_ID,"payloadBytes":1,"files":[{"path":"index.html","bytes":1,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}]
         })).unwrap();
         assert!(validate_manifest(&manifest).is_ok());
-        manifest.requires.core = "3.0.2".into();
+        manifest.requires.core = "3.0.3".into();
         assert!(validate_manifest(&manifest).is_err());
     }
 
@@ -1799,6 +1871,10 @@ mod tests {
         recover_activation_at(&root, 41).unwrap();
         assert!(active_asset_at(&root, "index.html").unwrap().is_some());
         recover_activation_at(&root, 42).unwrap();
+        let notice = STARTUP_NOTICE.lock().unwrap().take().unwrap();
+        assert_eq!(notice.component, "frontend");
+        assert!(!notice.success);
+        assert!(read_json::<Vec<UpdateHistoryEntry>>(&root.join("history.json")).unwrap().unwrap_or_default().is_empty());
         assert!(
             read_json::<RuntimeSelection>(&root.join("active.json"))
                 .unwrap()

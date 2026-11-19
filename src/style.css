@@ -416,6 +416,13 @@ body{overflow:hidden}
 .settings-config-hint{margin:12px 0;color:#7b8999;font-size:12px;line-height:1.5}
 .settings-config-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:14px 0 20px}
 .settings-config-actions [role="status"]{color:#60748a;font-size:12px}
+.update-manager-section{min-width:0;margin-top:22px}
+.update-manager-section h3{margin:0 0 10px;color:var(--ink);font-size:14px}
+.update-manager-status{min-height:1.4em;margin:14px 0;color:var(--muted);font-size:13px}
+.update-manager-status[data-state="success"]{color:#208052}
+.update-manager-status[data-state="error"]{color:#ad3838}
+:root[data-theme="dark"] .update-manager-status[data-state="success"]{color:#77d6a4}
+:root[data-theme="dark"] .update-manager-status[data-state="error"]{color:#ffaaa3}
 :root[data-theme="dark"] .selector-settings-tabs{background:transparent;border-color:#334155}
 :root[data-theme="dark"] .selector-settings-tabs button{color:#94a3b8}
 :root[data-theme="dark"] .selector-settings-tabs button:hover{color:#f1f5f9}

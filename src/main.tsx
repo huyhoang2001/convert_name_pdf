@@ -11,5 +11,11 @@ void listenForFolderDrops();
 createRoot(document.getElementById('root')!).render(<App/>);
 requestAnimationFrame(() => {
   void invoke('mark_update_started').catch(() => {});
-  requestAnimationFrame(() => { void invoke('mark_runtime_ready').catch(() => {}); });
+  requestAnimationFrame(() => {
+    void invoke<{ component: string; version: string | null; success: boolean } | null>('mark_runtime_ready').then(notice => {
+      if (!notice) return;
+      localStorage.setItem('b6h-update-completed', JSON.stringify(notice));
+      window.dispatchEvent(new Event('b6h-update-ready'));
+    }).catch(() => {});
+  });
 });

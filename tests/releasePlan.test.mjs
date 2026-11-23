@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { classifyChangedPaths, compareVersions, nextPatch, updateUiKnowledgeVersion } from '../scripts/release-plan.mjs';
 
@@ -34,4 +35,16 @@ test('release preparation updates only the UI knowledge version field', () => {
   const updated = updateUiKnowledgeVersion(source, '3.0.4');
   assert.equal(updated, source.replace('3.0.3', '3.0.4'));
   assert.deepEqual(JSON.parse(updated), { appVersion: '3.0.4', entries: [{ id: 'keep-formatting' }] });
+});
+
+test('production release signing requires explicit manual authorization on a version tag', async () => {
+  const workflow = await readFile(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /^on:\r?\n  workflow_dispatch:/m);
+  assert.doesNotMatch(workflow, /^  push:/m);
+  assert.match(workflow, /authorize_production_signing:\r?\n\s+description:/);
+  assert.match(workflow, /required: true\r?\n\s+default: false\r?\n\s+type: boolean/);
+  assert.match(workflow, /if: \$\{\{ inputs\.authorize_production_signing == true && startsWith\(github\.ref, 'refs\/tags\/v'\) \}\}/);
+  assert.match(workflow, /environment: b6h-production-release/);
+  assert.match(workflow, /secrets\.B6H_UPDATE_SIGNING_KEY_B64/);
+  assert.match(workflow, /release-plan\.mjs verify-key/);
 });

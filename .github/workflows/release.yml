@@ -1,9 +1,13 @@
 name: B6H Incremental Production Release
 
 on:
-  push:
-    tags:
-      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      authorize_production_signing:
+        description: Explicitly authorize production signing and publication for this version tag
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -14,6 +18,7 @@ concurrency:
 
 jobs:
   release:
+    if: ${{ inputs.authorize_production_signing == true && startsWith(github.ref, 'refs/tags/v') }}
     runs-on: windows-latest
     timeout-minutes: 90
     environment: b6h-production-release

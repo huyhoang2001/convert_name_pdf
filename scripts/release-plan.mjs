@@ -197,7 +197,7 @@ async function prepare() {
     `# B6H v${version} - Maintenance Release`,
     '',
     ...summaries.map(value => `- ${value.replace(/[.!?]*$/, '.')}`),
-    `- Published a production-signed ${componentNames} modular update package${components.length === 1 ? '' : 's'}${components.includes('core') ? ' and lightweight Windows x64 Setup' : '; the existing Setup is reused'}; the validated Wordcraft runtime was reused when unchanged.`,
+    `- Component artifacts: production-signed ${componentNames} modular update package${components.length === 1 ? '' : 's'}${components.includes('core') ? ' and lightweight Windows x64 Setup' : '; the existing Setup is reused'}; the validated Wordcraft runtime was reused when unchanged.`,
     '- The Setup is unsigned by Authenticode because B6H is free and open source. Windows may show an unknown-publisher or SmartScreen warning. Verify its published SHA-256 checksum and download only from this official GitHub release.',
     '',
   ].join('\n');

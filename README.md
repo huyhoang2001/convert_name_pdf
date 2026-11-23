@@ -60,7 +60,7 @@ The in-app help works offline by default. Optional online help uses OpenRouter. 
 
 Download the current-user Windows x64 installer from [GitHub Releases](https://github.com/huyhoang2001/convert_name_pdf/releases/latest). Verify its SHA-256 checksum against the sidecar published with the installer before running it. The installer and uninstaller use the B6H logo and install without administrator access. The lightweight Setup downloads Microsoft's WebView2 bootstrapper if WebView2 is missing, so internet access may be required.
 
-The current maintenance release is B6H v3.0.3. See the release notes for its component changes.
+The current maintenance release is B6H v3.0.4. See the release notes for its component changes.
 
 The free installer is not signed with a commercial Authenticode certificate. Windows may show an unknown-publisher or SmartScreen warning; verify the download came from this repository's official release and matches its SHA-256 before choosing to run it. See [installation and updates](docs/INSTALLATION.md) for details. B6H checks the latest stable GitHub release for cryptographically signed modular updates.
 

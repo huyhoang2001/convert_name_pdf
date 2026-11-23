@@ -8,6 +8,13 @@ export function uppercaseSignatureText(value) {
   return value.toUpperCase();
 }
 
+const foldSuggestion = value => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase();
+
+export function filterRegisterSuggestions(values, query) {
+  const needle = foldSuggestion(query);
+  return needle ? values.filter(value => foldSuggestion(value).includes(needle)) : values;
+}
+
 export function signatureDocumentSuggestions(rows, query) {
   const needle = query.toLocaleLowerCase();
   const seen = new Set();
@@ -20,6 +27,19 @@ export function signatureDocumentSuggestions(rows, query) {
     if (!needle || value.toLocaleLowerCase().includes(needle)) suggestions.push(value.toUpperCase());
   }
   return suggestions;
+}
+
+export function translationPersonSuggestions(rows, query) {
+  const seen = new Set();
+  const values = [];
+  for (const row of [...rows].reverse()) {
+    const value = row.person ?? '';
+    const key = foldSuggestion(value.trim());
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    values.push(value);
+  }
+  return filterRegisterSuggestions(values, query);
 }
 
 export function splitSearchMatches(value, query) {

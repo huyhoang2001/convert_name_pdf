@@ -1762,8 +1762,8 @@ mod tests {
             can_rollback: false,
             can_rollback_core: false,
         };
-        assert!(!is_newer_than_active("frontend", "3.0.2", &bundled));
-        assert!(is_newer_than_active("frontend", "3.0.3", &bundled));
+        assert!(!is_newer_than_active("frontend", BUNDLED_FRONTEND_VERSION.trim(), &bundled));
+        assert!(is_newer_than_active("frontend", &next_major(BUNDLED_FRONTEND_VERSION.trim()), &bundled));
         assert!(!is_newer_than_active("wordcraft", BUNDLED_WORDCRAFT_VERSION.trim(), &bundled));
         assert!(is_newer_than_active("wordcraft", "3.0.1", &bundled));
     }
@@ -1817,8 +1817,12 @@ mod tests {
             "keyId":TEST_KEY_ID,"payloadBytes":1,"files":[{"path":"index.html","bytes":1,"sha256":"0000000000000000000000000000000000000000000000000000000000000000"}]
         })).unwrap();
         assert!(validate_manifest(&manifest).is_ok());
-        manifest.requires.core = "3.0.3".into();
+        manifest.requires.core = next_major(CORE_VERSION);
         assert!(validate_manifest(&manifest).is_err());
+    }
+
+    fn next_major(version: &str) -> String {
+        format!("{}.0.0", version.split('.').next().unwrap().parse::<u64>().unwrap() + 1)
     }
 
     #[test]

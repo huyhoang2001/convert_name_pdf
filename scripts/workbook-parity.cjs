@@ -39,7 +39,7 @@ async function main() {
     if (cover.getCell('B1').value?.formula !== '1+2') throw Error('Cover formula changed');
     if (cover.getCell('A3').value !== 'Merged' || cover.getCell('B3').master.address !== 'A3') throw Error('Cover merge changed');
     if (!cover.sheetProtection?.sheet) throw Error('Cover protection changed');
-    if (register.getCell('C2').value !== 'Second person') throw Error('Register edit missing');
+    if (register.getCell('C2').value !== 'SECOND PERSON') throw Error('Register edit missing');
   } else throw Error('Expected create or compare');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

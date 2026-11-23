@@ -120,6 +120,14 @@ fn save_chatbot_visible(visible: bool) -> Result<bool, String> {
     storage::save_chatbot_visible(visible)
 }
 #[tauri::command]
+fn get_home_favorites() -> Result<serde_json::Value, String> {
+    storage::home_favorites()
+}
+#[tauri::command]
+fn save_home_favorites(favorites: serde_json::Value) -> Result<serde_json::Value, String> {
+    storage::save_home_favorites(favorites)
+}
+#[tauri::command]
 fn get_signature_settings() -> Result<serde_json::Value, String> {
     storage::signature_settings()
 }
@@ -895,6 +903,8 @@ pub fn run() {
             save_translation_stt_mode,
             get_chatbot_visible,
             save_chatbot_visible,
+            get_home_favorites,
+            save_home_favorites,
             get_signature_settings,
             save_signature_settings,
             get_selector_settings,

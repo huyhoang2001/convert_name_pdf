@@ -6,7 +6,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "set \"PATH=%USERPROFILE%\\.cargo\\bin;%PATH%\" && tauri dev",
+    "dev": "npm.cmd run build:update-runner && set \"PATH=%USERPROFILE%\\.cargo\\bin;%PATH%\" && tauri dev",
     "wordcraft:build": "node scripts/build-wordcraft.mjs",
     "wordcraft:source-build": "node scripts/build-wordcraft.mjs --build",
     "wordcraft:cache": "node scripts/wordcraft-cache.mjs",

@@ -230,6 +230,31 @@ fn numeric_stt(value: &str) -> Option<u32> {
     let number = value.trim().parse::<u32>().ok()?;
     (number > 0 && number <= 100_499).then_some(number)
 }
+fn concise_translation_language(value: &str) -> Option<&'static str> {
+    let mut cleaned = value.trim().to_lowercase();
+    while let Some(rest) = cleaned.strip_prefix("tiếng ") { cleaned = rest.to_string(); }
+    let normalized = cleaned.nfd().filter(|character| !matches!(*character as u32, 0x0300..=0x036f)).collect::<String>();
+    match normalized.trim() {
+        "viet" | "vietnamese" => Some("Việt"),
+        "anh" | "english" => Some("Anh"),
+        "hoa" | "trung" | "chinese" => Some("Hoa"),
+        "nhat" | "japanese" => Some("Nhật"),
+        "han" | "korean" => Some("Hàn"),
+        "phap" | "french" => Some("Pháp"),
+        _ => None,
+    }
+}
+fn concise_translation_language_pair(value: &str) -> String {
+    let (source, target) = [" -> ", " – ", " — ", " - "]
+        .iter()
+        .find_map(|separator| value.split_once(separator))
+        .or_else(|| value.split_once('-'))
+        .unwrap_or(("", ""));
+    match (concise_translation_language(source), concise_translation_language(target)) {
+        (Some(source), Some(target)) => format!("{source} - {target}"),
+        _ => value.to_string(),
+    }
+}
 fn has_cell_content(sheet: &Worksheet, col: usize, row: u32) -> bool {
     sheet.get_cell(((col + 1) as u32, row)).is_some_and(|cell| {
         !cell.get_value().to_string().is_empty() || !cell.get_formula().is_empty()
@@ -418,6 +443,7 @@ fn parse_register(kind: &str, sheet: &Worksheet, settings: &Value) -> Option<Val
                     || custom_indexes.iter().any(|(_, index)| index.is_some_and(|col| (*row_number..=row_end).any(|r| has_business_value(sheet, col, r))))
             } else {
                 indexes.iter().enumerate().any(|(i, index)| i > 0 && !row.get(*index).unwrap_or(&String::new()).trim().is_empty())
+                    || custom_indexes.iter().any(|(_, index)| index.is_some_and(|col| (*row_number..=row_end).any(|r| has_business_value(sheet, col, r))))
             };
             if !business {
                 continue;
@@ -911,7 +937,7 @@ fn append_register(
                 let value = if *key == "number" {
                     if kind == "translation" {
                         let raw = string(record, key);
-                        let parsed = if raw.is_empty() { row_index as u32 + 1 } else { numeric_stt(&raw).ok_or("Invalid STT")? };
+                        let parsed = if raw.is_empty() { return Err("Translation records require a user-verified STT.".into()); } else { numeric_stt(&raw).ok_or("Invalid STT")? };
                         format!("{parsed:02}")
                     } else if kind == "signature" {
                         let raw = string(record, key);
@@ -922,6 +948,8 @@ fn append_register(
                     }
                 } else if *key == "date" {
                     date_serial(&string(record, key)).unwrap_or_else(|| string(record, key))
+                } else if kind == "translation" && *key == "languages" {
+                    concise_translation_language_pair(&string(record, key))
                 } else if kind == "signature" && (*key == "certifier" || *key == "document") {
                     string(record, key).to_uppercase()
                 } else {
@@ -1067,6 +1095,44 @@ mod tests {
     }
     fn delete_signature_record_at(input: &mut Value, row: u32) {
         input["sheets"][0]["rows"].as_array_mut().unwrap().retain(|record| record["workbookRow"].as_u64() != Some(row as u64));
+    }
+
+    #[test]
+    fn translation_excel_rules_uppercase_text_and_highlight_duplicate_stt_rows() {
+        let root = std::env::temp_dir().join(format!("b6h-translation-excel-rules-{}", Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let file = root.join("translation.xlsx");
+        let mut book = xlsx::new_file_empty_worksheet();
+        let sheet = book.new_sheet("2026").unwrap();
+        set_cell(sheet, 1, 1, "Serial number", false);
+        set_cell(sheet, 2, 1, "Person", false);
+        set_cell(sheet, 1, 2, "01", false);
+        set_cell(sheet, 2, 2, "Mixed Case", false);
+        set_cell(sheet, 1, 3, "1", false);
+        set_cell(sheet, 2, 3, "Second Record", false);
+        set_cell(sheet, 1, 4, "2", false);
+        set_cell(sheet, 2, 4, "Keep This", false);
+        sheet.get_cell_mut("C4").set_value_number(42);
+        sheet.get_cell_mut("D4").set_formula("SUM(1,1)").set_formula_result_default("2");
+        let original_style = sheet.get_style("B2").clone();
+        apply_translation_excel_rules(sheet, 1, 1, 2);
+        assert_eq!(sheet.get_value("B2"), "MIXED CASE");
+        assert_eq!(sheet.get_value("B4"), "KEEP THIS");
+        assert_eq!(sheet.get_value("C4"), "42");
+        assert_eq!(sheet.get_cell("D4").unwrap().get_formula(), "SUM(1,1)");
+        assert_eq!(sheet.get_style("B2"), &original_style);
+        let generated = sheet.get_conditional_formatting_collection().iter().find(|format| format.get_conditional_collection().iter().any(|rule| rule.get_formula().is_some_and(|formula| formula.get_address_str() == DUPLICATE_STT_FORMAT_MARKER))).unwrap();
+        assert_eq!(generated.get_sequence_of_references().get_sqref(), "A2:B2 A3:B3");
+        apply_translation_excel_rules(sheet, 1, 1, 2);
+        let rules = sheet.get_conditional_formatting_collection().iter().flat_map(|format| format.get_conditional_collection()).filter(|rule| rule.get_formula().is_some_and(|formula| formula.get_address_str() == DUPLICATE_STT_FORMAT_MARKER)).collect::<Vec<_>>();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(*rules[0].get_style().unwrap().get_background_color().unwrap().get_indexed(), 5);
+        xlsx::writer::xlsx::write(&book, &file).unwrap();
+        let reopened = load(&file).unwrap();
+        let sheet = reopened.get_sheet_by_name("2026").unwrap();
+        assert_eq!(sheet.get_value("B2"), "MIXED CASE");
+        assert_eq!(sheet.get_conditional_formatting_collection().iter().flat_map(|format| format.get_conditional_collection()).filter(|rule| rule.get_formula().is_some_and(|formula| formula.get_address_str() == DUPLICATE_STT_FORMAT_MARKER)).count(), 1);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -1675,7 +1741,7 @@ mod tests {
                 &state,
                 kind,
                 &file.to_string_lossy(),
-                &json!([{"id":"sheet","name":"Register","rows":[{"id":"row","date":"2026-01-04"}]}]),
+                &json!([{"id":"sheet","name":"Register","rows":[{"id":"row","number":"01","date":"2026-01-04"}]}]),
                 &json!({}),
                 "EN",
             )
@@ -1930,10 +1996,10 @@ mod tests {
             result.get_sheet_by_name("Cover").unwrap().get_value("A1"),
             "Keep me"
         );
-        assert_eq!(register.get_value("C2"), "Second person");
+        assert_eq!(register.get_value("C2"), "SECOND PERSON");
         assert_eq!(
             register.get_value("I2"),
-            "First line\nSecond line\nThird line"
+            "FIRST LINE\nSECOND LINE\nTHIRD LINE"
         );
         assert!(*register.get_row_dimension(&2).unwrap().get_height() >= 56.0);
         assert!(*register.get_column_dimension("C").unwrap().get_width() > 32.0);
@@ -2117,9 +2183,151 @@ mod tests {
         let saved = load(&file).unwrap();
         let sheet = saved.get_sheet_by_name("Register").unwrap();
         assert_eq!(numeric_stt(&cell(sheet, 1, row)), Some(2));
-        assert_eq!(cell(sheet, 3, row), "Second");
+        assert_eq!(cell(sheet, 3, row), "SECOND");
         assert_eq!(numeric_stt(&cell(sheet, 1, row + 1)), Some(3));
         assert_eq!(result["allocationMaxes"][input["sheets"][0]["id"].as_str().unwrap()], 3);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn translation_missing_stt_reports_physical_row_and_reconcile_requires_explicit_assignment() {
+        let root = std::env::temp_dir().join(format!("b6h-translation-missing-stt-{}", Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let file = root.join("translation.xlsx");
+        let mut book = xlsx::new_file_empty_worksheet();
+        let sheet = book.new_sheet("2026").unwrap();
+        for (index, header) in header_candidates("translation", &json!({}), "EN").iter().enumerate() { set_cell(sheet, index as u32 + 1, 1, header, false); }
+        for (row, number, document) in [(477, "476", "Earlier"), (479, "477", "Following"), (480, "478", "Later")] {
+            set_cell(sheet, 1, row, number, false);
+            set_cell(sheet, 2, row, "15/08/2026", false);
+            set_cell(sheet, 3, row, "Same person", false);
+            set_cell(sheet, 4, row, document, false);
+            set_cell(sheet, 5, row, "Vietnamese - English", false);
+            set_cell(sheet, 6, row, "Certifier", false);
+            set_cell(sheet, 7, row, "1", false);
+            set_cell(sheet, 8, row, "10000", false);
+        }
+        for (col, value) in [(2, "15/08/2026"), (3, "Same person"), (4, "Graduation certificate"), (5, "Vietnamese - English"), (6, "Certifier"), (7, "1"), (8, "10000")] { set_cell(sheet, col, 478, value, false); }
+        set_cell(sheet, 1, 547, "545", false);
+        xlsx::writer::xlsx::write(&book, &file).unwrap();
+        let state = State::default();
+        let mut imported = import(&state, "translation", &file.to_string_lossy(), &json!({})).unwrap();
+        assert_eq!(imported["sheets"][0]["rows"].as_array().unwrap().len(), 4);
+        let missing = imported["sheets"][0]["rows"].as_array().unwrap().iter().find(|row| row["workbookRow"] == 478).unwrap();
+        assert_eq!(missing["number"], "");
+        assert_eq!(missing["document"], "Graduation certificate");
+        let original_hash = workbook_hash(&file).unwrap();
+        let rejected = save_translation(&state, &imported, &json!({}));
+        assert_eq!(rejected["status"], "missing_stt");
+        assert_eq!(rejected["sheetName"], "2026");
+        assert_eq!(rejected["row"], 478);
+        assert_eq!(workbook_hash(&file).unwrap(), original_hash);
+        let mut dropped = imported.clone();
+        dropped["sheets"][0]["rows"].as_array_mut().unwrap().retain(|row| row["workbookRow"] != 478);
+        let blocked_delete = save_translation(&state, &dropped, &json!({}));
+        assert_eq!(blocked_delete["status"], "missing_stt");
+        assert_eq!(blocked_delete["row"], 478);
+        assert_eq!(workbook_hash(&file).unwrap(), original_hash);
+        let original_bytes = fs::read(&file).unwrap();
+        let mut externally_changed = load(&file).unwrap();
+        externally_changed.get_sheet_by_name_mut("2026").unwrap().get_cell_mut("J1").set_value("external");
+        xlsx::writer::xlsx::write(&externally_changed, &file).unwrap();
+        let mut attempted = imported.clone();
+        let attempted_row = attempted["sheets"][0]["rows"].as_array_mut().unwrap().iter_mut().find(|row| row["workbookRow"] == 478).unwrap();
+        attempted_row.as_object_mut().unwrap().remove("workbookRow");
+        attempted_row.as_object_mut().unwrap().remove("workbookRowEnd");
+        attempted_row["reconcileFromRow"] = json!(478);
+        attempted_row["number"] = json!("479");
+        assert_eq!(save_translation(&state, &attempted, &json!({}))["status"], "stale");
+        fs::write(&file, original_bytes).unwrap();
+        let mut changed_source = imported.clone();
+        let changed = changed_source["sheets"][0]["rows"].as_array_mut().unwrap().iter_mut().find(|row| row["workbookRow"] == 478).unwrap();
+        changed.as_object_mut().unwrap().remove("workbookRow");
+        changed.as_object_mut().unwrap().remove("workbookRowEnd");
+        changed["reconcileFromRow"] = json!(478);
+        changed["number"] = json!("479");
+        changed["person"] = json!("Different person");
+        let stale_reconcile = save_translation(&state, &changed_source, &json!({}));
+        assert_eq!(stale_reconcile["status"], "stale");
+        assert_eq!(workbook_hash(&file).unwrap(), original_hash);
+        let mut extra_row = imported.clone();
+        let source = extra_row["sheets"][0]["rows"].as_array_mut().unwrap().iter_mut().find(|row| row["workbookRow"] == 478).unwrap();
+        source.as_object_mut().unwrap().remove("workbookRow"); source.as_object_mut().unwrap().remove("workbookRowEnd"); source["reconcileFromRow"] = json!(478); source["number"] = json!("900");
+        extra_row["sheets"][0]["rows"].as_array_mut().unwrap().push(json!({"id":"unmapped-545","number":"545","date":"2026-06-17","person":"Unrelated addition","document":"Unrelated","languages":"Vietnamese - English","certifier":"Certifier","copies":"2","fee":"","notes":""}));
+        let extra_row = save_translation(&state, &extra_row, &json!({}));
+        assert_eq!(extra_row["status"], "invalid");
+        assert_eq!(workbook_hash(&file).unwrap(), original_hash);
+
+        let rows = imported["sheets"][0]["rows"].as_array_mut().unwrap();
+        let index = rows.iter().position(|row| row["workbookRow"] == 478).unwrap();
+        let mut reconciled = rows.remove(index);
+        let record = reconciled.as_object_mut().unwrap();
+        record.remove("workbookRow");
+        record.remove("workbookRowEnd");
+        record.insert("reconcileFromRow".into(), json!(478));
+        record.insert("number".into(), json!("477"));
+        let duplicate_index = rows.iter().rposition(|row| numeric_stt(&string(row, "number")) == Some(477)).unwrap() + 1;
+        rows.insert(duplicate_index, reconciled);
+        let reconciled_id = string(&rows[duplicate_index], "id");
+        assert_eq!(save_translation(&state, &imported, &json!({}))["status"], "duplicate");
+        assert_eq!(workbook_hash(&file).unwrap(), original_hash);
+        imported["sheets"][0]["rows"][duplicate_index]["duplicateConfirmed"] = json!(true);
+        let saved = save_translation(&state, &imported, &json!({}));
+        assert_eq!(saved["status"], "success");
+        let destination = saved["rowLocators"][&reconciled_id].as_u64().unwrap() as u32;
+        assert_eq!(destination, 480);
+        let reopened = load(&file).unwrap();
+        let sheet = reopened.get_sheet_by_name("2026").unwrap();
+        assert_eq!(cell(sheet, 4, 478), "");
+        assert_eq!(numeric_stt(&cell(sheet, 1, 479)), Some(477));
+        assert_eq!(numeric_stt(&cell(sheet, 1, 480)), Some(477));
+        assert_eq!(cell(sheet, 4, 480), "GRADUATION CERTIFICATE");
+        assert_eq!(numeric_stt(&cell(sheet, 1, 481)), Some(478));
+        assert_eq!(numeric_stt(&cell(sheet, 1, 548)), Some(545));
+        assert_eq!(cell(sheet, 3, 548), "");
+        let refreshed = import(&State::default(), "translation", &file.to_string_lossy(), &json!({})).unwrap();
+        assert_eq!(refreshed["sheets"][0]["rows"].as_array().unwrap().len(), 4);
+        assert!(refreshed["sheets"][0]["rows"].as_array().unwrap().iter().all(|row| row["workbookRow"] != 478));
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn translation_language_pairs_normalize_edits_and_uppercase_saved_workbook_text() {
+        for (input, expected) in [
+            ("Tiếng Việt - Tiếng Anh", "Việt - Anh"),
+            ("English -> Vietnamese", "Anh - Việt"),
+            ("Chinese - Vietnamese", "Hoa - Việt"),
+            ("Tiếng Việt - Tiếng Nhật", "Việt - Nhật"),
+            ("Korean - French", "Hàn - Pháp"),
+            ("Tiếng tiếng Việt - Tiếng Tiếng Anh", "Việt - Anh"),
+        ] { assert_eq!(concise_translation_language_pair(input), expected); }
+        let root = std::env::temp_dir().join(format!("b6h-translation-language-{}", Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let file = root.join("translation-language.xlsx");
+        let mut book = xlsx::new_file_empty_worksheet();
+        let sheet = book.new_sheet("2026").unwrap();
+        for (index, header) in header_candidates("translation", &json!({}), "EN").iter().enumerate() { set_cell(sheet, index as u32 + 1, 1, header, false); }
+        set_cell(sheet, 1, 2, "01", false); set_cell(sheet, 3, 2, "Historical", false); set_cell(sheet, 5, 2, "Tiếng Việt - Tiếng Anh", false);
+        xlsx::writer::xlsx::write(&book, &file).unwrap();
+        let state = State::default();
+        let mut imported = import(&state, "translation", &file.to_string_lossy(), &json!({})).unwrap();
+        assert_eq!(save_translation(&state, &imported, &json!({}))["status"], "success");
+        assert_eq!(cell(load(&file).unwrap().get_sheet_by_name("2026").unwrap(), 5, 2), "TIẾNG VIỆT - TIẾNG ANH");
+        imported["sheets"][0]["rows"][0]["languages"] = json!("Vietnamese - Japanese");
+        imported["sheets"][0]["rows"].as_array_mut().unwrap().push(json!({"id":"new-language","number":"02","date":"2026-11-23","person":"New","document":"","languages":"English -> Vietnamese","certifier":"","copies":"1","fee":"","notes":""}));
+        assert_eq!(save_translation(&state, &imported, &json!({}))["status"], "success");
+        let saved = load(&file).unwrap(); let sheet = saved.get_sheet_by_name("2026").unwrap();
+        assert_eq!(cell(sheet, 5, 2), "VIỆT - NHẬT");
+        let row = saved.get_sheet_by_name("2026").unwrap().get_highest_row();
+        assert_eq!(cell(sheet, 5, row), "ANH - VIỆT");
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn translation_new_workbook_rejects_blank_stt_instead_of_using_display_order() {
+        let root = std::env::temp_dir().join(format!("b6h-translation-no-reindex-{}", Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let file = root.join("translation.xlsx");
+        let result = create(&State::default(), "translation", &file.to_string_lossy(), &json!([{"id":"sheet","name":"2026","rows":[{"id":"missing","number":"","date":"2026-08-15","person":"Person","document":"Document","languages":"Vietnamese - English","certifier":"Certifier","copies":"1","fee":"10000","notes":""}]}]), &json!({}), "EN");
+        assert!(result.unwrap_err().contains("user-verified STT"));
+        assert!(!file.exists());
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
@@ -2143,8 +2351,8 @@ mod tests {
         assert_eq!(duplicate_row, 3);
         let sheet = load(&file).unwrap();
         let sheet = sheet.get_sheet_by_name("Register").unwrap();
-        assert_eq!(cell(sheet, 3, 2), "Original");
-        assert_eq!(cell(sheet, 3, 3), "Duplicate");
+        assert_eq!(cell(sheet, 3, 2), "ORIGINAL");
+        assert_eq!(cell(sheet, 3, 3), "DUPLICATE");
         assert_eq!(numeric_stt(&cell(sheet, 1, 4)), Some(2));
         let base_id = string(&input["sheets"][0]["rows"][0], "id");
         input["sheets"][0]["rows"].as_array_mut().unwrap().retain(|row| string(row, "id") != base_id);
@@ -2153,7 +2361,7 @@ mod tests {
         assert_eq!(promoted["rowLocators"]["duplicate-01"], 2);
         let reopened = load(&file).unwrap();
         let sheet = reopened.get_sheet_by_name("Register").unwrap();
-        assert_eq!(cell(sheet, 3, 2), "Duplicate");
+        assert_eq!(cell(sheet, 3, 2), "DUPLICATE");
         let refreshed = import(&state, "translation", &file.to_string_lossy(), &json!({})).unwrap();
         let mut delete_last = refreshed.clone();
         delete_last["sheets"][0]["rows"].as_array_mut().unwrap().clear();
@@ -2324,7 +2532,8 @@ fn register_write_record(sheet: &mut Worksheet, kind: &str, row: u32, row_end: u
             if sheet.get_cell((col, row)).is_none_or(|cell| cell.get_formula().is_empty()) { write_register_date(sheet, col, row, &string(record, key)); }
             continue;
         }
-        let value = if kind == "signature" && (*key == "certifier" || *key == "document") { string(record, key).to_uppercase() } else { string(record, key) };
+        let raw_value = string(record, key);
+        let value = if kind == "translation" && *key == "languages" && cell(sheet, col, row) != raw_value { concise_translation_language_pair(&raw_value) } else if kind == "signature" && (*key == "certifier" || *key == "document") { raw_value.to_uppercase() } else { raw_value };
         if kind == "signature" { for target_row in row..=row_end { sheet.get_style_mut((col, target_row)).get_font_mut().set_size(14.0); } }
         if kind == "signature" && *key == "person" && row_end > row {
             let old = (row..=row_end).map(|r| cell(sheet, col, r)).filter(|v| !v.trim().is_empty()).collect::<Vec<_>>().join("\n\n");
@@ -2336,6 +2545,72 @@ fn register_write_record(sheet: &mut Worksheet, kind: &str, row: u32, row_end: u
             let value = string(record, &format!("custom:{id}"));
             if kind == "signature" { sheet.get_style_mut((*column as u32 + 1, row)).get_font_mut().set_size(14.0); }
             if sheet.get_cell((*column as u32 + 1, row)).is_none_or(|cell| cell.get_formula().is_empty()) && cell(sheet, *column as u32 + 1, row) != value { set_cell(sheet, *column as u32 + 1, row, &value, false); }
+        }
+    }
+}
+const DUPLICATE_STT_FORMAT_MARKER: &str = "N(\"B6H_DUPLICATE_STT\")=0";
+fn apply_translation_excel_rules(sheet: &mut Worksheet, number_column: u32, header_row: u32, last_column: u32) {
+    for cell in sheet.get_cell_collection_mut() {
+        if !cell.get_formula().is_empty() { continue; }
+        let raw = cell.get_cell_value().get_raw_value();
+        match raw {
+            xlsx::CellRawValue::String(value) | xlsx::CellRawValue::Lazy(value) => {
+                let uppercase = value.to_uppercase();
+                if uppercase != value.as_ref() { cell.set_value_string(uppercase); }
+            }
+            xlsx::CellRawValue::RichText(_) => {
+                let mut rich = cell.get_cell_value().get_raw_value().get_rich_text().unwrap();
+                for part in rich.get_rich_text_elements_mut() {
+                    let uppercase = part.get_text().to_uppercase();
+                    part.set_text(uppercase);
+                }
+                cell.set_rich_text(rich);
+            }
+            _ => {}
+        }
+    }
+
+    let mut formatting = sheet.get_conditional_formatting_collection().to_vec();
+    for item in &mut formatting {
+        item.get_conditional_collection_mut().retain(|rule| {
+            rule.get_formula().is_none_or(|formula| formula.get_address_str() != DUPLICATE_STT_FORMAT_MARKER)
+        });
+    }
+    formatting.retain(|item| !item.get_conditional_collection().is_empty());
+    sheet.set_conditional_formatting_collection(formatting);
+
+    let duplicate_rows = indexed_rows(sheet).iter()
+        .skip_while(|(row, _)| *row <= header_row)
+        .filter(|(row, _)| merged_span(sheet, number_column, *row).is_none_or(|(_, start, _, _)| start == *row))
+        .filter_map(|(row, values)| numeric_stt(values.get((number_column - 1) as usize).map(String::as_str).unwrap_or("")).map(|number| (number, *row)))
+        .fold(HashMap::<u32, Vec<u32>>::new(), |mut groups, (number, row)| { groups.entry(number).or_default().push(row); groups });
+    let mut ranges = Vec::new();
+    for rows in duplicate_rows.values().filter(|rows| rows.len() > 1) {
+        for row in rows {
+            let row_end = merged_span(sheet, number_column, *row).map(|(_, _, _, end)| end).unwrap_or(*row);
+            ranges.push(format!("{}{}:{}{}", xlsx::helper::coordinate::string_from_column_index(&1), row, xlsx::helper::coordinate::string_from_column_index(&last_column), row_end));
+        }
+    }
+    if ranges.is_empty() { return; }
+
+    let mut conditional = xlsx::ConditionalFormatting::default();
+    conditional.get_sequence_of_references_mut().set_sqref(ranges.join(" "));
+    let mut style = xlsx::Style::default();
+    style.set_background_color_solid(xlsx::Color::COLOR_YELLOW);
+    let mut formula = xlsx::Formula::default();
+    formula.set_string_value(DUPLICATE_STT_FORMAT_MARKER);
+    let mut rule = xlsx::ConditionalFormattingRule::default();
+    rule.set_type(xlsx::ConditionalFormatValues::Expression).set_formula(formula).set_style(style);
+    conditional.add_conditional_collection(rule);
+    sheet.add_conditional_formatting_collection(conditional);
+}
+fn apply_translation_rules_to_sheets(book: &mut xlsx::structs::Spreadsheet, sheets: &[Value], settings: &Value) {
+    for register in sheets {
+        let name = string(register, "name");
+        let Some((header_row, columns, custom_columns)) = book.get_sheet_by_name(&name).and_then(|sheet| register_columns(sheet, "translation", settings)) else { continue };
+        let last_column = columns.iter().chain(custom_columns.iter().filter_map(|(_, column)| column.as_ref())).map(|column| *column as u32 + 1).max().unwrap_or(1);
+        if let Some(sheet) = book.get_sheet_by_name_mut(&name) {
+            apply_translation_excel_rules(sheet, columns[0] as u32 + 1, header_row, last_column);
         }
     }
 }
@@ -2369,6 +2644,15 @@ fn save_register_inner(state: &State, input: &Value, settings: &Value, kind: &st
         if kind == "signature" { for column in columns.iter().chain(custom_columns.iter().flat_map(|(_, column)| column.iter())) { sheet.get_style_mut((*column as u32 + 1, header_row)).get_font_mut().set_size(14.0); } }
         let records = sheet_value.get("rows").and_then(Value::as_array).ok_or_else(|| ("invalid".into(), "Invalid register rows".into()))?;
         if records.len() > 100_000 { return Err(("invalid".into(), "The workbook row capacity was exceeded.".into())); }
+        if kind == "translation" && records.iter().any(|record| record.get("reconcileFromRow").is_some()) {
+            let imported_rows: HashSet<u32> = parse_register(kind, sheet, settings)
+                .and_then(|register| register.get("rows").and_then(Value::as_array).cloned())
+                .unwrap_or_default().iter().filter_map(|record| record.get("workbookRow").and_then(Value::as_u64).map(|row| row as u32)).collect();
+            let submitted_rows: HashSet<u32> = records.iter().filter_map(|record| record.get("workbookRow").or_else(|| record.get("reconcileFromRow")).and_then(Value::as_u64).map(|row| row as u32)).collect();
+            if records.len() != imported_rows.len() || submitted_rows != imported_rows {
+                return Err(("invalid".into(), "Reconciliation requires the complete imported row set. Save or discard other Translation additions and deletions, then retry.".into()));
+            }
+        }
         let mut counts = indexed_rows(sheet).iter().skip_while(|(row, _)| *row <= header_row).filter(|(row, _)| merged_span(sheet, columns[0] as u32 + 1, *row).is_none_or(|(_, start, _, _)| start == *row)).filter_map(|(row, values)| numeric_stt(values.get(columns[0]).map(String::as_str).unwrap_or("")).map(|number| (number, *row))).fold(HashMap::<u32, Vec<u32>>::new(), |mut map, (number, row)| { map.entry(number).or_default().push(row); map });
         let original_numbers: HashSet<u32> = counts.keys().copied().collect();
         let mut row_locations: HashMap<String, (u32, u32)> = records.iter().filter_map(|record| {
@@ -2376,6 +2660,7 @@ fn save_register_inner(state: &State, input: &Value, settings: &Value, kind: &st
             let row_end = record.get("workbookRowEnd").and_then(Value::as_u64).map(|end| end as u32).unwrap_or(row);
             Some((string(record, "id"), (row, row_end)))
         }).collect();
+        let mut reconciled_sources: Vec<(String, u32)> = Vec::new();
         let requested_rows: HashSet<u32> = row_locations.values().map(|(row, _)| *row).collect();
         let pending_removed_numbers: HashSet<u32> = counts.iter().filter_map(|(number, rows)| {
             (rows.iter().all(|row| !requested_rows.contains(row)) && rows.iter().any(|row| signature_occupied(sheet, *row, &columns, &custom_columns))).then_some(*number)
@@ -2383,8 +2668,43 @@ fn save_register_inner(state: &State, input: &Value, settings: &Value, kind: &st
         let mut targets = Vec::new();
         let mut reserved_numbers = HashMap::<u32, u32>::new();
         let mut used_rows = HashSet::new();
+        if kind == "translation" {
+            let reconciled_rows: HashSet<u32> = records.iter().filter_map(|record| record.get("reconcileFromRow").and_then(Value::as_u64).map(|row| row as u32)).collect();
+            for (row, values) in indexed_rows(sheet).iter().skip_while(|(row, _)| *row <= header_row) {
+                if merged_span(sheet, columns[0] as u32 + 1, *row).is_some_and(|(_, start, _, _)| start != *row) { continue; }
+                let number = values.get(columns[0]).map(String::as_str).unwrap_or("");
+                if number.trim().is_empty() && signature_occupied(sheet, *row, &columns, &custom_columns) && !reconciled_rows.contains(row) {
+                    return Err(("missing_stt".into(), format!("{}|{}|{}", id, name, row)));
+                }
+            }
+        }
         for (record_index, record) in records.iter().enumerate() {
-            let number = numeric_stt(&string(record, "number")).ok_or_else(|| if record.get("workbookRow").is_some() { ("stale".into(), "A Signature row has business data but no STT. Refresh and resolve its ownership before saving.".into()) } else { ("invalid".into(), "Enter a supported positive whole-number STT.".into()) })?;
+            let reconcile_row = record.get("reconcileFromRow").and_then(Value::as_u64).map(|row| row as u32);
+            if let Some(source_row) = reconcile_row {
+                let source_number = cell(sheet, columns[0] as u32 + 1, source_row);
+                let source_span = merged_span(sheet, columns[0] as u32 + 1, source_row);
+                let source_is_anchor = source_span.is_none_or(|(_, start, _, _)| start == source_row);
+                let source_fields_match = T_KEYS.iter().enumerate().skip(1).all(|(index, key)| {
+                    let actual = cell(sheet, columns[index] as u32 + 1, source_row);
+                    let expected = string(record, key);
+                    if *key == "date" { date_text(&actual) == expected } else { actual == expected }
+                }) && custom_columns.iter().all(|(field_id, column)| column.is_none_or(|column| cell(sheet, column as u32 + 1, source_row) == string(record, &format!("custom:{field_id}"))));
+                if kind != "translation" || record.get("workbookRow").is_some() || source_row <= header_row || !source_is_anchor || !source_number.trim().is_empty() || !signature_occupied(sheet, source_row, &columns, &custom_columns) || !source_fields_match {
+                    return Err(("stale".into(), format!("The Translation row {source_row} changed. Refresh the workbook before reconciling.")));
+                }
+                reconciled_sources.push((string(record, "id"), source_row));
+            }
+            let number = numeric_stt(&string(record, "number")).ok_or_else(|| {
+                if let Some((row, _)) = row_locations.get(&string(record, "id")) {
+                    if kind == "translation" {
+                        ("missing_stt".into(), format!("{}|{}|{}", id, name, row))
+                    } else {
+                        ("stale".into(), format!("A Signature row at Excel row {row} has business data but no STT. Refresh and resolve its ownership before saving."))
+                    }
+                } else {
+                    ("invalid".into(), "Enter a supported positive whole-number STT.".into())
+                }
+            })?;
             if let Some((row, row_end)) = row_locations.get(&string(record, "id")).copied() {
                 if numeric_stt(&cell(sheet, columns[0] as u32 + 1, row)) != Some(number) { return Err(("stale".into(), "A register row changed. Refresh the workbook before saving.".into())); }
                 if row_end < row || merged_span(sheet, columns[0] as u32 + 1, row).map(|(_, _, _, end)| end).unwrap_or(row) != row_end { return Err(("stale".into(), "A register row changed. Refresh the workbook before saving.".into())); }
@@ -2401,6 +2721,7 @@ fn save_register_inner(state: &State, input: &Value, settings: &Value, kind: &st
                     for (_, start, end, _) in targets.iter_mut() { if *start >= row { *start += 1; } if *end >= row { *end += 1; } }
                     used_rows = used_rows.iter().map(|existing_row| if *existing_row >= row { *existing_row + 1 } else { *existing_row }).collect();
                     for (start, end) in row_locations.values_mut() { if *start >= row { *start += 1; } if *end >= row { *end += 1; } }
+                    for (_, source_row) in &mut reconciled_sources { if *source_row >= row { *source_row += 1; } }
                     for rows in counts.values_mut() { for existing_row in rows { if *existing_row >= row { *existing_row += 1; } } }
                     let last_col = sheet.get_highest_column().max(columns.iter().max().copied().unwrap_or(0) as u32 + 1);
                     sheet.copy_row_styling(&previous_end, &row, Some(&1), Some(&last_col));
@@ -2432,6 +2753,7 @@ fn save_register_inner(state: &State, input: &Value, settings: &Value, kind: &st
                         for (_, start, end, _) in targets.iter_mut() { if *start >= row { *start += 1; } if *end >= row { *end += 1; } }
                         used_rows = used_rows.iter().map(|existing_row| if *existing_row >= row { *existing_row + 1 } else { *existing_row }).collect();
                         for (start, end) in row_locations.values_mut() { if *start >= row { *start += 1; } if *end >= row { *end += 1; } }
+                        for (_, source_row) in &mut reconciled_sources { if *source_row >= row { *source_row += 1; } }
                         for rows in counts.values_mut() { for existing_row in rows { if *existing_row >= row { *existing_row += 1; } } }
                     }
                     sheet.copy_row_styling(&style_row, &row, Some(&1), Some(&last_col));
@@ -2497,11 +2819,18 @@ fn save_register_inner(state: &State, input: &Value, settings: &Value, kind: &st
             all_locators.insert(string(record, "id"), json!(row));
             all_locator_ends.insert(string(record, "id"), json!(row_end));
         }
+        for (record_id, source_row) in reconciled_sources {
+            let source_row = adjust_row(source_row);
+            if !all_locators.contains_key(&record_id) { return Err(("stale".into(), "The reconciled Translation record was not written. Refresh the workbook before saving.".into())); }
+            for column in columns.iter().skip(1) { clear_business_cell(sheet, *column as u32 + 1, source_row); }
+            for (_, column) in &custom_columns { if let Some(column) = column { clear_business_cell(sheet, *column as u32 + 1, source_row); } }
+        }
         let allocation_max = indexed_rows(sheet).iter().skip_while(|(row, _)| *row <= header_row).filter_map(|(_, values)| numeric_stt(values.get(columns[0]).map(String::as_str).unwrap_or(""))).max().unwrap_or(0);
         allocation_maxes.insert(id, json!(allocation_max));
     }
     for name in removed { let _ = book.remove_sheet_by_name(&name); }
     if !new_sheets.is_empty() { append_register(&mut book, kind, &new_sheets, settings, "VI").map_err(|e| ("invalid".into(), e))?; for register in &new_sheets { if let Some(records) = register.get("rows").and_then(Value::as_array) { for (index, record) in records.iter().enumerate() { all_locators.insert(string(record, "id"), json!(index + 2)); all_locator_ends.insert(string(record, "id"), json!(index + 2)); } } } }
+    if kind == "translation" { apply_translation_rules_to_sheets(&mut book, sheets, settings); }
     write_checked(&book, &path, &expected.2).map_err(|e| if e.contains("changed outside") { ("stale".into(), e) } else { ("io".into(), e) })?;
     let revision = workbook_hash(&path).map_err(|e| ("io".into(), e))?;
     let updated_source: HashMap<String, String> = sheets.iter().map(|sheet| (string(sheet, "id"), string(sheet, "name"))).collect();
@@ -2523,6 +2852,10 @@ fn save_register(state: &State, input: &Value, settings: &Value, kind: &str) -> 
             let number = fields.next().unwrap_or("0");
             let row = fields.next().unwrap_or("0");
             json!({"status":"duplicate","sheetId":sheet_id,"number":number.parse::<u32>().unwrap_or(0),"row":row.parse::<u32>().unwrap_or(0)})
+        }
+        Err((status, message)) if status == "missing_stt" => {
+            let mut fields = message.splitn(3, '|');
+            json!({"status":"missing_stt","sheetId":fields.next().unwrap_or_default(),"sheetName":fields.next().unwrap_or_default(),"row":fields.next().and_then(|row| row.parse::<u32>().ok()),"message":"This Translation row contains business data but has no STT. Verify its ownership before reconciling."})
         }
         Err((status, message)) => {
             let error_code = if status == "io" { save_error_code(&message) } else if status == "stale" { "signatureWorkbookStale" } else { "signatureSttInvalid" };
@@ -2588,6 +2921,7 @@ pub fn save(
     } else {
         append_register(&mut book, kind, sheets, settings, language)?
     }
+    if kind == "translation" { apply_translation_rules_to_sheets(&mut book, sheets, settings); }
     write_checked(&book, &path, &expected.2)?;
     let revision = workbook_hash(&path)?;
     state.imported.lock().map_err(|e| e.to_string())?.insert(

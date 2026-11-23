@@ -167,6 +167,7 @@ async function prepare() {
       value.version = version;
       value.packages[''].version = version;
     });
+    await updateJson('src/uiKnowledge.json', value => { value.appVersion = version; });
     await writeFile(new URL('../src-tauri/frontend-version.txt', import.meta.url), version);
   }
   if (components.includes('core')) {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import ExcelJS from 'exceljs';
-import { applySignatureDuplicateFill, duplicateSignatureNumbers, formatSignatureNumber, insertSignatureRow, nextAvailableSignatureNumber, nextSignatureNumberAfterHighWater, normalizeSignaturePerson, signatureDocumentSuggestions, splitSearchMatches, uppercaseSignatureText } from '../src/signatureText.mjs';
+import { applySignatureDuplicateFill, duplicateSignatureNumbers, filterRegisterSuggestions, formatSignatureNumber, insertSignatureRow, nextAvailableSignatureNumber, nextSignatureNumberAfterHighWater, normalizeSignaturePerson, signatureDocumentSuggestions, splitSearchMatches, translationPersonSuggestions, uppercaseSignatureText } from '../src/signatureText.mjs';
 import { formatRegisterDate, parseRegisterDate } from '../src/registerDate.mjs';
 
 test('formats and parses valid register dates as dd/mm/yyyy', () => {
@@ -58,6 +58,14 @@ test('document suggestions are unique, newest first, and filtered case-insensiti
   const rows = [{ document: 'Sơ yếu lý lịch' }, { document: 'Giấy ủy quyền' }, { document: 'SƠ YẾU LÝ LỊCH' }, { document: '' }];
   assert.deepEqual(signatureDocumentSuggestions(rows, ''), ['SƠ YẾU LÝ LỊCH', 'GIẤY ỦY QUYỀN']);
   assert.deepEqual(signatureDocumentSuggestions(rows, 'giấy'), ['GIẤY ỦY QUYỀN']);
+});
+
+test('information suggestions use only person values, preserve spelling, deduplicate, and match Vietnamese without diacritics', () => {
+  const rows = [{ person: 'Nguyễn Thị Ánh CCCD: 123' }, { person: 'Hồ Sơ' }, { person: 'NGUYỄN THỊ ÁNH CCCD: 123' }, { document: 'Nguyễn Thị Ánh CCCD: 123', notes: 'Ngoài phạm vi' }];
+  const saved = translationPersonSuggestions(rows, '');
+  assert.deepEqual(saved, ['NGUYỄN THỊ ÁNH CCCD: 123', 'Hồ Sơ']);
+  assert.deepEqual(filterRegisterSuggestions(saved, 'nguyen thi'), ['NGUYỄN THỊ ÁNH CCCD: 123']);
+  assert.deepEqual(translationPersonSuggestions(rows, 'ho so'), ['Hồ Sơ']);
 });
 
 test('search matching marks every matching occurrence without losing surrounding text', () => {

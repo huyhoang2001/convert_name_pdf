@@ -210,6 +210,8 @@
   "overwriteReportConfirm": "A thong_ke.txt already exists here. Save a new report over it?",
   "home": "Home",
   "homeTitle": "Home Page",
+  "homeFeatureFavorite": "Add {feature} to sidebar favorites",
+  "homeFeatureUnfavorite": "Remove {feature} from sidebar favorites",
   "renameCardDescription": "Review and safely copy numbered PDF files with new names.",
   "countCardDescription": "Check numbered files and find gaps in each sequence.",
   "translationCardDescription": "Import and manage certified translation records in Excel.",
@@ -343,6 +345,7 @@
   "translationDeleteConfirm": "Delete this record?",
   "translationEmpty": "No records match.",
   "translationRequired": "Certification date is required.",
+  "requiredFields": "Complete all required fields.",
   "translationIntegerInvalid": "Certification fees and certified copy counts must be whole numbers.",
   "translationImportInvalid": "The workbook must contain all 9 translation register columns.",
   "translationNoRegisterSheets": "No translation register sheets were found. Check that the workbook contains all 9 required Translation columns.",
@@ -577,5 +580,15 @@
   "conflictAlert": "Conflict Alert",
   "wordTabOptions": "Workspace options",
   "wordCloseAll": "Close All",
-  "wordCloseSaved": "Close saved"
+  "wordCloseSaved": "Close saved",
+  "translationMissingStt": "Sheet {sheet}, Excel row {row} has business data but no STT. Verify its ownership before saving.",
+  "translationLocateMissingStt": "Locate row",
+  "translationReconcile": "Reconcile missing STT",
+  "translationReconcileDetails": "Workbook: {file}\nSheet: {sheet}\nExcel row: {row}. This row is preserved until you enter its verified STT.",
+  "translationVerifiedStt": "Verified STT",
+  "translationReconcileApply": "Assign and save",
+  "translationReconcilePending": "STT entered as a draft. Save the workbook to validate and apply it.",
+  "translationReconcileSaving": "Saving the verified STT and checking the workbook…",
+  "translationReconcileVerifyFailed": "The workbook save could not be verified after reload. The row remains flagged; refresh the workbook before continuing.",
+  "translationResolveMissingSttBeforeDelete": "Resolve this row's ownership before deleting it."
 }

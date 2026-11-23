@@ -1439,6 +1439,76 @@ fn settings() -> Result<Map<String, Value>, String> {
         .cloned()
         .unwrap_or_default())
 }
+const DEFAULT_HOME_FAVORITES: &[&str] = &[
+    "calendar",
+    "rename",
+    "count",
+    "translation",
+    "signature",
+    "copies",
+    "word",
+    "settings",
+];
+
+fn normalize_home_favorites(value: &Value) -> Result<Value, String> {
+    let favorites = value
+        .as_array()
+        .ok_or("Home favorites must be a JSON array.")?;
+    let mut unique = Vec::with_capacity(favorites.len());
+    for favorite in favorites {
+        let id = favorite
+            .as_str()
+            .filter(|id| !id.is_empty() && id.len() <= 64 && id.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_'))
+            .ok_or("Home favorite IDs must be stable feature identifiers.")?;
+        if !unique.iter().any(|saved: &&str| *saved == id) {
+            unique.push(id);
+        }
+    }
+    Ok(json!(unique))
+}
+
+fn ensure_home_favorites(data: &mut Map<String, Value>) -> Result<(Value, bool), String> {
+    let initialized = data.get("homeFavoritesVersion").and_then(Value::as_i64) == Some(1);
+    let saved = data.get("homeFavorites");
+    let mut normalized = match saved {
+        Some(value) => normalize_home_favorites(value)?,
+        None => json!(DEFAULT_HOME_FAVORITES),
+    };
+    let migrated = !initialized;
+    if migrated && normalized.as_array().is_some_and(Vec::is_empty) {
+        normalized = json!(DEFAULT_HOME_FAVORITES);
+    }
+    let changed = migrated || saved != Some(&normalized);
+    if changed {
+        data.insert("homeFavorites".into(), normalized.clone());
+        data.insert("homeFavoritesVersion".into(), json!(1));
+    }
+    Ok((normalized, changed))
+}
+
+fn store_home_favorites(data: &mut Map<String, Value>, value: &Value) -> Result<Value, String> {
+    let favorites = normalize_home_favorites(value)?;
+    data.insert("homeFavorites".into(), favorites.clone());
+    data.insert("homeFavoritesVersion".into(), json!(1));
+    Ok(favorites)
+}
+
+pub fn home_favorites() -> Result<Value, String> {
+    let mut data = settings()?;
+    let (favorites, changed) = ensure_home_favorites(&mut data)?;
+    if changed {
+        write("settings.json", &Value::Object(data))?;
+    }
+    Ok(favorites)
+}
+
+pub fn save_home_favorites(value: Value) -> Result<Value, String> {
+    let mut data = settings()?;
+    let favorites = store_home_favorites(&mut data, &value)?;
+    write("settings.json", &Value::Object(data))?;
+    Ok(favorites)
+}
+
 pub fn destinations() -> Result<Value, String> {
     let mut value = default_destinations_value()?;
     if let Some(saved) = settings()?.get("destinations").and_then(Value::as_object) {
@@ -1923,4 +1993,60 @@ pub fn clear_translations() -> Result<bool, String> {
         fs::remove_file(path).map_err(|e| e.to_string())?;
     }
     Ok(true)
+}
+
+#[cfg(test)]
+mod home_favorites_tests {
+    use super::*;
+
+    #[test]
+    fn first_read_migrates_legacy_settings_without_dropping_other_values() {
+        let mut data = json!({"language":"VI","theme":"dark","word":{"templateFavorites":["template-1"]}})
+            .as_object()
+            .cloned()
+            .unwrap();
+        let (favorites, changed) = ensure_home_favorites(&mut data).unwrap();
+        assert!(changed);
+        assert_eq!(favorites, json!(DEFAULT_HOME_FAVORITES));
+        assert_eq!(data["language"], "VI");
+        assert_eq!(data["theme"], "dark");
+        assert_eq!(data["word"]["templateFavorites"], json!(["template-1"]));
+        assert_eq!(data["homeFavorites"], favorites);
+        assert_eq!(data["homeFavoritesVersion"], 1);
+    }
+
+    #[test]
+    fn empty_pre_version_favorites_migrate_but_saved_empty_favorites_stay_empty() {
+        let mut legacy = json!({"homeFavorites":[]}).as_object().cloned().unwrap();
+        assert_eq!(ensure_home_favorites(&mut legacy).unwrap().0, json!(DEFAULT_HOME_FAVORITES));
+        let mut saved_empty = json!({"homeFavorites":[],"homeFavoritesVersion":1})
+            .as_object()
+            .cloned()
+            .unwrap();
+        assert_eq!(ensure_home_favorites(&mut saved_empty).unwrap().0, json!([]));
+    }
+
+    #[test]
+    fn saved_favorites_deduplicate_ids_and_reject_invalid_values() {
+        assert_eq!(
+            normalize_home_favorites(&json!(["calendar", "translation", "calendar"])).unwrap(),
+            json!(["calendar", "translation"])
+        );
+        assert!(normalize_home_favorites(&json!(["calendar", 5])).is_err());
+        assert!(normalize_home_favorites(&json!({"calendar":true})).is_err());
+    }
+
+    #[test]
+    fn favorite_save_round_trips_without_touching_word_template_settings() {
+        let mut data = json!({"word":{"templateFavorites":["template-1"]},"theme":"dark"})
+            .as_object()
+            .cloned()
+            .unwrap();
+        let saved = store_home_favorites(&mut data, &json!(["translation", "calendar"])).unwrap();
+        let reopened: Value = serde_json::from_slice(&serde_json::to_vec(&Value::Object(data)).unwrap()).unwrap();
+        let mut reopened_map = reopened.as_object().cloned().unwrap();
+        assert_eq!(ensure_home_favorites(&mut reopened_map).unwrap().0, saved);
+        assert_eq!(reopened["word"]["templateFavorites"], json!(["template-1"]));
+        assert_eq!(reopened["theme"], "dark");
+    }
 }

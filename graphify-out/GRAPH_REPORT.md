@@ -1,17 +1,17 @@
 # Graph Report - B6H_ew  (2026-11-23)
 
 ## Corpus Check
-- 163 files · ~135,735 words
+- 163 files · ~135,803 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 24 file(s) not represented in the graph (top: .ico 12, (none) 5, .css 3)
 
 ## Summary
-- 1857 nodes · 4614 edges · 119 communities (76 shown, 43 thin omitted)
-- Extraction: 96% EXTRACTED · 4% INFERRED · 0% AMBIGUOUS · INFERRED: 189 edges (avg confidence: 0.84)
+- 1855 nodes · 4639 edges · 109 communities (73 shown, 36 thin omitted)
+- Extraction: 96% EXTRACTED · 4% INFERRED · 0% AMBIGUOUS · INFERRED: 190 edges (avg confidence: 0.83)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `e786e12f`
+- Built from commit: `f73ac61a`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -28,17 +28,17 @@
 - ui.tsx
 - env
 - word.rs
-- KeyStatus
-- adjacentTabId
+- RulerControls.tsx
+- check_inner
 - count.rs
-- ref_node_assert
+- ref_node_fs
 - pdf.rs
 - CopiesPage.tsx
 - build-wordcraft.mjs
 - App
 - settings
+- runtime_status
 - WordWorkspace.tsx
-- docx.ts
 - tauri.conf.json
 - AppHandle
 - verify-online-discovery.mjs
@@ -47,13 +47,13 @@
 - update-e2e.mjs
 - UpdateManager.tsx
 - exceljs
-- StorageManager.tsx
-- WordcraftEditor.tsx
+- State
+- RegisterFolderDropTarget.tsx
 - updates_dir
 - signed_generation
 - ref_node_fs
 - pageNumbers.ts
-- RulerControls.tsx
+- conciseTranslationLanguagePair
 - release-plan.mjs
 - performance-benchmark.mjs
 - update-package.mjs
@@ -61,10 +61,10 @@
 - dependencies
 - Frog Reaction Sticker Set
 - discover_online_updates
+- user_dir
 - Value
-- chat_session
 - ensure_home_favorites
-- Manifest
+- signed_generation
 - build.rs
 - Application Icon
 - B6H Business Rules Document
@@ -81,14 +81,12 @@
 - Application Icon
 - Application Icon
 - lib.rs
-- react
-- ref_node_fs
-- approved_url
+- SignaturePage.tsx
 - [2.0.22] - 2026-11-17
 - Abstract Interlocking Loop Mark
 - Translation STT parity implementation
 - Báo cáo nguyên nhân và sửa lỗi Translation STT, ngôn ngữ, autocomplete
-- SignaturePage.tsx
+- adjacentTabId
 - Interlocking Circular Logo
 - Two-Tone Circular Swirl App Icon
 - Application Icon
@@ -102,7 +100,7 @@
 - default.json
 - update_history
 - copiesWords.ts
-- State
+- ref_node_assert
 - query_calendar_at
 - AGENTS.md
 - copies-template_fe8154a9.md
@@ -113,20 +111,20 @@
 - main.tsx
 - ReadPageOverview.tsx
 - validate_calendar
-- date_part
-- active_asset_at
+- create_word_template
 - get_update_runtime_status
 - cancel_update_import
+- mark_runtime_ready
 
 ## God Nodes (most connected - your core abstractions)
 1. `App()` - 73 edges
 2. `import()` - 53 edges
 3. `load()` - 38 edges
-4. `changes()` - 33 edges
-5. `replace()` - 33 edges
-6. `full()` - 32 edges
-7. `save_signature()` - 30 edges
-8. `base()` - 30 edges
+4. `replace()` - 34 edges
+5. `changes()` - 34 edges
+6. `full()` - 33 edges
+7. `base()` - 30 edges
+8. `save_signature()` - 30 edges
 9. `data()` - 29 edges
 10. `item()` - 28 edges
 
@@ -135,12 +133,12 @@
   docs/translation/TRANSLATION_STT_LANGUAGE_AUTOCOMPLETE_REPORT.md → src/ui.tsx
 - `STT và quyền sở hữu hàng` --references--> `saveTranslationFile()`  [INFERRED]
   docs/translation/TRANSLATION_STT_LANGUAGE_AUTOCOMPLETE_REPORT.md → src/ui.tsx
-- `download_online_update()` --references--> `PackageInfo`  [INFERRED]
-  src-tauri/src/lib.rs → src-tauri/src/modular_update.rs
-- `install_update_from_file()` --references--> `PackageInfo`  [INFERRED]
-  src-tauri/src/lib.rs → src-tauri/src/modular_update.rs
-- `activate_update()` --calls--> `schedule_package()`  [EXTRACTED]
-  src-tauri/src/lib.rs → src-tauri/src/modular_update.rs
+- `run_pdf()` --references--> `RunResult`  [INFERRED]
+  src-tauri/src/lib.rs → src-tauri/src/pdf.rs
+- `runtime_status()` --calls--> `version()`  [INFERRED]
+  src-tauri/src/modular_update.rs → src-tauri/src/update.rs
+- `benchmark_legacy_and_shards()` --calls--> `query_calendar_at()`  [INFERRED]
+  src-tauri/src/storage/calendar_shards.rs → src-tauri/src/storage.rs
 
 ## Import Cycles
 - 1-file cycle: `src-tauri/src/storage.rs -> src-tauri/src/storage.rs`
@@ -150,7 +148,7 @@
 - **Safe PDF Run Pipeline** — readme_preview_before_run, readme_backup_first_rule, readme_original_file_preservation, readme_duplicate_preflight [EXTRACTED 1.00]
 - **Windows Portable Release Pipeline** — github_workflows_release_tag_version_check, github_workflows_release_npm_tests, github_workflows_release_portable_build, github_workflows_release_github_release [EXTRACTED 1.00]
 
-## Communities (119 total, 43 thin omitted)
+## Communities (109 total, 36 thin omitted)
 
 ### Community 0 - "workbook.rs"
 Cohesion: 0.06
@@ -158,15 +156,15 @@ Nodes (123): append_copies(), append_register(), apply_row_locators(), apply_tra
 
 ### Community 1 - "calendar_shards.rs"
 Cohesion: 0.08
-Nodes (102): append(), base(), benchmark_index_delta_saves(), benchmark_legacy_and_shards(), board_done_window_is_72_hours_and_history_stays_queryable(), board_includes_active_events_across_years_and_upgrades_old_summaries(), build_shards(), byte_rollover_and_recent_done_keep_cross_year_access() (+94 more)
+Nodes (101): append(), base(), benchmark_index_delta_saves(), benchmark_legacy_and_shards(), board_done_window_is_72_hours_and_history_stays_queryable(), board_includes_active_events_across_years_and_upgrades_old_summaries(), build_shards(), byte_rollover_and_recent_done_keep_cross_year_access() (+93 more)
 
 ### Community 2 - "storage.rs"
-Cohesion: 0.11
-Nodes (23): check_destination(), apply_completion_transition(), BOARD_DONE_MS, board_done_visible(), board_visibility_uses_exact_elapsed_72_hours(), CALENDAR_FILE, check_directory(), check_directory_reports_states_and_leaves_no_residue() (+15 more)
+Cohesion: 0.10
+Nodes (26): check_destination(), apply_completion_transition(), BOARD_DONE_MS, board_done_visible(), board_visibility_uses_exact_elapsed_72_hours(), calendar_category_counts(), CALENDAR_FILE, CALENDAR_LOCK (+18 more)
 
 ### Community 3 - "modular_update.rs"
-Cohesion: 0.09
-Nodes (22): atomic_write(), BUNDLED_FRONTEND_VERSION, BUNDLED_WORDCRAFT_VERSION, CANCEL_IMPORT, CatalogSequence, ComponentSequence, core_readiness_requires_the_active_transaction_identity(), CORE_VERSION (+14 more)
+Cohesion: 0.08
+Nodes (24): atomic_write(), BUNDLED_FRONTEND_VERSION, BUNDLED_WORDCRAFT_VERSION, CANCEL_IMPORT, CatalogSequence, ComponentSequence, core_readiness_requires_the_active_transaction_identity(), CORE_VERSION (+16 more)
 
 ### Community 4 - "update_runner.rs"
 Cohesion: 0.07
@@ -178,19 +176,19 @@ Nodes (44): react-markdown@^10.1.0, remark-gfm@^4.0.1, react-markdown, remark-gf
 
 ### Community 6 - "CalendarWorkspace.tsx"
 Cohesion: 0.06
-Nodes (56): boardDoneVisible(), classifyDeadline(), countOverdue(), dateNumber(), deadlineClockChanged(), DeadlineWarning, Item, itemDeadline() (+48 more)
+Nodes (55): boardDoneVisible(), classifyDeadline(), countOverdue(), dateNumber(), deadlineClockChanged(), DeadlineWarning, Item, itemDeadline() (+47 more)
 
 ### Community 7 - "chat.rs"
-Cohesion: 0.09
-Nodes (24): accepted_request(), ask(), blocked(), cancel(), cancellation_before_request_registration_is_retained_once(), CancellationRegistry, CANCELLATIONS, CancelRegistration (+16 more)
+Cohesion: 0.07
+Nodes (40): accepted_request(), ask(), blocked(), cancel(), cancellation_before_request_registration_is_retained_once(), CancellationRegistry, CANCELLATIONS, CancelRegistration (+32 more)
 
 ### Community 8 - "update.rs"
 Cohesion: 0.11
-Nodes (19): get_language(), mark_update_started(), language(), API, BUSY, check(), check_inner(), compares_release_versions_and_rejects_invalid_executables() (+11 more)
+Nodes (10): mark_update_started(), API, BUSY, compares_release_versions_and_rejects_invalid_executables(), legacy_updates_enabled(), mark_started(), require_legacy_updates(), target() (+2 more)
 
 ### Community 9 - "ui.tsx"
 Cohesion: 0.07
-Nodes (32): ChatKeySettings(), ChatKeyStatus, CopiesSheet, folderPathsFromDrop(), defaultHomeFavorites, sidebarHomeFeatures(), toggleHomeFeatureFavorite(), SignatureSheet (+24 more)
+Nodes (33): react, ChatKeySettings(), ChatKeyStatus, CopiesSheet, folderPathsFromDrop(), defaultHomeFavorites, sidebarHomeFeatures(), toggleHomeFeatureFavorite() (+25 more)
 
 ### Community 10 - "env"
 Cohesion: 0.04
@@ -200,25 +198,29 @@ Nodes (47): concurrency, cancel-in-progress, group, B6H_BASE_TAG, B6H_CORE_CHANG
 Cohesion: 0.11
 Nodes (45): open_recent_word_location(), remove_word_draft(), set_word_template_pinned(), update_recent_word_document(), bad_docx_is_rejected(), create_template(), document_path(), documents_use_template_and_day_month_folder() (+37 more)
 
-### Community 12 - "KeyStatus"
-Cohesion: 0.20
-Nodes (16): entry(), environment_key(), KeyStatus, missing_key_status(), remove(), reports_environment_fallback(), resolve(), save() (+8 more)
+### Community 12 - "RulerControls.tsx"
+Cohesion: 0.27
+Nodes (13): @docx-editor.dev/core, Alignment, alignments, Guide, measure(), RulerControls(), moveTabStop(), putTabStop() (+5 more)
+
+### Community 13 - "check_inner"
+Cohesion: 0.35
+Nodes (10): check_for_updates(), get_language(), language(), check(), check_inner(), confirm(), is_exe(), message() (+2 more)
 
 ### Community 14 - "count.rs"
-Cohesion: 0.18
-Nodes (7): Group, report(), reports_missing_numbers_in_both_languages(), Scan, scan(), count_scan(), scan()
+Cohesion: 0.17
+Nodes (8): Group, report(), reports_missing_numbers_in_both_languages(), Scan, scan(), count_scan(), scan(), label()
 
-### Community 15 - "ref_node_assert"
-Cohesion: 0.14
-Nodes (8): saveCalendarBackup(), formatFooterDate(), msUntilNextLocalDay(), nextWordZoom(), data, checker, root, source
+### Community 15 - "ref_node_fs"
+Cohesion: 0.08
+Nodes (21): args, result, root, target, backup, call(), evaluate(), files (+13 more)
 
 ### Community 16 - "pdf.rs"
-Cohesion: 0.13
-Nodes (26): preview(), absolute_dir(), backup_precedes_output_and_sources_survive(), build(), copy_phase(), copy_verified(), Destinations, FileEntry (+18 more)
+Cohesion: 0.12
+Nodes (25): preview(), absolute_dir(), backup_precedes_output_and_sources_survive(), build(), copy_phase(), copy_verified(), Destinations, FileEntry (+17 more)
 
 ### Community 17 - "CopiesPage.tsx"
-Cohesion: 0.13
-Nodes (28): classifyChatError(), blankCopiesRow(), copiesSuggestions(), decrementCopiesCount(), isCopiesSaveShortcut, amount(), blankSheet(), CopiesApi (+20 more)
+Cohesion: 0.12
+Nodes (29): classifyChatError(), blankCopiesRow(), copiesSuggestions(), decrementCopiesCount(), isCopiesSaveShortcut, isRegisterSaveShortcut(), amount(), blankSheet() (+21 more)
 
 ### Community 18 - "build-wordcraft.mjs"
 Cohesion: 0.10
@@ -226,27 +228,27 @@ Nodes (33): addImportVersions(), addVersion(), built, checkPath, deployed, direc
 
 ### Community 19 - "App"
 Cohesion: 0.09
-Nodes (22): STT và quyền sở hữu hàng, App(), applyTranslationSttReconciliation(), changeTranslationSttMode(), clearTranslationCache(), confirmTranslationDuplicate(), displayReport(), doPreview() (+14 more)
+Nodes (22): STT và quyền sở hữu hàng, StorageManager(), App(), applyTranslationSttReconciliation(), changeTranslationSttMode(), clearTranslationCache(), confirmTranslationDuplicate(), displayReport() (+14 more)
 
 ### Community 20 - "settings"
-Cohesion: 0.17
-Nodes (18): chatbot_visible(), clear_translations(), file(), read(), save_chatbot_visible(), save_language(), save_signature_stt_mode(), save_theme() (+10 more)
+Cohesion: 0.16
+Nodes (21): chatbot_visible(), clear_translations(), destinations(), file(), read(), reset_destination(), save_chatbot_visible(), save_destination() (+13 more)
 
-### Community 21 - "WordWorkspace.tsx"
-Cohesion: 0.09
-Nodes (31): markWorkspaceUnsaved(), workspaces, RecentDocument, SaveWordInput, SaveWordResult, TemplateEntry, wordBridge, WordDraft (+23 more)
+### Community 21 - "runtime_status"
+Cohesion: 0.29
+Nodes (8): activate_update(), is_newer_than_active(), next_major(), only_offers_versions_newer_than_the_active_component(), rejects_incompatible_core_and_contract_versions(), runtime_status(), RuntimeStatus, schedule_package()
 
-### Community 22 - "docx.ts"
-Cohesion: 0.13
-Nodes (27): attr(), blankWordDocument(), canonical(), checkDocxOutput(), checkDocxRoundTrip(), checkDocxSave(), descendants(), firstDifference() (+19 more)
+### Community 22 - "WordWorkspace.tsx"
+Cohesion: 0.05
+Nodes (70): RecentDocument, SaveWordInput, SaveWordResult, TemplateEntry, wordBridge, WordDraft, WordFont, WordPayload (+62 more)
 
 ### Community 23 - "tauri.conf.json"
 Cohesion: 0.07
 Nodes (28): debugApplicationIdSuffix, app, security, windows, build, beforeBuildCommand, beforeDevCommand, devUrl (+20 more)
 
 ### Community 24 - "AppHandle"
-Cohesion: 0.13
-Nodes (28): check_for_updates(), clear_copies_cache(), clear_signature_cache(), download_online_update(), export_copies_workbook(), get_selector_settings(), get_signature_settings(), import_copies_workbook() (+20 more)
+Cohesion: 0.22
+Nodes (19): clear_copies_cache(), clear_signature_cache(), export_copies_workbook(), get_signature_settings(), import_copies_workbook(), import_signature_workbook(), import_translation_workbook(), new_copies_workbook() (+11 more)
 
 ### Community 25 - "verify-online-discovery.mjs"
 Cohesion: 0.18
@@ -265,44 +267,44 @@ Cohesion: 0.08
 Nodes (18): baseEnv, data, distribution, exe, install, local, profile, root (+10 more)
 
 ### Community 29 - "UpdateManager.tsx"
-Cohesion: 0.14
-Nodes (19): unsavedWorkspaces(), actionKeys, activeVersion(), AvailableUpdate, componentKeys, formatBytes(), HistoryEntry, OnlineUpdate (+11 more)
+Cohesion: 0.09
+Nodes (28): Dirs, Feedback, T, checkMessageKey, DestinationKind, Key, StorageField, StorageSelector (+20 more)
 
 ### Community 30 - "exceljs"
 Cohesion: 0.23
 Nodes (6): exceljs, ExcelJS, translationHeaders, applyRegisterExcelFormatting(), applyTranslationExcelRules(), exportTranslations()
 
-### Community 31 - "StorageManager.tsx"
-Cohesion: 0.17
-Nodes (12): Dirs, Feedback, StorageManager(), T, checkMessageKey, DestinationKind, Key, StorageField (+4 more)
+### Community 31 - "State"
+Cohesion: 0.25
+Nodes (7): open_external_word_document(), open_path(), open_recent_word_document(), read_report(), run_pdf(), save_count_report(), save_word_document()
 
-### Community 32 - "WordcraftEditor.tsx"
-Cohesion: 0.26
-Nodes (12): checkDocxOpen(), decodeDocx(), encodeDocx(), FailureKind, Pending, WordcraftEditor, advanceWordcraftStage(), MAX_WORDCRAFT_DOCX_BYTES (+4 more)
+### Community 32 - "RegisterFolderDropTarget.tsx"
+Cohesion: 0.50
+Nodes (3): DropEvent, DropPosition, Props
 
 ### Community 33 - "updates_dir"
-Cohesion: 0.21
-Nodes (18): get_staged_updates(), run(), clear_staging(), download_online_update(), import_package(), imports_existing_signed_packages_into_isolated_staging(), mark_runtime_ready(), PackageInfo (+10 more)
+Cohesion: 0.16
+Nodes (22): download_online_update(), get_staged_updates(), install_update_from_file(), launch_core_update(), rollback_core_update(), rollback_update(), run(), clear_staging() (+14 more)
 
 ### Community 34 - "signed_generation"
-Cohesion: 0.25
-Nodes (17): activation_readiness_and_interrupted_startup_restore_safe_generations(), ActivationJournal, append_history(), mark_ready_at(), prune_generations(), queue_recovery_notice(), record_activation_history(), recover_activation_at() (+9 more)
+Cohesion: 0.27
+Nodes (14): activation_readiness_and_interrupted_startup_restore_safe_generations(), ActivationJournal, append_history(), mark_ready_at(), prune_generations(), queue_recovery_notice(), record_activation_history(), recover_activation_at() (+6 more)
 
 ### Community 35 - "ref_node_fs"
-Cohesion: 0.19
+Cohesion: 0.18
 Nodes (12): applyCleanup(), assertIdle(), candidates, categoryFor(), limitGiB, main(), root, scanCache() (+4 more)
 
 ### Community 36 - "pageNumbers.ts"
-Cohesion: 0.20
-Nodes (18): @docx-editor.dev/core, attr(), Attribute, changePageNumbers(), insertPageNumberField(), is(), Node, pageField() (+10 more)
+Cohesion: 0.22
+Nodes (17): attr(), Attribute, changePageNumbers(), insertPageNumberField(), is(), Node, pageField(), PageNumberChange (+9 more)
 
-### Community 37 - "RulerControls.tsx"
-Cohesion: 0.29
-Nodes (12): Alignment, alignments, Guide, measure(), RulerControls(), moveTabStop(), putTabStop(), removeTabStop() (+4 more)
+### Community 37 - "conciseTranslationLanguagePair"
+Cohesion: 0.48
+Nodes (5): conciseLanguages, conciseTranslationLanguage(), conciseTranslationLanguagePair(), languageKey(), splitLanguagePair()
 
 ### Community 38 - "release-plan.mjs"
-Cohesion: 0.27
-Nodes (13): classifyChangedPaths(), compareVersions(), currentInputs(), jsonAt(), latestTag(), nextPatch(), option(), plan() (+5 more)
+Cohesion: 0.26
+Nodes (14): classifyChangedPaths(), compareVersions(), currentInputs(), jsonAt(), latestTag(), nextPatch(), option(), plan() (+6 more)
 
 ### Community 39 - "performance-benchmark.mjs"
 Cohesion: 0.19
@@ -325,24 +327,24 @@ Cohesion: 0.20
 Nodes (10): Blushing Happiness, Dizziness, Frog Reaction Sticker Set, Happy Expression, Laughter, Love Expression, Sleepiness, Sparkling Delight (+2 more)
 
 ### Community 44 - "discover_online_updates"
-Cohesion: 0.19
-Nodes (16): discover_online_updates(), Catalog, CatalogPackage, compares_component_versions_without_accepting_malformed_values(), core_satisfies(), discover_online_updates(), is_newer_than_active(), next_major() (+8 more)
+Cohesion: 0.23
+Nodes (10): discover_online_updates(), approved_url(), Catalog, CatalogPackage, discover_online_updates(), github_release(), Requirements, signed_catalog_rejects_modified_bytes_and_untrusted_signature() (+2 more)
 
-### Community 45 - "Value"
-Cohesion: 0.21
-Nodes (16): calendar_data(), calendar_rebuild_status(), cancel_calendar_rebuild(), default_destinations(), default_destinations_value(), destinations(), query_calendar_data(), reset_destination() (+8 more)
+### Community 45 - "user_dir"
+Cohesion: 0.36
+Nodes (8): calendar_data(), calendar_rebuild_status(), process_lock(), cancel_calendar_rebuild(), query_calendar_data(), save_calendar_changes(), save_calendar_data(), user_dir()
 
-### Community 46 - "chat_session"
-Cohesion: 0.27
-Nodes (10): chat_path(), chat_session(), chat_session_at(), chatbot_session_replaces_and_resets_only_its_unarchived_file(), malformed_chat_session_is_reported_without_deleting_it(), reset_chat_session(), reset_chat_session_at(), save_chat_session() (+2 more)
+### Community 46 - "Value"
+Cohesion: 0.13
+Nodes (23): apply_category_changes(), calendar_date(), chat_path(), chat_session(), chat_session_at(), chatbot_session_replaces_and_resets_only_its_unarchived_file(), date_part(), default_destinations() (+15 more)
 
 ### Community 47 - "ensure_home_favorites"
 Cohesion: 0.20
 Nodes (11): empty_pre_version_favorites_migrate_but_saved_empty_favorites_stay_empty(), ensure_home_favorites(), favorite_save_round_trips_without_touching_word_template_settings(), first_read_migrates_legacy_settings_without_dropping_other_values(), home_favorites(), normalize_home_favorites(), remove_saved_destination(), reset_removes_only_the_selected_saved_kind() (+3 more)
 
-### Community 48 - "Manifest"
-Cohesion: 0.22
-Nodes (7): checked_runtime_file(), isolated_test_key_is_not_a_production_trust_root(), key_for(), Manifest, ManifestFile, read_manifest(), Requirements
+### Community 48 - "signed_generation"
+Cohesion: 0.17
+Nodes (17): active_asset(), active_asset_at(), checked_runtime_file(), compares_component_versions_without_accepting_malformed_values(), core_satisfies(), isolated_test_key_is_not_a_production_trust_root(), key_for(), Manifest (+9 more)
 
 ### Community 49 - "build.rs"
 Cohesion: 0.40
@@ -377,7 +379,7 @@ Cohesion: 0.67
 Nodes (3): Interlocking Circular Motif, Abstract Orbital Logo, Teal and Yellow Palette
 
 ### Community 59 - "word-fidelity-smoke.mjs"
-Cohesion: 0.24
+Cohesion: 0.27
 Nodes (7): evaluate(), invoke(), page, pending, send(), socket, wait()
 
 ### Community 61 - "printing.rs"
@@ -385,20 +387,12 @@ Cohesion: 0.12
 Nodes (20): get_word_refeed_preferences(), open_word_printer_properties(), print_word_manual_pass(), print_word_pdf(), save_word_refeed_preference(), decode_pdf(), duplex_for_mode(), installed_printer_capabilities_have_the_bridge_shape() (+12 more)
 
 ### Community 64 - "lib.rs"
-Cohesion: 0.06
-Nodes (45): activate_update(), calendar_rebuild_status(), cancel_calendar_rebuild(), clear_translation_cache(), create_word_template(), default_destinations(), export_translation_workbook(), get_calendar_data() (+37 more)
+Cohesion: 0.07
+Nodes (43): calendar_rebuild_status(), cancel_calendar_rebuild(), clear_translation_cache(), default_destinations(), export_translation_workbook(), get_calendar_data(), get_chatbot_visible(), get_destinations() (+35 more)
 
-### Community 65 - "react"
-Cohesion: 0.25
-Nodes (7): react, DropEvent, DropPosition, Props, signatureDocumentSuggestions(), Row, TranslationDocumentInput()
-
-### Community 66 - "ref_node_fs"
-Cohesion: 0.08
-Nodes (18): args, result, root, target, backup, call(), evaluate(), files (+10 more)
-
-### Community 67 - "approved_url"
-Cohesion: 0.33
-Nodes (5): approved_url(), github_release(), GitHubAsset, GitHubRelease, update_client()
+### Community 65 - "SignaturePage.tsx"
+Cohesion: 0.12
+Nodes (35): @tanstack/react-virtual, formatRegisterDate(), parseRegisterDate(), canEnterSignatureFee(), emptyRow(), headerKeys, keys, nextAutoNumber() (+27 more)
 
 ### Community 68 - "[2.0.22] - 2026-11-17"
 Cohesion: 0.33
@@ -412,10 +406,6 @@ Nodes (5): Confirmed workbook evidence, Implementation, Remaining blocker, Trans
 Cohesion: 0.22
 Nodes (8): Autocomplete “Enter information”, Báo cáo nguyên nhân và sửa lỗi Translation STT, ngôn ngữ, autocomplete, Còn vướng, Cặp ngôn ngữ, Kiểm thử và xác minh, Kết luận, Nguyên nhân và thay đổi, Tệp đã sửa/thêm
 
-### Community 72 - "SignaturePage.tsx"
-Cohesion: 0.12
-Nodes (36): @tanstack/react-virtual, isRegisterSaveShortcut(), formatRegisterDate(), parseRegisterDate(), canEnterSignatureFee(), emptyRow(), headerKeys, keys (+28 more)
-
 ### Community 83 - "default.json"
 Cohesion: 0.33
 Nodes (5): description, identifier, permissions, $schema, windows
@@ -428,13 +418,13 @@ Nodes (4): get_update_history(), read_json(), update_history(), UpdateHistoryEnt
 Cohesion: 0.28
 Nodes (8): amountInWords(), englishOnes, englishTens, englishTriplet(), englishUnits, vietnameseOnes, vietnameseTriplet(), vietnameseUnits
 
-### Community 86 - "State"
-Cohesion: 0.25
-Nodes (7): open_external_word_document(), open_path(), open_recent_word_document(), read_report(), run_pdf(), save_count_report(), save_word_document()
+### Community 86 - "ref_node_assert"
+Cohesion: 0.16
+Nodes (7): saveCalendarBackup(), CopiesRandomData, randomCopiesDetails(), formatFooterDate(), msUntilNextLocalDay(), nextWordZoom(), data
 
 ### Community 87 - "query_calendar_at"
-Cohesion: 0.27
-Nodes (16): apply_category_changes(), calendar_size_limit_checks_the_actual_pretty_bytes_before_replacing_file(), category_rename_and_delete_include_records_outside_the_queried_range(), indexed_changes_keep_order_append_new_items_and_validate_before_writing(), json_incremental_updates_preserve_unknown_fields_and_reject_stale_writes(), json_range_queries_keep_historical_overlap_and_board_hides_expired_done(), legacy_json_is_backed_up_before_first_write(), merge_item() (+8 more)
+Cohesion: 0.28
+Nodes (17): calendar_size_limit_checks_the_actual_pretty_bytes_before_replacing_file(), category_rename_and_delete_include_records_outside_the_queried_range(), indexed_changes_keep_order_append_new_items_and_validate_before_writing(), json_incremental_updates_preserve_unknown_fields_and_reject_stale_writes(), json_range_queries_keep_historical_overlap_and_board_hides_expired_done(), legacy_done_observation_is_distinct_from_actual_completion(), legacy_json_is_backed_up_before_first_write(), normalize_legacy_completions() (+9 more)
 
 ### Community 104 - "main.tsx"
 Cohesion: 0.18
@@ -448,33 +438,29 @@ Nodes (6): readPageColumns(), shouldShowPrintOverview(), clonePreviewPage(), cop
 Cohesion: 0.53
 Nodes (6): calendar_accepts_optional_category_colors_and_legacy_data(), calendar_accepts_unicode_and_valid_records(), calendar_rejects_duplicate_ids_and_invalid_status(), calendar_rejects_invalid_or_unknown_category_colors(), valid(), validate_calendar()
 
-### Community 107 - "date_part"
-Cohesion: 0.24
-Nodes (10): calendar_category_counts(), calendar_date(), category_counts_include_zeroes_and_count_items_in_one_result(), date_part(), history_range_query_keeps_items_that_overlap_window(), legacy_done_observation_is_distinct_from_actual_completion(), normalize_legacy_completions(), overlaps_range() (+2 more)
-
-### Community 108 - "active_asset_at"
+### Community 107 - "create_word_template"
 Cohesion: 0.50
-Nodes (5): active_asset(), active_asset_at(), rejects_windows_unsafe_paths(), RuntimeAsset, safe_path()
+Nodes (3): create_word_template(), import_word_template(), list_word_templates()
 
 ## Knowledge Gaps
-- **44 isolated node(s):** `BOARD_DONE_MS`, `b6h`, `b6h-update-runner`, `defaultHomeFavorites`, `Blushing Happiness` (+39 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 537 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **43 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **44 isolated node(s):** `b6h`, `BOARD_DONE_MS`, `b6h-update-runner`, `defaultHomeFavorites`, `Blushing Happiness` (+39 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 533 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **36 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `App()` connect `App` to `react`, `HelpChatbot.tsx`, `CalendarWorkspace.tsx`, `main.tsx`, `ui.tsx`, `SignaturePage.tsx`, `adjacentTabId`, `CopiesPage.tsx`, `WordWorkspace.tsx`, `UpdateManager.tsx`, `exceljs`, `StorageManager.tsx`?**
+- **Why does `App()` connect `App` to `SignaturePage.tsx`, `HelpChatbot.tsx`, `conciseTranslationLanguagePair`, `main.tsx`, `ui.tsx`, `adjacentTabId`, `CopiesPage.tsx`, `WordWorkspace.tsx`, `UpdateManager.tsx`, `exceljs`?**
   _High betweenness centrality (0.025) - this node is a cross-community bridge._
-- **What connects `BOARD_DONE_MS`, `b6h`, `b6h-update-runner` to the rest of the system?**
+- **What connects `b6h`, `BOARD_DONE_MS`, `b6h-update-runner` to the rest of the system?**
   _44 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `workbook.rs` be split into smaller, more focused modules?**
   _Cohesion score 0.056807362741986674 - nodes in this community are weakly interconnected._
-- **Why does `@docx-editor.dev/core` connect `pageNumbers.ts` to `RulerControls.tsx`, `dependencies`, `WordWorkspace.tsx`, `wordcraft-webview2-smoke.mjs`, `docx.ts`, `package.json`?**
-  _High betweenness centrality (0.019) - this node is a cross-community bridge._
+- **Why does `react` connect `ui.tsx` to `RegisterFolderDropTarget.tsx`, `SignaturePage.tsx`, `HelpChatbot.tsx`, `CalendarWorkspace.tsx`, `main.tsx`, `ReadPageOverview.tsx`, `dependencies`, `RulerControls.tsx`, `CopiesPage.tsx`, `WordWorkspace.tsx`, `package.json`, `UpdateManager.tsx`?**
+  _High betweenness centrality (0.021) - this node is a cross-community bridge._
 - **Should `calendar_shards.rs` be split into smaller, more focused modules?**
-  _Cohesion score 0.07964601769911504 - nodes in this community are weakly interconnected._
-- **Why does `react` connect `react` to `WordcraftEditor.tsx`, `HelpChatbot.tsx`, `CalendarWorkspace.tsx`, `RulerControls.tsx`, `main.tsx`, `ui.tsx`, `dependencies`, `SignaturePage.tsx`, `ReadPageOverview.tsx`, `CopiesPage.tsx`, `WordWorkspace.tsx`, `package.json`, `UpdateManager.tsx`, `StorageManager.tsx`?**
-  _High betweenness centrality (0.017) - this node is a cross-community bridge._
+  _Cohesion score 0.0805984555984556 - nodes in this community are weakly interconnected._
+- **Why does `@docx-editor.dev/core` connect `RulerControls.tsx` to `pageNumbers.ts`, `dependencies`, `wordcraft-webview2-smoke.mjs`, `WordWorkspace.tsx`, `package.json`?**
+  _High betweenness centrality (0.019) - this node is a cross-community bridge._
 - **Should `storage.rs` be split into smaller, more focused modules?**
-  _Cohesion score 0.1111111111111111 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.0967741935483871 - nodes in this community are weakly interconnected._

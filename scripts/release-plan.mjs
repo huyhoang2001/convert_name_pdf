@@ -31,6 +31,12 @@ export function nextPatch(version, tags = []) {
   return `${major}.${minor}.${patch + 1}`;
 }
 
+export function updateUiKnowledgeVersion(source, version) {
+  const updated = source.replace(/("appVersion"\s*:\s*")[^"]+("\s*,?)/, `$1${version}$2`);
+  if (updated === source) throw Error('Could not update UI knowledge app version.');
+  return updated;
+}
+
 const jsonAt = (ref, path) => JSON.parse(run(['show', `${ref}:${path}`]));
 const sameJsonWithout = (left, right, paths) => {
   if (typeof left === 'string' && typeof right === 'string') {
@@ -152,7 +158,7 @@ async function prepare() {
   const readme = await readFile(readmeUrl, 'utf8');
   if (components.includes('frontend') && (!JSON.parse(packageText).version || !JSON.parse(lockText).packages?.[''])) throw Error('Frontend version metadata is incomplete.');
   if (components.includes('core') && (!/^version\s*=\s*"[^\"]+"/m.test(current.cargo) || !lockMatch)) throw Error('Core version metadata is incomplete.');
-  if (!/The current maintenance release is B6H v\d+\.\d+\.\d+\. It includes[^\r\n]*\./.test(readme)) throw Error('Could not locate the README current-release line.');
+  if (!/^The current maintenance release is B6H v\d+\.\d+\.\d+\..*$/m.test(readme)) throw Error('Could not locate the README current-release line.');
   const summaries = [...new Set(run(['log', '--no-merges', '--format=%s', `${base}..HEAD`, '--', 'src', 'src-tauri/src', 'src-tauri/Cargo.toml', 'src-tauri/Cargo.lock', 'public/wordcraft']).split(/\r?\n/).map(value => value.trim()).filter(Boolean))];
   if (!summaries.length) summaries.push(`Maintenance update for ${components.join(', ')}`);
   const updateJson = async (path, change) => {
@@ -167,7 +173,9 @@ async function prepare() {
       value.version = version;
       value.packages[''].version = version;
     });
-    await updateJson('src/uiKnowledge.json', value => { value.appVersion = version; });
+    const uiKnowledgeUrl = new URL('../src/uiKnowledge.json', import.meta.url);
+    const uiKnowledge = await readFile(uiKnowledgeUrl, 'utf8');
+    await writeFile(uiKnowledgeUrl, updateUiKnowledgeVersion(uiKnowledge, version));
     await writeFile(new URL('../src-tauri/frontend-version.txt', import.meta.url), version);
   }
   if (components.includes('core')) {
@@ -194,7 +202,7 @@ async function prepare() {
     '',
   ].join('\n');
   await writeFile(new URL('../RELEASE_NOTES.md', import.meta.url), notes);
-  const updatedReadme = readme.replace(/The current maintenance release is B6H v\d+\.\d+\.\d+\. It includes[^\r\n]*\./, `The current maintenance release is B6H v${version}. See the release notes for its component changes.`);
+  const updatedReadme = readme.replace(/^The current maintenance release is B6H v\d+\.\d+\.\d+\..*$/m, `The current maintenance release is B6H v${version}. See the release notes for its component changes.`);
   if (updatedReadme === readme && !readme.includes(`The current maintenance release is B6H v${version}.`)) throw Error('Could not update the README current-release line.');
   await writeFile(readmeUrl, updatedReadme);
   return { base, version, components, changedFiles: paths };

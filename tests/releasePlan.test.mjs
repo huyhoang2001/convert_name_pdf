@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { classifyChangedPaths, compareVersions, nextPatch } from '../scripts/release-plan.mjs';
+import { classifyChangedPaths, compareVersions, nextPatch, updateUiKnowledgeVersion } from '../scripts/release-plan.mjs';
 
 const inputs = version => ({
   package: { version, dependencies: { react: '^19.0.0' }, devDependencies: { vite: '^6.0.0' }, scripts: { 'release:prepare': 'node scripts/release-plan.mjs prepare' } },
@@ -27,4 +27,11 @@ test('release planner recognizes dependency changes and increments an unused mai
   assert.deepEqual(classifyChangedPaths(['src-tauri/Cargo.toml'], before, after), ['core']);
   assert.equal(compareVersions('3.0.9', '3.0.10'), -1);
   assert.equal(nextPatch('3.0.2', ['v3.0.2', 'v3.0.4']), '3.0.5');
+});
+
+test('release preparation updates only the UI knowledge version field', () => {
+  const source = '{\n  "appVersion": "3.0.3",\n  "entries": [{"id":"keep-formatting"}]\n}\n';
+  const updated = updateUiKnowledgeVersion(source, '3.0.4');
+  assert.equal(updated, source.replace('3.0.3', '3.0.4'));
+  assert.deepEqual(JSON.parse(updated), { appVersion: '3.0.4', entries: [{ id: 'keep-formatting' }] });
 });

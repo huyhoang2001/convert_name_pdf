@@ -118,13 +118,13 @@ jobs:
           B6H_TEST_SKIP_RUNONCE: '1'
         run: cargo test --manifest-path src-tauri/update-runner/Cargo.toml --locked --target x86_64-pc-windows-msvc --features update-test-keys --bin b6h-update-runner -- --test-threads=1
 
-      - name: Build Frontend payload when changed
-        if: steps.plan.outputs.frontend == 'true'
-        run: npm run build:frontend-update
-
       - name: Build Core and lightweight installer when changed
         if: steps.plan.outputs.core == 'true'
         run: npm run build:installer
+
+      - name: Build Frontend payload when changed
+        if: steps.plan.outputs.frontend == 'true'
+        run: npm run build:frontend-update
 
       - name: Prepare signed packages, catalog, and installer assets
         id: assets
@@ -186,11 +186,10 @@ jobs:
           }
 
           if ($env:B6H_CORE_CHANGED -eq 'true') {
-            $bundles = Get-ChildItem 'src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis' -Filter '*.exe' -File
-            if ($bundles.Count -ne 1) { throw "Expected one lightweight NSIS installer; found $($bundles.Count)." }
+            $bundle = Get-Item -LiteralPath "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/B6H_$($env:B6H_CORE_VERSION)_x64-setup.exe" -ErrorAction Stop
             $setupName = "B6H-v$env:B6H_VERSION-x64-Setup.exe"
             $setupPath = Join-Path $releaseDir $setupName
-            Copy-Item -LiteralPath $bundles[0].FullName -Destination $setupPath
+            Copy-Item -LiteralPath $bundle.FullName -Destination $setupPath
             $setupBytes = (Get-Item -LiteralPath $setupPath).Length
             if ($setupBytes -ge 50000000) { throw "Setup.exe is $setupBytes bytes; limit is 50,000,000." }
             $hash = (Get-FileHash -LiteralPath $setupPath -Algorithm SHA256).Hash.ToLowerInvariant()

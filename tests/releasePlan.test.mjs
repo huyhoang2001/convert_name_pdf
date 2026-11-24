@@ -110,6 +110,8 @@ test('production Frontend packages declare the planned minimum Core version', as
   assert.match(workflow, /\$legacyPackages = @\(\$packages \| Where-Object \{[^]*?\$frontendMinimumCore -le \[version\]\$env:B6H_BASE_VERSION/);
   assert.match(workflow, /\$needsFullCatalog = \$env:B6H_REVISION -ne '0' -or \$legacyPackages\.Count -ne \$packages\.Count/);
   assert.match(workflow, /B6H_EXPECTED_COMPONENTS: \$\{\{ steps\.assets\.outputs\.legacyComponents \}\}/);
+  assert.ok(workflow.indexOf('Build Core and lightweight installer when changed') < workflow.indexOf('Build Frontend payload when changed'));
+  assert.match(workflow, /Get-Item -LiteralPath "src-tauri\/target\/x86_64-pc-windows-msvc\/release\/bundle\/nsis\/B6H_\$\(\$env:B6H_CORE_VERSION\)_x64-setup\.exe"/);
 });
 
 test('four-part production candidates stop before package signing until legacy activation is verified', async () => {

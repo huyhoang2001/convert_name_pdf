@@ -12,7 +12,13 @@ const inputs = version => ({
 });
 
 test('release planner ignores version-only and release-tool changes', () => {
-  assert.deepEqual(classifyChangedPaths(['package.json', 'package-lock.json', 'src-tauri/Cargo.toml', 'src-tauri/Cargo.lock', 'src-tauri/tauri.conf.json', 'scripts/release-plan.mjs'], inputs('3.0.2'), inputs('3.0.3')), []);
+  const before = inputs('3.0.2');
+  const after = inputs('3.0.3');
+  before.packageLock.packages['node_modules/@tauri-apps/cli'] = { version: '2.5.0' };
+  after.packageLock.packages['node_modules/@tauri-apps/cli'] = { version: '2.5.0' };
+  after.cargo = after.cargo.replace(/\n/g, '\r\n');
+  after.cargoLock = after.cargoLock.replace(/\n/g, '\r\n');
+  assert.deepEqual(classifyChangedPaths(['package.json', 'package-lock.json', 'src-tauri/Cargo.toml', 'src-tauri/Cargo.lock', 'src-tauri/tauri.conf.json', 'scripts/release-plan.mjs'], before, after), []);
 });
 
 test('release planner maps changed runtime inputs to their components', () => {
@@ -34,6 +40,7 @@ test('release preparation updates only the UI knowledge version field', () => {
   const source = '{\n  "appVersion": "3.0.3",\n  "entries": [{"id":"keep-formatting"}]\n}\n';
   const updated = updateUiKnowledgeVersion(source, '3.0.4');
   assert.equal(updated, source.replace('3.0.3', '3.0.4'));
+  assert.equal(updateUiKnowledgeVersion(updated, '3.0.4'), updated);
   assert.deepEqual(JSON.parse(updated), { appVersion: '3.0.4', entries: [{ id: 'keep-formatting' }] });
 });
 

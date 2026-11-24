@@ -32,14 +32,17 @@ export function nextPatch(version, tags = []) {
 }
 
 export function updateUiKnowledgeVersion(source, version) {
-  const updated = source.replace(/("appVersion"\s*:\s*")[^"]+("\s*,?)/, `$1${version}$2`);
-  if (updated === source) throw Error('Could not update UI knowledge app version.');
-  return updated;
+  const match = /("appVersion"\s*:\s*")([^"]+)("\s*,?)/.exec(source);
+  if (!match) throw Error('Could not update UI knowledge app version.');
+  if (match[2] === version) return source;
+  return source.replace(match[0], `${match[1]}${version}${match[3]}`);
 }
 
 const jsonAt = (ref, path) => JSON.parse(run(['show', `${ref}:${path}`]));
 const sameJsonWithout = (left, right, paths) => {
   if (typeof left === 'string' && typeof right === 'string') {
+    left = left.replace(/\r\n/g, '\n').trimEnd();
+    right = right.replace(/\r\n/g, '\n').trimEnd();
     if (paths[0] === 'cargo') return left.replace(/^version\s*=\s*"[^"]+"/m, 'version = "<version>"') === right.replace(/^version\s*=\s*"[^"]+"/m, 'version = "<version>"');
     if (paths[0] === 'cargo-lock') {
       const normalize = text => text.replace(/(\[\[package\]\]\r?\nname = "b6h"\r?\nversion = ")[^"]+("\r?\n)/, '$1<version>$2');
@@ -180,16 +183,16 @@ async function prepare() {
   }
   if (components.includes('core')) {
     const manifest = current.cargo.replace(/^version\s*=\s*"[^"]+"/m, `version = "${version}"`);
-    if (manifest === current.cargo) throw Error('Could not update src-tauri/Cargo.toml package version.');
-    await writeFile(new URL('../src-tauri/Cargo.toml', import.meta.url), manifest);
+    if (!/^version\s*=\s*"[^"]+"/m.test(current.cargo)) throw Error('Could not update src-tauri/Cargo.toml package version.');
+    if (manifest !== current.cargo) await writeFile(new URL('../src-tauri/Cargo.toml', import.meta.url), manifest);
     const lock = current.cargoLock.replace(/(name = "b6h"\r?\nversion = ")[^"]+("\r?\n)/, `$1${version}$2`);
-    if (lock === current.cargoLock) throw Error('Could not update the b6h entry in src-tauri/Cargo.lock.');
-    await writeFile(new URL('../src-tauri/Cargo.lock', import.meta.url), lock);
+    if (!/(name = "b6h"\r?\nversion = ")[^"]+("\r?\n)/.test(current.cargoLock)) throw Error('Could not update the b6h entry in src-tauri/Cargo.lock.');
+    if (lock !== current.cargoLock) await writeFile(new URL('../src-tauri/Cargo.lock', import.meta.url), lock);
     const tauriUrl = new URL('../src-tauri/tauri.conf.json', import.meta.url);
     const tauri = await readFile(tauriUrl, 'utf8');
     const updatedTauri = tauri.replace(/("version"\s*:\s*")[^"]+("\s*,?)/, `$1${version}$2`);
-    if (tauri === updatedTauri) throw Error('Could not update src-tauri/tauri.conf.json package version.');
-    await writeFile(tauriUrl, updatedTauri);
+    if (!/("version"\s*:\s*")[^"]+("\s*,?)/.test(tauri)) throw Error('Could not update src-tauri/tauri.conf.json package version.');
+    if (tauri !== updatedTauri) await writeFile(tauriUrl, updatedTauri);
   }
   if (components.includes('wordcraft')) await writeFile(new URL('../src-tauri/wordcraft-version.txt', import.meta.url), version);
   const componentNames = components.map(value => value[0].toUpperCase() + value.slice(1)).join(', ');

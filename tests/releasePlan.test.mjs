@@ -72,3 +72,8 @@ test('production release signing requires explicit manual authorization on a ver
   assert.match(workflow, /secrets\.B6H_UPDATE_SIGNING_KEY_B64/);
   assert.match(workflow, /release-plan\.mjs verify-key/);
 });
+
+test('production Frontend packages declare the matching minimum Core version', async () => {
+  const workflow = await readFile(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /pack --component frontend[^\r\n]*--core \$env:B6H_VERSION/);
+});

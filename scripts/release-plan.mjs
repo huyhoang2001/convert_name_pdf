@@ -31,6 +31,16 @@ export function nextPatch(version, tags = []) {
   return `${major}.${minor}.${patch + 1}`;
 }
 
+export function selectLatestPublishedReleaseTag(releases) {
+  const release = releases
+    .filter(item => /^v\d+\.\d+\.\d+$/.test(item.tag_name ?? '') && !item.draft && !item.prerelease &&
+      Number.isFinite(Date.parse(item.published_at ?? '')) &&
+      ['catalog.json', 'catalog.sig'].every(name => item.assets?.some(asset => asset.name === name)))
+    .sort((left, right) => Date.parse(right.published_at) - Date.parse(left.published_at))[0];
+  if (!release) throw Error('Could not find a published stable release with a signed catalog.');
+  return release.tag_name;
+}
+
 export function updateUiKnowledgeVersion(source, version) {
   const match = /("appVersion"\s*:\s*")([^"]+)("\s*,?)/.exec(source);
   if (!match) throw Error('Could not update UI knowledge app version.');
@@ -105,8 +115,21 @@ async function currentInputs() {
 }
 
 async function latestTag() {
-  const tag = run(['describe', '--tags', '--abbrev=0', 'HEAD']);
-  if (!/^v\d+\.\d+\.\d+$/.test(tag)) throw Error(`Latest ancestor tag is not a stable B6H version: ${tag}`);
+  const remote = run(['remote', 'get-url', 'origin']);
+  const match = /github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?$/i.exec(remote);
+  if (!match) throw Error(`Cannot identify the GitHub release repository from origin: ${remote}`);
+  const releases = [];
+  let url = `https://api.github.com/repos/${match[1]}/releases?per_page=100`;
+  while (url) {
+    const response = await fetch(url, { headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'B6H-release-planner' } });
+    if (!response.ok) throw Error(`Could not inspect published GitHub releases (${response.status}).`);
+    const page = await response.json();
+    if (!Array.isArray(page)) throw Error('GitHub releases response was not a list.');
+    releases.push(...page);
+    url = /<([^>]+)>;\s*rel="next"/.exec(response.headers.get('link') ?? '')?.[1] ?? '';
+  }
+  const tag = selectLatestPublishedReleaseTag(releases);
+  run(['merge-base', '--is-ancestor', tag, 'HEAD']);
   return tag;
 }
 

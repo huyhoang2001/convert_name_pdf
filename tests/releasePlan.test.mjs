@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { classifyChangedPaths, compareVersions, nextPatch, updateUiKnowledgeVersion } from '../scripts/release-plan.mjs';
+import { classifyChangedPaths, compareVersions, nextPatch, selectLatestPublishedReleaseTag, updateUiKnowledgeVersion } from '../scripts/release-plan.mjs';
 
 const inputs = version => ({
   package: { version, dependencies: { react: '^19.0.0' }, devDependencies: { vite: '^6.0.0' }, scripts: { 'release:prepare': 'node scripts/release-plan.mjs prepare' } },
@@ -34,6 +34,15 @@ test('release planner recognizes dependency changes and increments an unused mai
   assert.deepEqual(classifyChangedPaths(['src-tauri/Cargo.toml'], before, after), ['core']);
   assert.equal(compareVersions('3.0.9', '3.0.10'), -1);
   assert.equal(nextPatch('3.0.2', ['v3.0.2', 'v3.0.4']), '3.0.5');
+});
+
+test('release preparation baseline ignores local tags without a published stable release', () => {
+  const releases = [
+    { tag_name: 'v3.0.5', draft: true, prerelease: false, published_at: null, assets: [] },
+    { tag_name: 'v3.0.4', draft: false, prerelease: false, published_at: '2026-11-23T15:41:05Z', assets: [{ name: 'catalog.json' }, { name: 'catalog.sig' }] },
+    { tag_name: 'v3.0.6-rc.1', draft: false, prerelease: true, published_at: '2026-11-24T00:00:00Z', assets: [{ name: 'catalog.json' }, { name: 'catalog.sig' }] },
+  ];
+  assert.equal(selectLatestPublishedReleaseTag(releases), 'v3.0.4');
 });
 
 test('release preparation updates only the UI knowledge version field', () => {

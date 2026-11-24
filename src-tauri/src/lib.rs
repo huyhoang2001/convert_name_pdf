@@ -68,6 +68,13 @@ async fn check_destination(kind: String) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 #[tauri::command]
+async fn check_destination_path(path: String) -> Result<String, String> {
+    let path = std::path::PathBuf::from(path);
+    tauri::async_runtime::spawn_blocking(move || storage::check_directory(&path).to_string())
+        .await
+        .map_err(|e| e.to_string())
+}
+#[tauri::command]
 fn open_destination(kind: String) -> Result<(), String> {
     let path = storage::destination_path(&kind)?;
     if !path.is_dir() {
@@ -892,6 +899,7 @@ pub fn run() {
             default_destinations,
             reset_destination,
             check_destination,
+            check_destination_path,
             open_destination,
             get_language,
             save_language,

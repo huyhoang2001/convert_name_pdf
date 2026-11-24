@@ -29,6 +29,7 @@ export const desktopApi: Window['pdfApp'] & { getCalendarRebuildStatus: () => Pr
   defaultDestinations: () => invoke('default_destinations'),
   resetDestination: kind => invoke('reset_destination', { kind }),
   checkDestination: kind => invoke('check_destination', { kind }),
+  checkDestinationPath: path => invoke('check_destination_path', { path }),
   openDestination: kind => invoke('open_destination', { kind }),
   scan: root => invoke('scan', { root }),
   preview: input => invoke('preview', { input }),

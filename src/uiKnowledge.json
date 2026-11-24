@@ -526,8 +526,8 @@
       "selector": "settings",
       "page": "storage",
       "label": {
-        "EN": "Choose Folder",
-        "VI": "Chọn thư mục"
+        "EN": "Choose Folder...",
+        "VI": "Chọn thư mục..."
       },
       "labelKey": "storageChoose",
       "terms": [
@@ -553,8 +553,8 @@
       "selector": "settings",
       "page": "storage",
       "label": {
-        "EN": "Check Path",
-        "VI": "Kiểm tra đường dẫn"
+        "EN": "Check",
+        "VI": "Kiểm tra"
       },
       "labelKey": "storageCheck",
       "terms": [
@@ -563,8 +563,8 @@
         "kiểm tra đường dẫn"
       ],
       "path": {
-        "EN": "Settings → Storage Manager → Rename PDFs → Backup or Output row → Check Path.",
-        "VI": "Cài đặt → Quản lý lưu trữ → Đổi tên PDF → hàng Sao lưu hoặc Đầu ra → Kiểm tra đường dẫn."
+        "EN": "Settings → Storage Manager → Rename PDFs → Backup or Output row → Check.",
+        "VI": "Cài đặt → Quản lý lưu trữ → Đổi tên PDF → hàng Sao lưu hoặc Đầu ra → Kiểm tra."
       },
       "action": {
         "EN": "Checks whether the configured folder is available.",
@@ -578,8 +578,8 @@
       "selector": "settings",
       "page": "storage",
       "label": {
-        "EN": "Reset to Default",
-        "VI": "Đặt lại mặc định"
+        "EN": "Reset",
+        "VI": "Đặt lại"
       },
       "labelKey": "storageReset",
       "terms": [
@@ -589,8 +589,8 @@
         "đặt lại mặc định"
       ],
       "path": {
-        "EN": "Settings → Storage Manager → Rename PDFs → Backup or Output row → Reset to Default.",
-        "VI": "Cài đặt → Quản lý lưu trữ → Đổi tên PDF → hàng Sao lưu hoặc Đầu ra → Đặt lại mặc định."
+        "EN": "Settings → Storage Manager → Rename PDFs → Backup or Output row → Reset.",
+        "VI": "Cài đặt → Quản lý lưu trữ → Đổi tên PDF → hàng Sao lưu hoặc Đầu ra → Đặt lại."
       },
       "action": {
         "EN": "Restores the default folder after confirmation.",
@@ -653,55 +653,120 @@
     {
       "id": "rename-choose",
       "selector": "rename",
-      "label": {"EN": "Choose folder", "VI": "Chọn thư mục"},
+      "label": {
+        "EN": "Choose folder",
+        "VI": "Chọn thư mục"
+      },
       "labelKey": "chooseFolder",
-      "terms": ["choose folder", "select pdf folder", "chọn thư mục pdf"],
-      "path": {"EN": "Rename PDFs → Source folder panel → Choose folder.", "VI": "Đổi tên PDF → bảng Thư mục nguồn → Chọn thư mục."},
-      "action": {"EN": "Selects the folder containing PDFs to scan.", "VI": "Chọn thư mục có tệp PDF để quét."},
+      "terms": [
+        "choose folder",
+        "select pdf folder",
+        "chọn thư mục pdf"
+      ],
+      "path": {
+        "EN": "Rename PDFs → Source folder panel → Choose folder.",
+        "VI": "Đổi tên PDF → bảng Thư mục nguồn → Chọn thư mục."
+      },
+      "action": {
+        "EN": "Selects the folder containing PDFs to scan.",
+        "VI": "Chọn thư mục có tệp PDF để quét."
+      },
       "source": "src/ui.tsx",
       "marker": "t('chooseFolder')"
     },
     {
       "id": "rename-scan",
       "selector": "rename",
-      "label": {"EN": "Scan folder", "VI": "Quét thư mục"},
+      "label": {
+        "EN": "Scan folder",
+        "VI": "Quét thư mục"
+      },
       "labelKey": "scanFolder",
-      "terms": ["scan folder", "refresh pdf scan", "quét thư mục"],
-      "path": {"EN": "Rename PDFs → Source folder panel → Scan folder.", "VI": "Đổi tên PDF → bảng Thư mục nguồn → Quét thư mục."},
-      "action": {"EN": "Scans PDF files directly inside the selected folder.", "VI": "Quét các tệp PDF trực tiếp trong thư mục đã chọn."},
+      "terms": [
+        "scan folder",
+        "refresh pdf scan",
+        "quét thư mục"
+      ],
+      "path": {
+        "EN": "Rename PDFs → Source folder panel → Scan folder.",
+        "VI": "Đổi tên PDF → bảng Thư mục nguồn → Quét thư mục."
+      },
+      "action": {
+        "EN": "Scans PDF files directly inside the selected folder.",
+        "VI": "Quét các tệp PDF trực tiếp trong thư mục đã chọn."
+      },
       "source": "src/ui.tsx",
       "marker": "t('scanFolder')"
     },
     {
       "id": "rename-run",
       "selector": "rename",
-      "label": {"EN": "Run verified copy", "VI": "Chạy sao chép đã xác minh"},
+      "label": {
+        "EN": "Run verified copy",
+        "VI": "Chạy sao chép đã xác minh"
+      },
       "labelKey": "runVerifiedCopy",
-      "terms": ["run verified copy", "rename pdf files", "sao chép đã xác minh"],
-      "path": {"EN": "Rename PDFs → review the proposed names → final results panel → Run verified copy.", "VI": "Đổi tên PDF → xem tên đề xuất → bảng kết quả cuối → Chạy sao chép đã xác minh."},
-      "action": {"EN": "Creates verified output copies while preserving the source files.", "VI": "Tạo bản sao kết quả đã xác minh và giữ nguyên tệp nguồn."},
+      "terms": [
+        "run verified copy",
+        "rename pdf files",
+        "sao chép đã xác minh"
+      ],
+      "path": {
+        "EN": "Rename PDFs → review the proposed names → final results panel → Run verified copy.",
+        "VI": "Đổi tên PDF → xem tên đề xuất → bảng kết quả cuối → Chạy sao chép đã xác minh."
+      },
+      "action": {
+        "EN": "Creates verified output copies while preserving the source files.",
+        "VI": "Tạo bản sao kết quả đã xác minh và giữ nguyên tệp nguồn."
+      },
       "source": "src/ui.tsx",
       "marker": "t('runVerifiedCopy')"
     },
     {
       "id": "count-choose",
       "selector": "count",
-      "label": {"EN": "Choose folder", "VI": "Chọn thư mục"},
+      "label": {
+        "EN": "Choose folder",
+        "VI": "Chọn thư mục"
+      },
       "labelKey": "chooseFolder",
-      "terms": ["choose folder", "count folder", "đếm số thư mục"],
-      "path": {"EN": "Count number → Folder to check → Choose folder.", "VI": "Đếm số → Thư mục cần kiểm tra → Chọn thư mục."},
-      "action": {"EN": "Selects a folder whose numbered files will be checked.", "VI": "Chọn thư mục có tệp đánh số để kiểm tra."},
+      "terms": [
+        "choose folder",
+        "count folder",
+        "đếm số thư mục"
+      ],
+      "path": {
+        "EN": "Count number → Folder to check → Choose folder.",
+        "VI": "Đếm số → Thư mục cần kiểm tra → Chọn thư mục."
+      },
+      "action": {
+        "EN": "Selects a folder whose numbered files will be checked.",
+        "VI": "Chọn thư mục có tệp đánh số để kiểm tra."
+      },
       "source": "src/ui.tsx",
       "marker": "className=\"count-choose-button\""
     },
     {
       "id": "translation-refresh",
       "selector": "translation",
-      "label": {"EN": "Refresh", "VI": "Làm mới"},
+      "label": {
+        "EN": "Refresh",
+        "VI": "Làm mới"
+      },
       "labelKey": "translationRefresh",
-      "terms": ["refresh translation", "reload spreadsheet", "làm mới dịch thuật"],
-      "path": {"EN": "Translation → toolbar above the register → Refresh.", "VI": "Dịch thuật → thanh công cụ phía trên sổ → Làm mới."},
-      "action": {"EN": "Reloads translation register data.", "VI": "Tải lại dữ liệu sổ dịch thuật."},
+      "terms": [
+        "refresh translation",
+        "reload spreadsheet",
+        "làm mới dịch thuật"
+      ],
+      "path": {
+        "EN": "Translation → toolbar above the register → Refresh.",
+        "VI": "Dịch thuật → thanh công cụ phía trên sổ → Làm mới."
+      },
+      "action": {
+        "EN": "Reloads translation register data.",
+        "VI": "Tải lại dữ liệu sổ dịch thuật."
+      },
       "source": "src/ui.tsx",
       "marker": "t('translationRefresh')"
     }

@@ -14,13 +14,12 @@ export type StorageSelector = {
   id: 'copies' | 'count' | 'rename' | 'signature' | 'translation' | 'word';
   label: Key;
   note: Key;
-  badge?: Key;
   // Only fields backed by a persisted setting are editable (spec §6).
   fields: readonly StorageField[];
 };
 
 export const storageSelectors: readonly StorageSelector[] = [
-  { id: 'copies', label: 'copies', note: 'storageNoteCopies', badge: 'storageRulesBadge', fields: [] },
+  { id: 'copies', label: 'copies', note: 'storageNoteCopies', fields: [] },
   { id: 'count', label: 'countNumber', note: 'storageNoteCount', fields: [] },
   {
     id: 'rename',

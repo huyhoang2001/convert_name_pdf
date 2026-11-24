@@ -12,19 +12,35 @@ export default function StorageManager({ t }: { t: T }) {
   const [dirs, setDirs] = useState<Dirs | null>(null);
   const [defaults, setDefaults] = useState<Dirs | null>(null);
   const [busy, setBusy] = useState<Partial<Record<DestinationKind, boolean>>>({});
-  const [feedback, setFeedback] = useState<Partial<Record<DestinationKind, Feedback>>>({
-    backup: { text: t('storagePathVerified'), error: false, state: 'available' },
-    output: { text: t('storagePathVerified'), error: false, state: 'available' },
-  });
+  const [feedback, setFeedback] = useState<Partial<Record<DestinationKind, Feedback>>>({});
   const [copied, setCopied] = useState<Partial<Record<DestinationKind, boolean>>>({});
   const busyRef = useRef<Partial<Record<DestinationKind, boolean>>>({});
+  const copyTimers = useRef<Partial<Record<DestinationKind, number>>>({});
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   const api = window.pdfApp;
 
   const reload = () => api.getDestinations().then(setDirs);
+  const validationFeedback = (state: string): Feedback => ({
+    text: state === 'available' ? t('storagePathVerified') : t(checkMessageKey[state] ?? 'storageCheckFailed'),
+    error: state !== 'available',
+    state,
+  });
   useEffect(() => {
-    void reload().catch(() => undefined);
+    let cancelled = false;
+    void api.getDestinations().then(value => {
+      if (cancelled) return;
+      setDirs(value);
+      for (const kind of ['backup', 'output'] as const) {
+        void api.checkDestination(kind)
+          .then(state => { if (!cancelled) setFeedback(current => ({ ...current, [kind]: validationFeedback(state) })); })
+          .catch(error => { if (!cancelled) setFeedback(current => ({ ...current, [kind]: { text: `${t('storageActionFailed')}: ${String(error)}`, error: true, state: 'failed' } })); });
+      }
+    }).catch(() => undefined);
     void api.defaultDestinations().then(setDefaults).catch(() => undefined);
+    return () => {
+      cancelled = true;
+      for (const timer of Object.values(copyTimers.current)) if (timer) window.clearTimeout(timer);
+    };
   }, []);
 
   const run = async (kind: DestinationKind, work: () => Promise<Feedback | null>) => {
@@ -46,9 +62,11 @@ export default function StorageManager({ t }: { t: T }) {
   const choose = (kind: DestinationKind) => run(kind, async () => {
     const picked = await api.pickDestination(dirs?.[kind] ?? '');
     if (!picked || picked === dirs?.[kind]) return null;
+    const validation = validationFeedback(await api.checkDestinationPath(picked));
+    if (validation.error) return validation;
     const updated = await api.saveDestination(kind, picked);
     setDirs(updated);
-    return { text: t('storagePathVerified'), error: false, state: 'available' };
+    return validation;
   });
 
   const open = (kind: DestinationKind) => run(kind, async () => {
@@ -58,19 +76,14 @@ export default function StorageManager({ t }: { t: T }) {
 
   const check = (kind: DestinationKind) => run(kind, async () => {
     const state = await api.checkDestination(kind);
-    const isAvail = state === 'available';
-    return {
-      text: isAvail ? t('storagePathVerified') : t(checkMessageKey[state] ?? 'storageCheckFailed'),
-      error: !isAvail,
-      state,
-    };
+    return validationFeedback(state);
   });
 
   const reset = (kind: DestinationKind) => run(kind, async () => {
-    if (!window.confirm(`${t('storageResetConfirm')}\n${defaults?.[kind] ?? ''}`)) return null;
+    if (dirs?.[kind] !== defaults?.[kind] && !window.confirm(`${t('storageResetConfirm')}\n${defaults?.[kind] ?? ''}`)) return null;
     const updated = await api.resetDestination(kind);
     setDirs(updated);
-    return { text: t('storagePathVerified'), error: false, state: 'available' };
+    return validationFeedback(await api.checkDestination(kind));
   });
 
   const copyPath = async (kind: DestinationKind) => {
@@ -79,11 +92,14 @@ export default function StorageManager({ t }: { t: T }) {
     try {
       await navigator.clipboard.writeText(val);
       setCopied(current => ({ ...current, [kind]: true }));
-      setTimeout(() => {
+      const oldTimer = copyTimers.current[kind];
+      if (oldTimer) window.clearTimeout(oldTimer);
+      copyTimers.current[kind] = window.setTimeout(() => {
         setCopied(current => ({ ...current, [kind]: false }));
+        delete copyTimers.current[kind];
       }, 2000);
-    } catch {
-      // fallback
+    } catch (error) {
+      setFeedback(current => ({ ...current, [kind]: { text: `${t('storageActionFailed')}: ${String(error)}`, error: true, state: 'failed' } }));
     }
   };
 
@@ -127,7 +143,6 @@ export default function StorageManager({ t }: { t: T }) {
                 onClick={() => setActive(index)}
               >
                 <span className="storage-menu-text">{t(item.label)}</span>
-                {item.badge && <span className="storage-menu-badge">{t(item.badge)}</span>}
                 {isSelected && <span className="storage-menu-dot" aria-hidden="true" />}
               </button>
             );
@@ -137,7 +152,7 @@ export default function StorageManager({ t }: { t: T }) {
 
       {/* Right Content Panel */}
       <section
-        className="storage-content"
+        className={`storage-content ${selector.id === 'rename' ? 'storage-content-rename' : ''}`}
         role="tabpanel"
         id="storage-panel"
         aria-labelledby={`storage-tab-${selector.id}`}
@@ -160,12 +175,12 @@ export default function StorageManager({ t }: { t: T }) {
             </div>
           </div>
         ) : (
-          selector.fields.map(([kind, labelKey, tagKey, descKey]) => {
+          selector.fields.map(([kind, labelKey, , descKey]) => {
             const currentFeedback = feedback[kind];
             const isVerified = currentFeedback && !currentFeedback.error && currentFeedback.state === 'available';
 
             return (
-              <div className="storage-card" key={kind}>
+              <div className={`storage-card storage-card-${kind}`} key={kind} aria-busy={busy[kind] || undefined}>
                 {/* Header */}
                 <div className="storage-card-header">
                   <div className="storage-card-icon" aria-hidden="true">
@@ -183,14 +198,11 @@ export default function StorageManager({ t }: { t: T }) {
                   </div>
                   <div className="storage-card-title-group">
                     <div className="storage-card-heading-row">
-                      <h3 className="storage-card-heading">
-                        {t(labelKey)} <span className="storage-card-tag">{t(tagKey)}</span>
-                      </h3>
+                      <h3 className="storage-card-heading">{t(labelKey)}</h3>
                     </div>
                     <p className="storage-card-subtext">{t(descKey)}</p>
                   </div>
-                  {currentFeedback && (
-                    <div className={`storage-badge-wrap ${isVerified ? 'verified' : currentFeedback.error ? 'error' : 'normal'}`}>
+                  <div className={`storage-badge-wrap ${isVerified ? 'verified' : currentFeedback?.error ? 'error' : 'normal'}`} role="status" aria-live="polite">
                       {isVerified ? (
                         <>
                           <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
@@ -199,16 +211,15 @@ export default function StorageManager({ t }: { t: T }) {
                           <span>{t('storagePathVerified')}</span>
                         </>
                       ) : (
-                        <span>{currentFeedback.text}</span>
+                        <span>{currentFeedback?.text ?? t('storageNotChecked')}</span>
                       )}
-                    </div>
-                  )}
+                  </div>
                 </div>
 
                 {/* Body */}
                 <div className="storage-card-body">
                   <div className="storage-label-row">
-                    <span className="storage-field-label">{t('storageOutputDirectory')}</span>
+                    <span className="storage-field-label">{t(kind === 'backup' ? 'storageCurrentPath' : 'storageResultPath')}</span>
                   </div>
 
                   {/* Path Input Box with Folder Icon and Copy Path Button */}
@@ -216,30 +227,49 @@ export default function StorageManager({ t }: { t: T }) {
                     <svg className="storage-path-folder-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                     </svg>
-                    <span className="storage-path-value" tabIndex={0}>
+                    <span className="storage-path-value" tabIndex={0} title={dirs?.[kind]}>
                       {dirs ? dirs[kind] : t('storageLoading')}
                     </span>
                     <button
                       type="button"
                       className="storage-copy-path-btn"
                       onClick={() => void copyPath(kind)}
-                      title={t('storageCopyPath')}
+                      title={copied[kind] ? t('storageCopied') : t('storageCopyPath')}
+                      aria-label={copied[kind] ? t('storageCopied') : t('storageCopyPath')}
+                      aria-live="polite"
+                      disabled={!dirs || busy[kind]}
                     >
-                      {copied[kind] ? t('storageCopied') : t('storageCopyPath')}
+                      {copied[kind] ? (
+                        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2"><path d="m5 12 4 4L19 6" /></svg>
+                      ) : (
+                        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></svg>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      className="storage-copy-path-btn storage-open-path-btn"
+                      onClick={() => void open(kind)}
+                      title={t('storageOpenInExplorer')}
+                      aria-label={t('storageOpenInExplorer')}
+                      disabled={!dirs || busy[kind]}
+                    >
+                      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 3h7v7M10 14 21 3"/><path d="M19 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h6" /></svg>
                     </button>
                   </div>
 
                   {/* Fallback info */}
                   {defaults && (
                     <div className="storage-fallback-row">
-                      <span className="storage-fallback-label">{t('storageDefaultPath')} fallback:</span>
+                      <span className="storage-fallback-label">{t('storageDefaultPath')}:</span>
                       <code className="storage-fallback-path">{defaults[kind]}</code>
                     </div>
                   )}
 
-                  {/* Action Buttons */}
-                  <div className="storage-actions-toolbar">
-                    <div className="storage-actions-left">
+                </div>
+
+                {/* Action footer */}
+                <div className="storage-actions-toolbar">
+                  <div className="storage-actions-left">
                       <button
                         type="button"
                         className="storage-btn-primary"
@@ -276,8 +306,8 @@ export default function StorageManager({ t }: { t: T }) {
                         </svg>
                         <span>{t('storageCheck')}</span>
                       </button>
-                    </div>
-                    <div className="storage-actions-right">
+                  </div>
+                  <div className="storage-actions-right">
                       <button
                         type="button"
                         className="storage-btn-outline storage-btn-reset"
@@ -290,7 +320,6 @@ export default function StorageManager({ t }: { t: T }) {
                         </svg>
                         <span>{t('storageReset')}</span>
                       </button>
-                    </div>
                   </div>
                 </div>
               </div>

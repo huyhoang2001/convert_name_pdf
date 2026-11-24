@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { classifyChangedPaths, compareVersions, nextPatch, selectLatestPublishedReleaseTag, updateUiKnowledgeVersion } from '../scripts/release-plan.mjs';
+import { classifyChangedPaths, compareVersions, nextPatch, resolvePlanBase, selectLatestPublishedReleaseTag, updateUiKnowledgeVersion } from '../scripts/release-plan.mjs';
 
 const inputs = version => ({
   package: { version, dependencies: { react: '^19.0.0' }, devDependencies: { vite: '^6.0.0' }, scripts: { 'release:prepare': 'node scripts/release-plan.mjs prepare' } },
@@ -43,6 +43,14 @@ test('release preparation baseline ignores local tags without a published stable
     { tag_name: 'v3.0.6-rc.1', draft: false, prerelease: true, published_at: '2026-11-24T00:00:00Z', assets: [{ name: 'catalog.json' }, { name: 'catalog.sig' }] },
   ];
   assert.equal(selectLatestPublishedReleaseTag(releases), 'v3.0.4');
+});
+
+test('release plan defaults to the published baseline instead of the nearest local tag', async t => {
+  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify([
+    { tag_name: 'v3.0.4', draft: false, prerelease: false, published_at: '2026-11-23T15:41:05Z', assets: [{ name: 'catalog.json' }, { name: 'catalog.sig' }] },
+    { tag_name: 'v2.0.25', draft: false, prerelease: false, published_at: '2025-01-01T00:00:00Z', assets: [{ name: 'catalog.json' }, { name: 'catalog.sig' }] },
+  ]), { status: 200, headers: { 'content-type': 'application/json' } }));
+  assert.equal(await resolvePlanBase(), 'v3.0.4');
 });
 
 test('release preparation updates only the UI knowledge version field', () => {

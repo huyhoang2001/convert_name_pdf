@@ -133,6 +133,10 @@ async function latestTag() {
   return tag;
 }
 
+export async function resolvePlanBase(explicitBase) {
+  return explicitBase ?? await latestTag();
+}
+
 async function plan(base, head) {
   const paths = run(['diff', '--name-only', `${base}..${head}`]).split(/\r?\n/).filter(Boolean);
   const before = {
@@ -257,7 +261,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     else if (command === 'plan') {
       const tag = option('--tag') ?? process.env.GITHUB_REF_NAME;
       if (!tag || !/^v\d+\.\d+\.\d+$/.test(tag)) throw Error('Usage: release-plan.mjs plan --tag vX.Y.Z');
-      const base = option('--base') ?? run(['describe', '--tags', '--abbrev=0', `${tag}^`]);
+      const base = await resolvePlanBase(option('--base'));
       const result = await plan(base, option('--head') ?? tag);
       if (!result.components.length) throw Error(`No application component changes since ${base}.`);
       const priorTags = run(['tag', '--list', 'v*']).split(/\r?\n/).filter(value => /^v\d+\.\d+\.\d+$/.test(value) && value !== tag);

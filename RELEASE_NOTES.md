@@ -1,7 +1,8 @@
-# B6H v3.0.4.0001 - Hotfix Release Candidate
+# B6H v3.0.7 - Main Release Candidate
 
-- Improve Settings storage management and validate destination paths through the matching Core command.
-- Add four-part hotfix display identities while retaining three-part native package versions.
-- Route the Core update before the Frontend update so the new Frontend never activates with the old Core.
-- Plan Frontend and Core version 3.0.7 update packages and a lightweight Windows x64 Setup. Wordcraft and Update Runner remain unchanged.
-- The original v3.0.4 desktop updater has not yet completed a real installation test of this revision. Keep this release in draft until the compatibility and signing gates are verified and the owner authorizes publication.
+- Improve Settings storage management and validate destination paths through the new Core command.
+- Add numeric four-part display versions for future hotfixes; the next hotfix identity after this release is v3.0.7.0001.
+- Route the Core update before the Frontend update. The original v3.0.4 updater must receive a signed catalog containing only Core-compatible packages; the upgraded Core can then read the full signed catalog.
+- Frontend and Core use version 3.0.7. Wordcraft and Update Runner remain unchanged.
+- The lightweight Windows x64 Setup is built but is unsigned by Authenticode. Verify its SHA-256 checksum before installation.
+- Signed packages, catalogs, and a real v3.0.4-to-v3.0.7 desktop activation test remain release gates. Do not publish without the owner's separate authorization.

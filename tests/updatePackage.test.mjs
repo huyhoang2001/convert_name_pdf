@@ -104,7 +104,7 @@ test('stable catalogs retain unchanged signed components and advance package and
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test('revision catalogs keep a legacy Core path while newer clients receive mixed updates', async () => {
+test('compatibility catalogs keep a legacy Core path for a mixed v3.0.7 main release', async () => {
   const root = await mkdtemp(join(tmpdir(), 'b6h-hotfix-catalog-test-'));
   const run = (...args) => spawnSync(process.execPath, ['scripts/update-package.mjs', ...args], { cwd: process.cwd(), encoding: 'utf8' });
   const keyId = 'release-test';
@@ -157,12 +157,12 @@ test('revision catalogs keep a legacy Core path while newer clients receive mixe
     assert.deepEqual(JSON.parse(await readFile(join(wordcraftOnly, 'catalog.json'))).packages.map(item => item.component), ['frontend', 'wordcraft']);
     result = run('verify-catalog', '--catalog', join(wordcraftOnly, 'catalog.json'), '--key', publicKey, '--key-id', keyId, '--packages-dir', input);
     assert.equal(result.status, 0, result.stdout + result.stderr);
-    const core = pack('core', '3.0.7', 'core-v3.0.4.0001', '3.0.4');
-    const frontend = pack('frontend', '3.0.7', 'frontend-v3.0.4.0001', '3.0.7', oldCatalog);
+    const core = pack('core', '3.0.7', 'core-v3.0.7', '3.0.0');
+    const frontend = pack('frontend', '3.0.7', 'frontend-v3.0.7', '3.0.7', oldCatalog);
     assert.notEqual(run('pack', '--component', 'frontend', '--input', payload, '--output', join(root, 'invalid.b6hupdate'),
       '--key', key, '--key-id', keyId, '--channel', 'stable', '--version', '3.0.7', '--release-id', 'frontend-v3.0.4.0000').status, 0);
     const shared = ['--previous-catalog', oldCatalog, '--previous-signature', join(previous, 'catalog.sig'), '--key', key,
-      '--key-id', keyId, '--channel', 'stable', '--base-url', baseUrl];
+      '--key-id', keyId, '--channel', 'stable', '--base-url', 'https://github.com/example/repo/releases/download/v3.0.7'];
     result = run('catalog', '--packages', core, ...shared, '--output', join(next, 'catalog.json'));
     assert.equal(result.status, 0, result.stdout + result.stderr);
     result = run('catalog', '--packages', `${core},${frontend}`, ...shared, '--sequence', '3', '--output', join(next, 'catalog-v2.json'));
@@ -171,8 +171,8 @@ test('revision catalogs keep a legacy Core path while newer clients receive mixe
     const full = JSON.parse(await readFile(join(next, 'catalog-v2.json')));
     assert.equal(legacy.sequence, 2);
     assert.equal(full.sequence, 3);
-    assert.deepEqual(legacy.packages.map(item => [item.component, item.version, item.requires.core]), [['frontend', '3.0.4', '3.0.4'], ['core', '3.0.7', '3.0.4']]);
-    assert.deepEqual(full.packages.map(item => [item.component, item.version, item.requires.core]), [['core', '3.0.7', '3.0.4'], ['frontend', '3.0.7', '3.0.7']]);
+    assert.deepEqual(legacy.packages.map(item => [item.component, item.version, item.requires.core]), [['frontend', '3.0.4', '3.0.4'], ['core', '3.0.7', '3.0.0']]);
+    assert.deepEqual(full.packages.map(item => [item.component, item.version, item.requires.core]), [['core', '3.0.7', '3.0.0'], ['frontend', '3.0.7', '3.0.7']]);
     assert.equal(legacy.packages.every(item => item.requires.core <= '3.0.4'), true);
     const shipped = spawnSync('git', ['show', 'v3.0.4:src-tauri/src/modular_update.rs'], { encoding: 'utf8' });
     assert.equal(shipped.status, 0, shipped.stderr);

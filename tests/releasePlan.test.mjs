@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { classifyChangedPaths, compareVersions, nextPatch, resolvePlanBase, selectLatestPublishedReleaseTag, updateUiKnowledgeVersion } from '../scripts/release-plan.mjs';
+import { classifyChangedPaths, compareVersions, nextPatch, resolvePlanBase, selectLatestPublishedReleaseTag, standardVersionAllowed, updateUiKnowledgeVersion } from '../scripts/release-plan.mjs';
 
 const inputs = version => ({
   package: { version, dependencies: { react: '^19.0.0' }, devDependencies: { vite: '^6.0.0' }, scripts: { 'release:prepare': 'node scripts/release-plan.mjs prepare' } },
@@ -46,6 +46,15 @@ test('release planner recognizes dependency changes and increments an unused mai
   assert.deepEqual(classifyChangedPaths(['src-tauri/Cargo.toml'], before, after), ['core']);
   assert.equal(compareVersions('3.0.9', '3.0.10'), -1);
   assert.equal(nextPatch('3.0.2', ['v3.0.2', 'v3.0.4']), '3.0.5');
+});
+
+test('main release may use an unused already prepared native version without renumbering builds', () => {
+  const previous = ['3.0.4', '3.0.4'];
+  const native = { frontend: '3.0.7', core: '3.0.7' };
+  assert.equal(standardVersionAllowed('3.0.7', 'v3.0.4', ['v3.0.4'], previous, native), true);
+  assert.equal(standardVersionAllowed('3.0.7', 'v3.0.4', ['v3.0.4', 'v3.0.7'], previous, native), false);
+  assert.equal(standardVersionAllowed('3.0.7', 'v3.0.4', ['v3.0.4'], previous, { ...native, core: '3.0.6' }), false);
+  assert.equal(standardVersionAllowed('3.0.8', 'v3.0.4', ['v3.0.4'], previous, native), false);
 });
 
 test('release preparation baseline ignores local tags without a published stable release', () => {
@@ -98,11 +107,14 @@ test('production Frontend packages declare the planned minimum Core version', as
   const workflow = await readFile(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
   assert.match(workflow, /\$frontendMinimumCore = if \(\$env:B6H_CORE_CHANGED -eq 'true'\) \{ \$env:B6H_CORE_VERSION \} else \{ \$env:B6H_PREVIOUS_CORE_VERSION \}/);
   assert.match(workflow, /pack --component frontend[^\r\n]*--core \$frontendMinimumCore/);
+  assert.match(workflow, /\$legacyPackages = @\(\$packages \| Where-Object \{[^]*?\$frontendMinimumCore -le \[version\]\$env:B6H_BASE_VERSION/);
+  assert.match(workflow, /\$needsFullCatalog = \$env:B6H_REVISION -ne '0' -or \$legacyPackages\.Count -ne \$packages\.Count/);
+  assert.match(workflow, /B6H_EXPECTED_COMPONENTS: \$\{\{ steps\.assets\.outputs\.legacyComponents \}\}/);
 });
 
 test('four-part production candidates stop before package signing until legacy activation is verified', async () => {
   const workflow = await readFile(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
-  const gate = workflow.indexOf('Revision packaging is blocked until shipped v3.0.4 discovery and activation have been verified.');
+  const gate = workflow.indexOf('Revision packaging is blocked until shipped base-version discovery and activation have been verified.');
   const signing = workflow.indexOf('Prepare signed packages, catalog, and installer assets');
   assert.ok(gate > 0 && gate < signing);
   assert.match(workflow, /catalog-v2\.json/);

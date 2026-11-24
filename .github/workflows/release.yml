@@ -80,7 +80,7 @@ jobs:
           $json = node scripts/release-plan.mjs plan --tag $env:GITHUB_REF_NAME
           if ($LASTEXITCODE -ne 0) { throw 'Release planning failed.' }
           $plan = $json | ConvertFrom-Json
-          if ($plan.releaseIdentity.revision -gt 0) { throw 'Revision packaging is blocked until shipped v3.0.4 discovery and activation have been verified.' }
+          if ($plan.releaseIdentity.revision -gt 0) { throw 'Revision packaging is blocked until shipped base-version discovery and activation have been verified.' }
           $components = @($plan.components)
           $runner = @($plan.paths | Where-Object { $_ -like 'src-tauri/update-runner/*' }).Count -gt 0
           "base=$($plan.base)" >> $env:GITHUB_OUTPUT
@@ -218,21 +218,23 @@ jobs:
           if ($packages.Count -eq 0) { throw 'The component plan produced no update packages.' }
           $baseUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/v$env:B6H_VERSION"
           $catalog = Join-Path $releaseDir 'catalog.json'
-          $legacyPackages = @($packages)
-          if ($env:B6H_REVISION -ne '0') {
-            $legacyPackages = @($packages | Where-Object {
-              if ($_ -like '*-frontend.b6hupdate') { return [version]$frontendMinimumCore -le [version]$env:B6H_BASE_VERSION }
-              return $true
-            })
+          $legacyPackages = @($packages | Where-Object {
+            if ($_ -like '*-frontend.b6hupdate') { return [version]$frontendMinimumCore -le [version]$env:B6H_BASE_VERSION }
+            return $true
+          })
+          $needsFullCatalog = $env:B6H_REVISION -ne '0' -or $legacyPackages.Count -ne $packages.Count
+          if ($needsFullCatalog) {
             $previousLegacy = Get-Content -LiteralPath (Join-Path $previousDir 'catalog.json') -Raw | ConvertFrom-Json
-            if ($legacyPackages.Count -eq 0 -and -not @($previousLegacy.packages | Where-Object component -eq 'core').Count) { throw 'No Core bridge or compatible package is available to the v3.0.4 updater.' }
+            if ($legacyPackages.Count -eq 0 -and -not @($previousLegacy.packages | Where-Object component -eq 'core').Count) { throw 'No Core bridge or compatible package is available to the previous updater.' }
           }
+          $legacyComponents = @($legacyPackages | ForEach-Object { if ($_ -match '-(frontend|core|wordcraft)\.b6hupdate$') { $Matches[1] } })
+          "legacyComponents=$($legacyComponents -join ',')" >> $env:GITHUB_OUTPUT
           $legacyArgs = if ($legacyPackages.Count) { @('--packages', ($legacyPackages -join ',')) } else { @('--empty') }
           node scripts/update-package.mjs catalog @legacyArgs --previous-catalog (Join-Path $previousDir 'catalog.json') --previous-signature (Join-Path $previousDir 'catalog.sig') --output $catalog --key $env:B6H_SIGNING_KEY --key-id b6h-update-ed25519-2026-11 --channel stable --base-url $baseUrl
           if ($LASTEXITCODE -ne 0) { throw 'Production catalog signing failed.' }
           node scripts/update-package.mjs verify-catalog --catalog $catalog --signature (Join-Path $releaseDir 'catalog.sig') --key $env:B6H_PUBLIC_KEY --key-id b6h-update-ed25519-2026-11 --packages-dir $releaseDir
           if ($LASTEXITCODE -ne 0) { throw 'The new signed catalog or one of its packages failed verification.' }
-          if ($env:B6H_REVISION -ne '0') {
+          if ($needsFullCatalog) {
             $legacySequence = (Get-Content -LiteralPath $catalog -Raw | ConvertFrom-Json).sequence
             $previousFullSequence = (Get-Content -LiteralPath $previousFullCatalog -Raw | ConvertFrom-Json).sequence
             $fullSequence = [Math]::Max($legacySequence, $previousFullSequence) + 1
@@ -333,14 +335,14 @@ jobs:
         id: publish
         shell: pwsh
         run: |
-          if ('${{ steps.plan.outputs.revision }}' -ne '0') { throw 'Revision publication is blocked until the shipped v3.0.4 updater has completed verified discovery and activation testing.' }
+          if ('${{ steps.plan.outputs.revision }}' -ne '0') { throw 'Revision publication is blocked until the shipped base-version updater has completed verified discovery and activation testing.' }
           gh release edit $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --draft=false --latest
 
       - name: Verify Settings discovery from the previous compatible installation
         shell: pwsh
         env:
           B6H_ONLINE_DISCOVERY_SMOKE: '1'
-          B6H_EXPECTED_COMPONENTS: ${{ steps.plan.outputs.components }}
+          B6H_EXPECTED_COMPONENTS: ${{ steps.assets.outputs.legacyComponents }}
           B6H_VERSION: ${{ steps.plan.outputs.version }}
           B6H_PREVIOUS_SETUP: ${{ steps.assets.outputs.previousSetup }}
         run: node scripts/verify-online-discovery.mjs --setup "$env:B6H_PREVIOUS_SETUP" --version $env:B6H_VERSION --expected $env:B6H_EXPECTED_COMPONENTS

@@ -36,6 +36,12 @@ export function nextPatch(version, tags = []) {
   return `${major}.${minor}.${patch + 1}`;
 }
 
+export function standardVersionAllowed(tag, base, occupied, previousVersions, nativeVersions) {
+  const next = nextPatch(parseReleaseVersion(base).baseVersion, [...occupied.filter(value => /^v\d+\.\d+\.\d+$/.test(value)), ...previousVersions.map(value => `v${value}`)]);
+  return tag === next || (tag === nativeVersions.frontend && tag === nativeVersions.core &&
+    compareVersions(tag, parseReleaseVersion(base).baseVersion) > 0 && !occupied.includes(`v${tag}`));
+}
+
 export function selectLatestPublishedReleaseTag(releases) {
   const release = releases
     .filter(item => /^v\d+\.\d+\.\d+(?:\.\d{4})?$/.test(item.tag_name ?? '') && !item.draft && !item.prerelease &&
@@ -190,9 +196,15 @@ async function prepare() {
   if (uncommittedComponents.length) throw Error(`Commit intended application changes before preparing a release: ${uncommittedComponents.join(', ')}.`);
   const allTags = knownTags();
   const tags = allTags.filter(tag => /^v\d+\.\d+\.\d+$/.test(tag));
+  const requestedVersion = option('--version');
+  const currentCoreVersion = /^version\s*=\s*"([^"]+)"/m.exec(current.cargo)?.[1];
+  if (requestedVersion && (kind !== 'STANDARD' || requestedVersion !== current.package.version || requestedVersion !== currentCoreVersion ||
+      compareVersions(requestedVersion, parseReleaseVersion(base).baseVersion) <= 0 || allTags.includes(`v${requestedVersion}`))) {
+    throw Error('Requested main release must match unused newer Frontend and Core native versions.');
+  }
   const version = kind === 'HOTFIX'
     ? nextReleaseRevision(parseReleaseVersion(base).baseVersion, allTags.filter(tag => /^v\d+\.\d+\.\d+(?:\.\d{4})?$/.test(tag)))
-    : nextPatch(parseReleaseVersion(base).baseVersion, [...tags, `v${current.package.version}`, `v${/^version\s*=\s*"([^"]+)"/m.exec(current.cargo)?.[1]}`]);
+    : requestedVersion ?? nextPatch(parseReleaseVersion(base).baseVersion, [...tags, `v${current.package.version}`, `v${currentCoreVersion}`]);
   const nativeVersion = kind === 'HOTFIX' ? nextPatch(current.package.version, tags) : version;
   const packageText = await readFile(new URL('../package.json', import.meta.url), 'utf8');
   const lockText = await readFile(new URL('../package-lock.json', import.meta.url), 'utf8');
@@ -279,7 +291,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       const result = await plan(base, option('--head') ?? tag);
       if (!result.components.length) throw Error(`No application component changes since ${base}.`);
       const priorTags = knownTags().filter(value => /^v\d+\.\d+\.\d+(?:\.\d{4})?$/.test(value) && value !== tag);
-      if (compareReleaseVersions(tag, base) <= 0 || (identity.revision ? nextReleaseRevision(identity.baseVersion, priorTags) : nextPatch(parseReleaseVersion(base).baseVersion, [...priorTags.filter(value => /^v\d+\.\d+\.\d+$/.test(value)), `v${result.previousFrontendVersion}`, `v${result.previousCoreVersion}`])) !== tag.slice(1)) throw Error(`Release tag ${tag} is not the next unused release identity after ${base}.`);
+      if (compareReleaseVersions(tag, base) <= 0 || (identity.revision ? nextReleaseRevision(identity.baseVersion, priorTags) !== tag.slice(1) : !standardVersionAllowed(tag.slice(1), base, priorTags, [result.previousFrontendVersion, result.previousCoreVersion], { frontend: result.frontendVersion, core: result.coreVersion }))) throw Error(`Release tag ${tag} is not the next unused release identity after ${base}.`);
       if (result.components.includes('frontend') && (result.packageVersion !== result.frontendVersion || (identity.revision ? compareVersions(result.frontendVersion, result.previousFrontendVersion) <= 0 : result.frontendVersion !== tag.slice(1)))) throw Error(`Frontend version metadata is invalid for ${tag}.`);
       if (result.components.includes('core') && (result.coreVersion !== result.tauriVersion || (identity.revision ? compareVersions(result.coreVersion, result.previousCoreVersion) <= 0 : result.coreVersion !== tag.slice(1)))) throw Error(`Core version metadata is invalid for ${tag}.`);
       if (result.components.includes('wordcraft') && (identity.revision ? compareVersions(result.wordcraftVersion, result.previousWordcraftVersion) <= 0 : result.wordcraftVersion !== tag.slice(1))) throw Error(`Wordcraft version metadata is invalid for ${tag}.`);

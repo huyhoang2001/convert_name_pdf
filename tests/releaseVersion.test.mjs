@@ -16,6 +16,11 @@ test('revision selection ignores versions on other bases and preserves occupied 
   assert.throws(() => nextReleaseRevision('3.0.4', ['v3.0.4.9999']));
 });
 
+test('hotfixes after v3.0.7 advance the four-part display revision', () => {
+  assert.equal(nextReleaseRevision('3.0.7', ['v3.0.7']), '3.0.7.0001');
+  assert.equal(nextReleaseRevision('3.0.7', ['v3.0.7', 'v3.0.7.0001']), '3.0.7.0002');
+});
+
 test('malformed and ambiguous release versions are rejected', () => {
   for (const value of ['3.0', '03.0.4', '3.0.4.-1', '3.0.4.0000', '3.0.4.001', '3.0.4.00001', '3.0.4.10000', '3.0.4+meta', '3.0.4.1']) {
     assert.throws(() => parseReleaseVersion(value));

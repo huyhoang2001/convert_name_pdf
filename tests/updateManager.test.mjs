@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { formatUpdateTimestamp } from '../src/updateManagerText.mjs';
+import { formatComponentVersion, formatUpdateTimestamp } from '../src/updateManagerText.mjs';
+
+test('shows signed release revisions while preserving native component versions', () => {
+  assert.equal(formatComponentVersion('frontend', '3.0.7', 'frontend-v3.0.4.0001'), '3.0.4.0001');
+  assert.equal(formatComponentVersion('core', '3.0.7', 'core-v3.0.4.0002'), '3.0.4.0002');
+  assert.equal(formatComponentVersion('frontend', '3.0.7', 'core-v3.0.4.0001'), '3.0.7');
+  assert.equal(formatComponentVersion('frontend', '3.0.7', 'frontend-v3.0.4.0000'), '3.0.7');
+});
 
 test('formats update history in local DD/MM/YYYY HH:mm:ss form', () => {
   const value = '2026-11-19T02:19:25.186552300Z';

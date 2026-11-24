@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { basename, join, relative, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { unzipSync, zipSync } from 'fflate';
+import { parseReleaseVersion } from './release-version.mjs';
 
 const MAX_ARCHIVE = 256 * 1024 * 1024;
 const MAX_EXPANDED = 512 * 1024 * 1024;
@@ -65,6 +66,12 @@ async function pack() {
   if (!['frontend', 'wordcraft', 'core'].includes(component) || !option('--input') || !option('--output') || !option('--key')) throw Error('Usage: pack --component frontend|wordcraft|core --input DIR --output FILE.b6hupdate --key PRIVATE.pem');
   const signingKeyId = keyId();
   const channel = option('--channel') ?? 'local-test';
+  const releaseId = option('--release-id') ?? `${component}-v3.0.0-test`;
+  if (channel === 'stable') {
+    if (!releaseId.startsWith(`${component}-v`)) throw Error('Stable package release identity is invalid.');
+    parseReleaseVersion(releaseId.slice(component.length + 2));
+    if (!isStableVersion(option('--version')) || !isStableVersion(option('--core') ?? '3.0.0')) throw Error('Stable component and minimum Core versions must be three-part versions.');
+  }
   let previousSequence = 0;
   if (option('--previous-catalog')) {
     const previous = JSON.parse(await readFile(resolve(option('--previous-catalog')), 'utf8'));
@@ -85,7 +92,7 @@ async function pack() {
     payload[`payload/${name}`] = bytes;
     files.push({ path: name, bytes: bytes.length, sha256: sha256(bytes) });
   }
-  const manifest = Buffer.from(JSON.stringify({ schemaVersion: 1, productId: 'com.safe-pdf-rename.desktop', platform: 'windows', arch: 'x86_64', channel, releaseId: option('--release-id') ?? `${component}-v3.0.0-test`, sequence, component, version: option('--version') ?? '3.0.0', requires: { core: option('--core') ?? '3.0.0', ipcContract: Number(option('--ipc-contract') ?? 1), wordcraftBridge: Number(option('--wordcraft-bridge') ?? 1) }, keyId: signingKeyId, payloadBytes: total, files }));
+  const manifest = Buffer.from(JSON.stringify({ schemaVersion: 1, productId: 'com.safe-pdf-rename.desktop', platform: 'windows', arch: 'x86_64', channel, releaseId, sequence, component, version: option('--version') ?? '3.0.0', requires: { core: option('--core') ?? '3.0.0', ipcContract: Number(option('--ipc-contract') ?? 1), wordcraftBridge: Number(option('--wordcraft-bridge') ?? 1) }, keyId: signingKeyId, payloadBytes: total, files }));
   const signature = sign(null, manifest, createPrivateKey(await readFile(keyPath)));
   const archive = zipSync({ 'manifest.json': manifest, 'manifest.sig': Buffer.from(signature.toString('base64')), ...payload }, { level: 6 });
   if (archive.length > MAX_ARCHIVE) throw Error('Package exceeds the archive size limit.');
@@ -145,6 +152,7 @@ async function catalog() {
     if (!verify(null, manifestBytes, publicKey, Buffer.from(Buffer.from(files['manifest.sig']).toString('utf8').trim(), 'base64'))) throw Error(`Package signature is invalid: ${basename(path)}`);
     const manifest = JSON.parse(manifestBytes.toString('utf8'));
     if (manifest.keyId !== signingKeyId || manifest.channel !== (option('--channel') ?? 'local-test') || components.has(manifest.component)) throw Error(`Package signing identity, channel, or component is invalid: ${basename(path)}`);
+    if (manifest.channel === 'stable' && manifest.releaseId !== `${manifest.component}-${base.pathname.split('/').at(-1)}`) throw Error(`Package release identity does not match the catalog URL: ${basename(path)}`);
     const previous = previousByComponent.get(manifest.component);
     if (previous && (manifest.sequence <= previous.sequence || compareVersion(manifest.version, previous.version) <= 0)) throw Error(`Replacement ${manifest.component} package is not strictly newer than the previous catalog entry.`);
     components.add(manifest.component);
@@ -159,7 +167,7 @@ async function catalog() {
   const catalogBytes = Buffer.from(JSON.stringify({ schemaVersion: 1, productId: 'com.safe-pdf-rename.desktop', platform: 'windows', arch: 'x86_64', channel, sequence: catalogSequence, keyId: signingKeyId, packages }));
   const signature = sign(null, catalogBytes, privateKey);
   await mkdir(resolve(output, '..'), { recursive: true });
-  const signaturePath = join(resolve(output, '..'), 'catalog.sig');
+  const signaturePath = join(resolve(output, '..'), basename(output) === 'catalog-v2.json' ? 'catalog-v2.sig' : 'catalog.sig');
     await writeFile(output, catalogBytes, { flag: 'wx' }); await writeFile(signaturePath, `${signature.toString('base64')}\n`, { flag: 'wx' });
   await writeChecksum(output); await writeChecksum(signaturePath);
   console.log(`Created signed catalog with ${packages.length} package(s)`);
@@ -230,7 +238,7 @@ async function verifyPackage() {
 
 async function verifyCatalog() {
   const catalogPath = resolve(option('--catalog') ?? '');
-  const signaturePath = resolve(option('--signature') ?? join(resolve(catalogPath, '..'), 'catalog.sig'));
+  const signaturePath = resolve(option('--signature') ?? join(resolve(catalogPath, '..'), basename(catalogPath) === 'catalog-v2.json' ? 'catalog-v2.sig' : 'catalog.sig'));
   const keyPath = resolve(option('--key') ?? '');
   const packageDir = resolve(option('--packages-dir') ?? resolve(catalogPath, '..'));
   if (!option('--catalog') || !option('--key')) throw Error('Usage: verify-catalog --catalog catalog.json --signature catalog.sig --key PUBLIC.pem [--packages-dir DIR]');
@@ -252,7 +260,9 @@ async function verifyCatalog() {
   const temp = await mkdtemp(join(tmpdir(), 'b6h-catalog-verify-'));
   try {
     for (const item of catalog.packages) {
-      if (!['frontend', 'wordcraft', 'core'].includes(item.component) || components.has(item.component) || !Number.isSafeInteger(item.sequence) || item.sequence < 1 || !Number.isSafeInteger(item.archiveBytes) || item.archiveBytes < 1 || !/^[0-9a-f]{64}$/.test(item.sha256) || !/^https:\/\/github\.com\/[^/]+\/[^/]+\/releases\/download\/v\d+\.\d+\.\d+\/[^/]+\.b6hupdate$/.test(item.url)) throw Error('Catalog package metadata is invalid.');
+      if (!['frontend', 'wordcraft', 'core'].includes(item.component) || components.has(item.component) || !Number.isSafeInteger(item.sequence) || item.sequence < 1 || !Number.isSafeInteger(item.archiveBytes) || item.archiveBytes < 1 || !/^[0-9a-f]{64}$/.test(item.sha256) || !/^https:\/\/github\.com\/[^/]+\/[^/]+\/releases\/download\/v\d+\.\d+\.\d+(?:\.\d{4})?\/[^/]+\.b6hupdate$/.test(item.url)) throw Error('Catalog package metadata is invalid.');
+      const tag = new URL(item.url).pathname.split('/')[5];
+      parseReleaseVersion(tag);
       components.add(item.component);
       const name = basename(new URL(item.url).pathname);
       let path = join(packageDir, name);

@@ -11,6 +11,7 @@ use std::{
         Mutex,
         atomic::{AtomicBool, Ordering},
     },
+    time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Emitter, Manager};
 use zip::ZipArchive;
@@ -177,7 +178,47 @@ struct GitHubAsset {
 
 #[derive(Debug, Deserialize)]
 struct GitHubRelease {
+    #[serde(default)]
+    tag_name: String,
+    #[serde(default)]
+    draft: bool,
+    #[serde(default)]
+    prerelease: bool,
     assets: Vec<GitHubAsset>,
+}
+
+fn catalog_asset_names(release: &GitHubRelease) -> Result<(&'static str, &'static str), DiscoveryFailure> {
+    let catalog = release.assets.iter().any(|item| item.name == "catalog-v2.json");
+    let signature = release.assets.iter().any(|item| item.name == "catalog-v2.sig");
+    if catalog != signature {
+        return Err(DiscoveryFailure { category: "invalid_metadata", message: "The revision catalog or signature is missing.".into(), retry_at: None });
+    }
+    Ok(if catalog { ("catalog-v2.json", "catalog-v2.sig") } else { ("catalog.json", "catalog.sig") })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DiscoveryFailure {
+    category: &'static str,
+    message: String,
+    retry_at: Option<u64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscoveryBackoff {
+    category: String,
+    message: String,
+    failures: u32,
+    retry_at: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VerifiedCatalogCache {
+    catalog_base64: String,
+    signature_base64: String,
+    sequence: u64,
+    verified_at: u64,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -199,11 +240,21 @@ struct CatalogSequence {
 
 fn validate_catalog(bytes: &[u8], signature: &[u8]) -> Result<Vec<CatalogPackage>, String> {
     let catalog: Catalog =
-        serde_json::from_slice(bytes).map_err(|_| "The update catalog is invalid.")?;
-    let key = key_for(&catalog.key_id)?;
-    UnparsedPublicKey::new(&ED25519, &key)
+        serde_json::from_slice(bytes).map_err(|_| "catalog_invalid: The update catalog is invalid.")?;
+    let key = key_for(&catalog.key_id).map_err(|error| format!("invalid_signature: {error}"))?;
+    validate_catalog_with_key(bytes, signature, &key)
+}
+
+fn validate_catalog_with_key(
+    bytes: &[u8],
+    signature: &[u8],
+    key: &[u8],
+) -> Result<Vec<CatalogPackage>, String> {
+    let catalog: Catalog =
+        serde_json::from_slice(bytes).map_err(|_| "catalog_invalid: The update catalog is invalid.")?;
+    UnparsedPublicKey::new(&ED25519, key)
         .verify(bytes, signature)
-        .map_err(|_| "Update catalog signature verification failed.")?;
+        .map_err(|_| "invalid_signature: Update catalog signature verification failed.")?;
     if catalog.schema_version != 1
         || catalog.product_id != PRODUCT
         || catalog.platform != "windows"
@@ -212,7 +263,7 @@ fn validate_catalog(bytes: &[u8], signature: &[u8]) -> Result<Vec<CatalogPackage
         || catalog.sequence == 0
         || catalog.packages.len() > 32
     {
-        return Err("The update catalog is incompatible with this installation.".into());
+        return Err("catalog_invalid: The update catalog is incompatible with this installation.".into());
     }
     for package in &catalog.packages {
         let url =
@@ -238,7 +289,7 @@ fn validate_catalog(bytes: &[u8], signature: &[u8]) -> Result<Vec<CatalogPackage
             || package.requires.ipc_contract != 1
             || package.requires.wordcraft_bridge != 1
         {
-            return Err("The update catalog contains an incompatible package.".into());
+            return Err("catalog_invalid: The update catalog contains an incompatible package.".into());
         }
     }
     Ok(catalog.packages)
@@ -284,71 +335,282 @@ fn update_client(timeout: std::time::Duration) -> Result<reqwest::Client, String
     builder.build().map_err(|e| e.to_string())
 }
 
-async fn github_release() -> Result<(GitHubRelease, reqwest::Client), String> {
-    let client = update_client(std::time::Duration::from_secs(45))?;
+#[derive(Clone, Copy, Debug, Default)]
+struct RateLimitHeaders {
+    remaining: Option<u64>,
+    reset: Option<u64>,
+}
+
+struct VerifiedDiscovery {
+    catalog_bytes: Vec<u8>,
+    signature: Vec<u8>,
+    packages: Vec<CatalogPackage>,
+    rate_limit: RateLimitHeaders,
+}
+
+fn unix_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn header_u64(headers: &reqwest::header::HeaderMap, name: &str) -> Option<u64> {
+    headers.get(name)?.to_str().ok()?.parse().ok()
+}
+
+fn classify_http_failure(
+    status: u16,
+    headers: &reqwest::header::HeaderMap,
+    body: &str,
+    now: u64,
+) -> DiscoveryFailure {
+    let remaining = header_u64(headers, "x-ratelimit-remaining");
+    let reset = header_u64(headers, "x-ratelimit-reset");
+    let retry_after = header_u64(headers, "retry-after").map(|seconds| now.saturating_add(seconds));
+    let body_lower = body.to_ascii_lowercase();
+
+    if status == 401 {
+        return DiscoveryFailure {
+            category: "authentication",
+            message: "GitHub API authentication failed (HTTP 401). This public update check does not require a sign-in; check any proxy or network authentication in use.".into(),
+            retry_at: None,
+        };
+    }
+    if status == 429
+        || (status == 403
+            && (remaining == Some(0)
+                || retry_after.is_some()
+                || body_lower.contains("rate limit")
+                || body_lower.contains("secondary rate")))
+    {
+        let retry_at = [reset.filter(|value| *value > now), retry_after]
+            .into_iter()
+            .flatten()
+            .max();
+        return DiscoveryFailure {
+            category: "rate_limit",
+            message: match (remaining, reset) {
+                (Some(0), Some(reset)) => format!("GitHub API rate limit exhausted (remaining 0); quota reset is Unix time {reset}."),
+                _ => "GitHub API temporarily rate-limited this request.".into(),
+            },
+            retry_at,
+        };
+    }
+    if status == 403 {
+        return DiscoveryFailure {
+            category: "forbidden",
+            message: "GitHub API denied access (HTTP 403) while quota remains available; check repository access or the network proxy.".into(),
+            retry_at: None,
+        };
+    }
+    DiscoveryFailure {
+        category: "http",
+        message: format!("GitHub update server returned HTTP {status}."),
+        retry_at: None,
+    }
+}
+
+fn network_failure(error: reqwest::Error) -> DiscoveryFailure {
+    DiscoveryFailure {
+        category: "network",
+        message: format!("Could not connect to the GitHub update service: {error}"),
+        retry_at: None,
+    }
+}
+
+async fn get_response_bytes(
+    client: &reqwest::Client,
+    url: &str,
+) -> Result<(Vec<u8>, RateLimitHeaders), DiscoveryFailure> {
+    let response = client.get(url).send().await.map_err(network_failure)?;
+    let status = response.status();
+    let headers = response.headers().clone();
+    let rate_limit = RateLimitHeaders {
+        remaining: header_u64(&headers, "x-ratelimit-remaining"),
+        reset: header_u64(&headers, "x-ratelimit-reset"),
+    };
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(classify_http_failure(status.as_u16(), &headers, &body, unix_now()));
+    }
+    let bytes = response.bytes().await.map_err(network_failure)?.to_vec();
+    Ok((bytes, rate_limit))
+}
+
+fn validate_release_metadata(release: &GitHubRelease) -> Result<(), DiscoveryFailure> {
+    if release.draft || release.prerelease {
+        return Err(DiscoveryFailure {
+            category: "release_unavailable",
+            message: "The selected GitHub release is a draft or prerelease and cannot be used for stable updates.".into(),
+            retry_at: None,
+        });
+    }
+    let version = release.tag_name.strip_prefix('v').unwrap_or(&release.tag_name);
+    if release_version_cmp(version, "0.0.0").is_none() {
+        return Err(DiscoveryFailure {
+            category: "invalid_metadata",
+            message: "GitHub returned invalid stable release metadata.".into(),
+            retry_at: None,
+        });
+    }
+    Ok(())
+}
+
+fn verified_cache_sequence_with(
+    root: &Path,
+    validate: impl FnOnce(&[u8], &[u8]) -> bool,
+) -> Option<u64> {
+    let cache = read_json::<VerifiedCatalogCache>(&root.join("verified-catalog-cache.json"))
+        .ok()??;
+    let bytes = STANDARD.decode(cache.catalog_base64).ok()?;
+    let signature = STANDARD.decode(cache.signature_base64).ok()?;
+    if !validate(&bytes, &signature) { return None; }
+    let catalog: Catalog = serde_json::from_slice(&bytes).ok()?;
+    (catalog.sequence == cache.sequence).then_some(cache.sequence)
+}
+
+fn verified_cache_sequence(root: &Path) -> Option<u64> {
+    verified_cache_sequence_with(root, |bytes, signature| validate_catalog(bytes, signature).is_ok())
+}
+
+fn store_verified_catalog_cache(
+    root: &Path,
+    catalog: &[u8],
+    signature: &[u8],
+    sequence: u64,
+) -> Result<(), String> {
+    let cache = VerifiedCatalogCache {
+        catalog_base64: STANDARD.encode(catalog),
+        signature_base64: STANDARD.encode(signature),
+        sequence,
+        verified_at: unix_now(),
+    };
+    write_json(&root.join("verified-catalog-cache.json"), &cache)
+}
+
+fn validate_release_catalog(
+    release: &GitHubRelease,
+    catalog: &[u8],
+    signature: &[u8],
+    validate: impl FnOnce(&[u8], &[u8]) -> Result<Vec<CatalogPackage>, String>,
+) -> Result<Vec<CatalogPackage>, DiscoveryFailure> {
+    validate_release_metadata(release)?;
+    validate(catalog, signature).map_err(|error| {
+        let category = if error.starts_with("invalid_signature:") { "invalid_signature" } else { "invalid_catalog" };
+        DiscoveryFailure { category, message: error, retry_at: None }
+    })
+}
+
+fn with_cache_note(root: &Path, message: String) -> String {
+    cache_note(message, verified_cache_sequence(root))
+}
+
+fn cache_note(message: String, sequence: Option<u64>) -> String {
+    sequence.map_or(message.clone(), |sequence| format!(
+        "{message} A previously verified signed catalog (sequence {sequence}) is cached locally; it is only a cache, so current online availability is unknown."
+    ))
+}
+
+fn format_retry_time(timestamp: u64) -> String {
+    chrono::DateTime::from_timestamp(timestamp as i64, 0)
+        .map(|time| time.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+        .unwrap_or_else(|| format!("Unix time {timestamp}"))
+}
+
+fn current_backoff(root: &Path, now: u64) -> Option<DiscoveryBackoff> {
+    let state = read_json::<DiscoveryBackoff>(&root.join("discovery-backoff.json"))
+        .ok()??;
+    (state.retry_at > now).then_some(state)
+}
+
+fn persist_failure(root: &Path, failure: &DiscoveryFailure, previous: Option<DiscoveryBackoff>) {
+    let now = unix_now();
+    let failures = previous.map_or(1, |state| state.failures.saturating_add(1));
+    let delay = 30u64.saturating_mul(1u64 << failures.saturating_sub(1).min(6)).min(1800);
+    let fallback = now.saturating_add(delay);
+    let retry_at = failure.retry_at.filter(|value| *value > now).map_or(fallback, |value| value.max(fallback));
+    let state = DiscoveryBackoff {
+        category: failure.category.into(),
+        message: failure.message.clone(),
+        failures,
+        retry_at,
+    };
+    let _ = write_json(&root.join("discovery-backoff.json"), &state);
+}
+
+fn persist_rate_limit(root: &Path, reset: Option<u64>) {
+    let now = unix_now();
+    let state = DiscoveryBackoff {
+        category: "rate_limit".into(),
+        message: "GitHub API quota is exhausted (remaining 0).".into(),
+        failures: 0,
+        retry_at: reset.filter(|value| *value > now).unwrap_or_else(|| now.saturating_add(60)),
+    };
+    let _ = write_json(&root.join("discovery-backoff.json"), &state);
+}
+
+async fn discover_verified_catalog() -> Result<VerifiedDiscovery, DiscoveryFailure> {
+    let client = update_client(std::time::Duration::from_secs(45))
+        .map_err(|error| DiscoveryFailure { category: "network", message: error, retry_at: None })?;
     #[cfg(feature = "update-test-keys")]
     let api = std::env::var("B6H_UPDATE_TEST_ENDPOINT").unwrap_or_else(|_| {
         "https://api.github.com/repos/huyhoang2001/convert_name_pdf/releases/latest".into()
     });
     #[cfg(not(feature = "update-test-keys"))]
     let api = "https://api.github.com/repos/huyhoang2001/convert_name_pdf/releases/latest";
-    let release = client
-        .get(api)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .error_for_status()
-        .map_err(|e| e.to_string())?
-        .json::<GitHubRelease>()
-        .await
-        .map_err(|_| "GitHub release metadata is invalid.")?;
-    Ok((release, client))
+    let (metadata, rate_limit) = get_response_bytes(&client, &api).await?;
+    let release: GitHubRelease = serde_json::from_slice(&metadata).map_err(|_| DiscoveryFailure {
+        category: "invalid_metadata",
+        message: "GitHub release metadata is invalid.".into(),
+        retry_at: None,
+    })?;
+    validate_release_metadata(&release)?;
+    let asset = |name: &str| -> Result<&str, DiscoveryFailure> {
+        let url = release.assets.iter().find(|asset| asset.name == name)
+            .map(|asset| asset.browser_download_url.as_str())
+            .ok_or_else(|| DiscoveryFailure { category: "invalid_metadata", message: format!("The stable GitHub release is missing {name}."), retry_at: None })?;
+        let parsed = reqwest::Url::parse(url).map_err(|_| DiscoveryFailure { category: "invalid_metadata", message: "GitHub release contains an invalid catalog asset URL.".into(), retry_at: None })?;
+        if !approved_url(&parsed) || parsed.host_str() == Some("api.github.com") {
+            return Err(DiscoveryFailure { category: "invalid_metadata", message: "GitHub release contains an unapproved catalog asset URL.".into(), retry_at: None });
+        }
+        Ok(url)
+    };
+    let (catalog_name, signature_name) = catalog_asset_names(&release)?;
+    let (catalog_bytes, _) = get_response_bytes(&client, asset(catalog_name)?).await?;
+    if catalog_bytes.len() > MAX_MANIFEST {
+        return Err(DiscoveryFailure { category: "invalid_catalog", message: "Update catalog exceeds the size limit.".into(), retry_at: None });
+    }
+    let (signature_bytes, _) = get_response_bytes(&client, asset(signature_name)?).await?;
+    let signature_text = std::str::from_utf8(&signature_bytes).map_err(|_| DiscoveryFailure { category: "invalid_signature", message: "Update catalog signature is invalid.".into(), retry_at: None })?.trim();
+    let signature = STANDARD.decode(signature_text).map_err(|_| DiscoveryFailure { category: "invalid_signature", message: "Update catalog signature is invalid.".into(), retry_at: None })?;
+    let packages = validate_release_catalog(&release, &catalog_bytes, &signature, validate_catalog)?;
+    Ok(VerifiedDiscovery { catalog_bytes, signature, packages, rate_limit })
 }
 
 pub async fn discover_online_updates() -> Result<Vec<CatalogPackage>, String> {
-    let (release, client) = github_release().await?;
-    let asset = |name: &str| {
-        release
-            .assets
-            .iter()
-            .find(|a| a.name == name)
-            .map(|a| a.browser_download_url.as_str())
-            .ok_or("Signed update catalog is not attached to this release.")
-    };
-    let bytes = client
-        .get(asset("catalog.json")?)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .error_for_status()
-        .map_err(|e| e.to_string())?
-        .bytes()
-        .await
-        .map_err(|e| e.to_string())?;
-    if bytes.len() > MAX_MANIFEST {
-        return Err("Update catalog exceeds the size limit.".into());
+    let root = updates_dir().map_err(|error| format!("network: {error}"))?;
+    let now = unix_now();
+    if let Some(backoff) = current_backoff(&root, now) {
+        return Err(with_cache_note(
+            &root,
+            format!("{}; no network request was sent. Retry after {}.", backoff.message, format_retry_time(backoff.retry_at)),
+        ));
     }
-    let sig = client
-        .get(asset("catalog.sig")?)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .error_for_status()
-        .map_err(|e| e.to_string())?
-        .bytes()
-        .await
-        .map_err(|e| e.to_string())?;
-    let signature_text = std::str::from_utf8(&sig)
-        .map_err(|_| "Update catalog signature is invalid.")?
-        .trim();
-    let signature = STANDARD
-        .decode(signature_text)
-        .map_err(|_| "Update catalog signature is invalid.")?;
-    let packages = validate_catalog(&bytes, &signature)?;
-    let catalog: Catalog =
-        serde_json::from_slice(&bytes).map_err(|_| "The update catalog is invalid.")?;
-    let state_path = updates_dir()?.join("catalog-sequence.json");
-    let digest = hex::encode(Sha256::digest(&bytes));
+    let previous_backoff = read_json::<DiscoveryBackoff>(&root.join("discovery-backoff.json")).ok().flatten();
+    let discovery = match discover_verified_catalog().await {
+        Ok(discovery) => discovery,
+        Err(error) => {
+            persist_failure(&root, &error, previous_backoff);
+            let state = read_json::<DiscoveryBackoff>(&root.join("discovery-backoff.json")).ok().flatten();
+            let retry_note = state.map(|value| format!(" Retry after {}.", format_retry_time(value.retry_at))).unwrap_or_default();
+            return Err(with_cache_note(&root, format!("{}{}", error.message, retry_note)));
+        }
+    };
+    let catalog: Catalog = serde_json::from_slice(&discovery.catalog_bytes)
+        .map_err(|_| "invalid_catalog: The update catalog is invalid.".to_string())?;
+    let digest = hex::encode(Sha256::digest(&discovery.catalog_bytes));
+    let state_path = root.join("catalog-sequence.json");
     let current = read_json::<CatalogSequence>(&state_path)?.unwrap_or(CatalogSequence {
         highest: 0,
         sha256: String::new(),
@@ -372,8 +634,14 @@ pub async fn discover_online_updates() -> Result<Vec<CatalogPackage>, String> {
             },
         )?;
     }
+    store_verified_catalog_cache(&root, &discovery.catalog_bytes, &discovery.signature, catalog.sequence)?;
+    if discovery.rate_limit.remaining == Some(0) {
+        persist_rate_limit(&root, discovery.rate_limit.reset);
+    } else {
+        let _ = fs::remove_file(root.join("discovery-backoff.json"));
+    }
     let active = runtime_status()?;
-    Ok(packages.into_iter().filter(|package| is_newer_than_active(&package.component, &package.version, &active)).collect())
+    Ok(discovery.packages.into_iter().filter(|package| is_newer_than_active(&package.component, &package.version, &active)).collect())
 }
 
 fn is_newer_than_active(component: &str, version: &str, active: &RuntimeStatus) -> bool {
@@ -1629,6 +1897,24 @@ fn version_cmp(left: &str, right: &str) -> Option<std::cmp::Ordering> {
     Some(left.cmp_precedence(&right))
 }
 
+fn release_version_cmp(left: &str, right: &str) -> Option<std::cmp::Ordering> {
+    fn parts(value: &str) -> Option<[u64; 4]> {
+        let fields: Vec<_> = value.split('.').collect();
+        if !(3..=4).contains(&fields.len()) { return None; }
+        let base = semver::Version::parse(&fields[..3].join(".")).ok()?;
+        if !base.pre.is_empty() || !base.build.is_empty() { return None; }
+        let revision = if fields.len() == 4 {
+            let value = fields[3];
+            if value.len() != 4 || !value.bytes().all(|b| b.is_ascii_digit()) { return None; }
+            let revision = value.parse::<u64>().ok()?;
+            if revision == 0 || revision > 9999 { return None; }
+            revision
+        } else { 0 };
+        Some([base.major, base.minor, base.patch, revision])
+    }
+    Some(parts(left)?.cmp(&parts(right)?))
+}
+
 pub fn staged_packages() -> Result<Vec<PackageInfo>, String> {
     let root = updates_dir()?.join("generations");
     let active = runtime_status()?;
@@ -1743,6 +2029,34 @@ mod tests {
         assert!(core_satisfies("3.0.1", "3.0.0"));
         assert!(!core_satisfies("3.0.0", "3.0.1"));
         assert!(!core_satisfies("3.0.1", "three"));
+    }
+
+    #[test]
+    fn compares_release_revisions_without_changing_component_semver() {
+        use std::cmp::Ordering::{Greater, Less};
+        assert_eq!(release_version_cmp("3.0.4", "3.0.4.0001"), Some(Less));
+        assert_eq!(release_version_cmp("3.0.4.0002", "3.0.4.0001"), Some(Greater));
+        assert_eq!(release_version_cmp("3.0.4.9999", "3.0.5"), Some(Less));
+        for invalid in ["3.0.4.0", "3.0.4.0000", "3.0.4.00001", "3.0.4.-1", "03.0.4", "3.0.4+dev"] {
+            assert_eq!(release_version_cmp(invalid, "3.0.4"), None);
+        }
+        assert_eq!(version_cmp("3.0.4.0001", "3.0.4"), None);
+    }
+
+    #[test]
+    fn revision_catalog_requires_both_signed_assets() {
+        let mut release = GitHubRelease { tag_name: "v3.0.4.0001".into(), draft: false, prerelease: false, assets: vec![] };
+        assert!(validate_release_metadata(&release).is_ok());
+        assert_eq!(catalog_asset_names(&release).unwrap(), ("catalog.json", "catalog.sig"));
+        release.assets.push(GitHubAsset { name: "catalog-v2.json".into(), browser_download_url: String::new() });
+        assert!(catalog_asset_names(&release).is_err());
+        release.assets.push(GitHubAsset { name: "catalog-v2.sig".into(), browser_download_url: String::new() });
+        assert_eq!(catalog_asset_names(&release).unwrap(), ("catalog-v2.json", "catalog-v2.sig"));
+        release.draft = true;
+        assert!(validate_release_metadata(&release).is_err());
+        release.draft = false;
+        release.tag_name = "v3.0.4.0000".into();
+        assert!(validate_release_metadata(&release).is_err());
     }
 
     #[test]

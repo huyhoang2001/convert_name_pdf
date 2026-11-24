@@ -80,6 +80,7 @@ jobs:
           $json = node scripts/release-plan.mjs plan --tag $env:GITHUB_REF_NAME
           if ($LASTEXITCODE -ne 0) { throw 'Release planning failed.' }
           $plan = $json | ConvertFrom-Json
+          if ($plan.releaseIdentity.revision -gt 0) { throw 'Revision packaging is blocked until shipped v3.0.4 discovery and activation have been verified.' }
           $components = @($plan.components)
           $runner = @($plan.paths | Where-Object { $_ -like 'src-tauri/update-runner/*' }).Count -gt 0
           "base=$($plan.base)" >> $env:GITHUB_OUTPUT
@@ -89,6 +90,12 @@ jobs:
           "wordcraft=$(([bool]($components -contains 'wordcraft')).ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           "runner=$(([bool]$runner).ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           "version=$($env:GITHUB_REF_NAME.Substring(1))" >> $env:GITHUB_OUTPUT
+          "revision=$($plan.releaseIdentity.revision)" >> $env:GITHUB_OUTPUT
+          "baseVersion=$($plan.releaseIdentity.baseVersion)" >> $env:GITHUB_OUTPUT
+          "frontendVersion=$($plan.frontendVersion)" >> $env:GITHUB_OUTPUT
+          "coreVersion=$($plan.coreVersion)" >> $env:GITHUB_OUTPUT
+          "wordcraftVersion=$($plan.wordcraftVersion)" >> $env:GITHUB_OUTPUT
+          "previousCoreVersion=$($plan.previousCoreVersion)" >> $env:GITHUB_OUTPUT
 
       - name: Install locked frontend and release tooling dependencies
         run: npm ci
@@ -130,10 +137,17 @@ jobs:
           B6H_FRONTEND_CHANGED: ${{ steps.plan.outputs.frontend }}
           B6H_CORE_CHANGED: ${{ steps.plan.outputs.core }}
           B6H_WORDCRAFT_CHANGED: ${{ steps.plan.outputs.wordcraft }}
+          B6H_REVISION: ${{ steps.plan.outputs.revision }}
+          B6H_BASE_VERSION: ${{ steps.plan.outputs.baseVersion }}
+          B6H_FRONTEND_VERSION: ${{ steps.plan.outputs.frontendVersion }}
+          B6H_CORE_VERSION: ${{ steps.plan.outputs.coreVersion }}
+          B6H_WORDCRAFT_VERSION: ${{ steps.plan.outputs.wordcraftVersion }}
+          B6H_PREVIOUS_CORE_VERSION: ${{ steps.plan.outputs.previousCoreVersion }}
         run: |
           $releaseDir = Join-Path $env:RUNNER_TEMP 'b6h-release-assets'
           $previousDir = Join-Path $env:RUNNER_TEMP 'b6h-previous-release'
           $coreInput = Join-Path $env:RUNNER_TEMP 'b6h-core-input'
+          $compatibleCore = if ($env:B6H_REVISION -ne '0') { $env:B6H_BASE_VERSION } else { '3.0.0' }
           New-Item -ItemType Directory -Path $releaseDir,$previousDir -Force | Out-Null
           $previousDraft = gh release view $env:B6H_BASE_TAG --repo $env:GITHUB_REPOSITORY --json isDraft --jq .isDraft 2>$null
           if ($LASTEXITCODE -ne 0 -or $previousDraft.Trim() -ne 'false') { throw "Base release $env:B6H_BASE_TAG is not a published stable release." }
@@ -141,6 +155,19 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve the previous signed stable catalog.' }
           node scripts/update-package.mjs verify-catalog --catalog (Join-Path $previousDir 'catalog.json') --signature (Join-Path $previousDir 'catalog.sig') --key $env:B6H_PUBLIC_KEY --key-id b6h-update-ed25519-2026-11 --packages-dir $previousDir
           if ($LASTEXITCODE -ne 0) { throw 'The previous stable catalog or one of its packages failed verification.' }
+          $previousFullCatalog = Join-Path $previousDir 'catalog.json'
+          $previousFullSignature = Join-Path $previousDir 'catalog.sig'
+          $previousAssetNames = @(gh release view $env:B6H_BASE_TAG --repo $env:GITHUB_REPOSITORY --json assets --jq '.assets[].name')
+          if ($LASTEXITCODE -ne 0) { throw 'Could not inspect previous release assets.' }
+          if ($previousAssetNames -contains 'catalog-v2.json' -or $previousAssetNames -contains 'catalog-v2.sig') {
+            if (-not ($previousAssetNames -contains 'catalog-v2.json' -and $previousAssetNames -contains 'catalog-v2.sig')) { throw 'Previous revision catalog is incomplete.' }
+            gh release download $env:B6H_BASE_TAG --repo $env:GITHUB_REPOSITORY --pattern 'catalog-v2.json' --pattern 'catalog-v2.sig' --pattern 'catalog-v2.json.sha256' --pattern 'catalog-v2.sig.sha256' --dir $previousDir
+            if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve the previous revision catalog.' }
+            $previousFullCatalog = Join-Path $previousDir 'catalog-v2.json'
+            $previousFullSignature = Join-Path $previousDir 'catalog-v2.sig'
+            node scripts/update-package.mjs verify-catalog --catalog $previousFullCatalog --signature $previousFullSignature --key $env:B6H_PUBLIC_KEY --key-id b6h-update-ed25519-2026-11 --packages-dir $previousDir
+            if ($LASTEXITCODE -ne 0) { throw 'The previous revision catalog failed verification.' }
+          }
           gh release download $env:B6H_BASE_TAG --repo $env:GITHUB_REPOSITORY --pattern 'B6H-*-x64-Setup.exe' --pattern 'B6H-*-x64-Setup.exe.sha256' --dir $previousDir
           if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve the previous compatible installer for reuse or online discovery verification.' }
           $previousSetups = @(Get-ChildItem $previousDir -Filter 'B6H-*-x64-Setup.exe' -File)
@@ -153,7 +180,8 @@ jobs:
 
           if ($env:B6H_FRONTEND_CHANGED -eq 'true') {
             $frontend = Join-Path $releaseDir "B6H-v$env:B6H_VERSION-frontend.b6hupdate"
-            node scripts/update-package.mjs pack --component frontend --input dist/frontend-update --output $frontend --key $env:B6H_SIGNING_KEY --key-id b6h-update-ed25519-2026-11 --channel stable --version $env:B6H_VERSION --release-id "frontend-v$env:B6H_VERSION" --core $env:B6H_VERSION --previous-catalog (Join-Path $previousDir 'catalog.json')
+            $frontendMinimumCore = if ($env:B6H_CORE_CHANGED -eq 'true') { $env:B6H_CORE_VERSION } else { $env:B6H_PREVIOUS_CORE_VERSION }
+            node scripts/update-package.mjs pack --component frontend --input dist/frontend-update --output $frontend --key $env:B6H_SIGNING_KEY --key-id b6h-update-ed25519-2026-11 --channel stable --version $env:B6H_FRONTEND_VERSION --release-id "frontend-v$env:B6H_VERSION" --core $frontendMinimumCore --previous-catalog $previousFullCatalog
             if ($LASTEXITCODE -ne 0) { throw 'Frontend update package generation failed.' }
           }
 
@@ -171,7 +199,7 @@ jobs:
             New-Item -ItemType Directory -Path $coreInput -Force | Out-Null
             Copy-Item -LiteralPath $setupPath -Destination $coreInputFile
             $core = Join-Path $releaseDir "B6H-v$env:B6H_VERSION-core.b6hupdate"
-            node scripts/update-package.mjs pack --component core --input $coreInput --output $core --key $env:B6H_SIGNING_KEY --key-id b6h-update-ed25519-2026-11 --channel stable --version $env:B6H_VERSION --release-id "core-v$env:B6H_VERSION" --previous-catalog (Join-Path $previousDir 'catalog.json')
+            node scripts/update-package.mjs pack --component core --input $coreInput --output $core --key $env:B6H_SIGNING_KEY --key-id b6h-update-ed25519-2026-11 --channel stable --version $env:B6H_CORE_VERSION --release-id "core-v$env:B6H_VERSION" --core $compatibleCore --previous-catalog $previousFullCatalog
             if ($LASTEXITCODE -ne 0) { throw 'Core update package generation failed.' }
           } else {
             Copy-Item -LiteralPath $previousSetup -Destination (Join-Path $releaseDir $previousSetups[0].Name)
@@ -182,7 +210,7 @@ jobs:
             npm run wordcraft:build
             if ($LASTEXITCODE -ne 0) { throw 'Wordcraft runtime validation failed.' }
             $wordcraft = Join-Path $releaseDir "B6H-v$env:B6H_VERSION-wordcraft.b6hupdate"
-            node scripts/update-package.mjs pack --component wordcraft --input public/wordcraft --output $wordcraft --key $env:B6H_SIGNING_KEY --key-id b6h-update-ed25519-2026-11 --channel stable --version $env:B6H_VERSION --release-id "wordcraft-v$env:B6H_VERSION" --previous-catalog (Join-Path $previousDir 'catalog.json')
+            node scripts/update-package.mjs pack --component wordcraft --input public/wordcraft --output $wordcraft --key $env:B6H_SIGNING_KEY --key-id b6h-update-ed25519-2026-11 --channel stable --version $env:B6H_WORDCRAFT_VERSION --release-id "wordcraft-v$env:B6H_VERSION" --core $compatibleCore --previous-catalog $previousFullCatalog
             if ($LASTEXITCODE -ne 0) { throw 'Wordcraft update package generation failed.' }
           }
 
@@ -190,10 +218,30 @@ jobs:
           if ($packages.Count -eq 0) { throw 'The component plan produced no update packages.' }
           $baseUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/v$env:B6H_VERSION"
           $catalog = Join-Path $releaseDir 'catalog.json'
-          node scripts/update-package.mjs catalog --packages ($packages -join ',') --previous-catalog (Join-Path $previousDir 'catalog.json') --previous-signature (Join-Path $previousDir 'catalog.sig') --output $catalog --key $env:B6H_SIGNING_KEY --key-id b6h-update-ed25519-2026-11 --channel stable --base-url $baseUrl
+          $legacyPackages = @($packages)
+          if ($env:B6H_REVISION -ne '0') {
+            $legacyPackages = @($packages | Where-Object {
+              if ($_ -like '*-frontend.b6hupdate') { return [version]$frontendMinimumCore -le [version]$env:B6H_BASE_VERSION }
+              return $true
+            })
+            $previousLegacy = Get-Content -LiteralPath (Join-Path $previousDir 'catalog.json') -Raw | ConvertFrom-Json
+            if ($legacyPackages.Count -eq 0 -and -not @($previousLegacy.packages | Where-Object component -eq 'core').Count) { throw 'No Core bridge or compatible package is available to the v3.0.4 updater.' }
+          }
+          $legacyArgs = if ($legacyPackages.Count) { @('--packages', ($legacyPackages -join ',')) } else { @('--empty') }
+          node scripts/update-package.mjs catalog @legacyArgs --previous-catalog (Join-Path $previousDir 'catalog.json') --previous-signature (Join-Path $previousDir 'catalog.sig') --output $catalog --key $env:B6H_SIGNING_KEY --key-id b6h-update-ed25519-2026-11 --channel stable --base-url $baseUrl
           if ($LASTEXITCODE -ne 0) { throw 'Production catalog signing failed.' }
           node scripts/update-package.mjs verify-catalog --catalog $catalog --signature (Join-Path $releaseDir 'catalog.sig') --key $env:B6H_PUBLIC_KEY --key-id b6h-update-ed25519-2026-11 --packages-dir $releaseDir
           if ($LASTEXITCODE -ne 0) { throw 'The new signed catalog or one of its packages failed verification.' }
+          if ($env:B6H_REVISION -ne '0') {
+            $legacySequence = (Get-Content -LiteralPath $catalog -Raw | ConvertFrom-Json).sequence
+            $previousFullSequence = (Get-Content -LiteralPath $previousFullCatalog -Raw | ConvertFrom-Json).sequence
+            $fullSequence = [Math]::Max($legacySequence, $previousFullSequence) + 1
+            $fullCatalog = Join-Path $releaseDir 'catalog-v2.json'
+            node scripts/update-package.mjs catalog --packages ($packages -join ',') --previous-catalog $previousFullCatalog --previous-signature $previousFullSignature --sequence $fullSequence --output $fullCatalog --key $env:B6H_SIGNING_KEY --key-id b6h-update-ed25519-2026-11 --channel stable --base-url $baseUrl
+            if ($LASTEXITCODE -ne 0) { throw 'Revision catalog signing failed.' }
+            node scripts/update-package.mjs verify-catalog --catalog $fullCatalog --signature (Join-Path $releaseDir 'catalog-v2.sig') --key $env:B6H_PUBLIC_KEY --key-id b6h-update-ed25519-2026-11 --packages-dir $releaseDir
+            if ($LASTEXITCODE -ne 0) { throw 'Revision catalog verification failed.' }
+          }
 
           $files = @(Get-ChildItem $releaseDir -File | Where-Object Extension -ne '.sha256')
           foreach ($file in $files) {
@@ -250,7 +298,7 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             if ($draft.Trim() -ne 'true') { throw "Release $tag is already published; refusing to replace its assets." }
             $assets = @(Get-ChildItem -LiteralPath $env:B6H_RELEASE_DIR -File | ForEach-Object FullName)
-            gh release upload $tag @assets --repo $env:GITHUB_REPOSITORY --clobber
+            gh release upload $tag @assets --repo $env:GITHUB_REPOSITORY
           } else {
             gh release create $tag --repo $env:GITHUB_REPOSITORY --draft --verify-tag --latest=false --title "B6H $tag — Installer & Modular Update" --notes-file RELEASE_NOTES.md
             if ($LASTEXITCODE -ne 0) { throw 'Could not create the draft GitHub release.' }
@@ -276,10 +324,17 @@ jobs:
           }
           node scripts/update-package.mjs verify-catalog --catalog (Join-Path $verifyDir 'catalog.json') --signature (Join-Path $verifyDir 'catalog.sig') --key $env:B6H_PUBLIC_KEY --key-id b6h-update-ed25519-2026-11 --packages-dir $verifyDir
           if ($LASTEXITCODE -ne 0) { throw 'Uploaded catalog and packages failed signature/integrity verification.' }
+          if (Test-Path -LiteralPath (Join-Path $verifyDir 'catalog-v2.json')) {
+            node scripts/update-package.mjs verify-catalog --catalog (Join-Path $verifyDir 'catalog-v2.json') --signature (Join-Path $verifyDir 'catalog-v2.sig') --key $env:B6H_PUBLIC_KEY --key-id b6h-update-ed25519-2026-11 --packages-dir $verifyDir
+            if ($LASTEXITCODE -ne 0) { throw 'Uploaded revision catalog failed signature/integrity verification.' }
+          }
 
       - name: Publish verified release as Latest
         id: publish
-        run: gh release edit $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --draft=false --latest
+        shell: pwsh
+        run: |
+          if ('${{ steps.plan.outputs.revision }}' -ne '0') { throw 'Revision publication is blocked until the shipped v3.0.4 updater has completed verified discovery and activation testing.' }
+          gh release edit $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --draft=false --latest
 
       - name: Verify Settings discovery from the previous compatible installation
         shell: pwsh

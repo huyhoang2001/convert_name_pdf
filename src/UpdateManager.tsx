@@ -5,7 +5,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import app from '../package.json';
 import en from './locales/en.json';
 import { unsavedWorkspaces } from './unsavedWork';
-import { formatUpdateTimestamp } from './updateManagerText.mjs';
+import { formatComponentVersion, formatUpdateTimestamp } from './updateManagerText.mjs';
 
 type Update = { component: string; version: string; releaseId: string; files: number; bytes: number; stagedAt: string };
 type RuntimeStatus = { coreVersion: string; activeFrontend: string | null; activeWordcraft: string | null };
@@ -89,7 +89,7 @@ export default function UpdateManager({ t }: { t: (key: keyof typeof en) => stri
       if (!selected || Array.isArray(selected)) return;
       const update = await invoke<Update>('install_update_from_file', { file: selected });
       await refresh();
-      setStatus(update.stagedAt === 'already-staged' ? t('updateAlreadyStaged') : `${t('updateVerified')}: ${t(componentKeys[update.component] ?? 'updateUnknownComponent')} ${update.version}. ${t('updateStagedOnly')}`);
+      setStatus(update.stagedAt === 'already-staged' ? t('updateAlreadyStaged') : `${t('updateVerified')}: ${t(componentKeys[update.component] ?? 'updateUnknownComponent')} ${formatComponentVersion(update.component, update.version, update.releaseId)}. ${t('updateStagedOnly')}`);
       setStatusKind('info');
     } catch (error) {
       setStatus(`${t('updateFailed')}: ${String(error)}`);
@@ -101,6 +101,7 @@ export default function UpdateManager({ t }: { t: (key: keyof typeof en) => stri
   async function checkOnline() {
     if (!begin('check')) return;
     setStatus('');
+    setOnline([]);
     try {
       const found = await invoke<OnlineUpdate[]>('discover_online_updates');
       const active = await refresh();
@@ -108,6 +109,7 @@ export default function UpdateManager({ t }: { t: (key: keyof typeof en) => stri
       setOnline([...unique.values()].filter(update => activeVersion(update.component, active) !== update.version));
       if (!found.length) { setStatus(t('updateLatestStatus')); setStatusKind('info'); }
     } catch (error) {
+      setOnline([]);
       setStatus(`${t('updateFailed')}: ${String(error)}`);
       setStatusKind('error');
     } finally { end(); }
@@ -119,7 +121,7 @@ export default function UpdateManager({ t }: { t: (key: keyof typeof en) => stri
     try {
       await invoke('download_online_update', { component: update.component, releaseId: update.releaseId });
       await refresh();
-      setStatus(`${t('updateVerified')}: ${t(componentKeys[update.component] ?? 'updateUnknownComponent')} ${update.version}. ${t('updateStagedOnly')}`);
+      setStatus(`${t('updateVerified')}: ${t(componentKeys[update.component] ?? 'updateUnknownComponent')} ${formatComponentVersion(update.component, update.version, update.releaseId)}. ${t('updateStagedOnly')}`);
       setStatusKind('info');
     } catch (error) {
       setStatus(`${t('updateFailed')}: ${String(error)}`);
@@ -157,6 +159,11 @@ export default function UpdateManager({ t }: { t: (key: keyof typeof en) => stri
 
   const label = (component: string) => t(componentKeys[component] ?? 'updateUnknownComponent');
   const version = (component: string) => component === 'core' ? runtime?.coreVersion : component === 'frontend' ? runtime?.activeFrontend ?? app.version : runtime?.activeWordcraft ?? null;
+  const displayVersion = (component: string, value: string | null | undefined, releaseId?: string) => {
+    if (!value) return value;
+    const identity = releaseId ?? history.slice().reverse().find(entry => entry.action === 'activate' && entry.component === component && entry.version === value)?.releaseId;
+    return formatComponentVersion(component, value, identity);
+  };
   const activeVersionFor = (component: string) => runtime ? activeVersion(component, runtime) : null;
   const available = new Map<string, AvailableUpdate>();
   for (const update of online) {
@@ -183,14 +190,14 @@ export default function UpdateManager({ t }: { t: (key: keyof typeof en) => stri
     <section className="update-manager-section">
       <h3>{t('updateInstalledComponents')}</h3>
       <div className="settings-config-table-wrap"><table className="settings-config-table"><thead><tr><th>{t('updateComponent')}</th><th>{t('updateVersion')}</th><th>{t('updateStatus')}</th></tr></thead><tbody>
-        {['core', 'frontend', 'wordcraft'].map(component => <tr key={component}><td>{label(component)}</td><td>{version(component) ?? t(runtime ? 'updateVersionUnavailable' : 'updateChecking')}</td><td>{runtime ? component === 'core' || component === 'frontend' && runtime.activeFrontend || component === 'wordcraft' && runtime.activeWordcraft ? t('updateActive') : t('updateBundled') : t('updateChecking')}</td></tr>)}
+        {['core', 'frontend', 'wordcraft'].map(component => <tr key={component}><td>{label(component)}</td><td>{displayVersion(component, version(component)) ?? t(runtime ? 'updateVersionUnavailable' : 'updateChecking')}</td><td>{runtime ? component === 'core' || component === 'frontend' && runtime.activeFrontend || component === 'wordcraft' && runtime.activeWordcraft ? t('updateActive') : t('updateBundled') : t('updateChecking')}</td></tr>)}
       </tbody></table></div>
     </section>
 
     <section className="update-manager-section">
       <h3>{t('updateAvailable')}</h3>
       {available.size ? <div className="settings-config-table-wrap"><table className="settings-config-table"><thead><tr><th>{t('updateComponent')}</th><th>{t('updateCurrentVersion')}</th><th>{t('updateVersion')}</th><th>{t('updateDownloadSize')}</th><th>{t('updateRelease')}</th><th>{t('updateStatus')}</th><th>{t('updateAction')}</th></tr></thead><tbody>
-        {[...available.values()].map(update => <tr key={`${update.component}:${update.releaseId}`}><td>{label(update.component)}</td><td>{version(update.component) ?? t('updateVersionUnavailable')}</td><td>{update.version}</td><td>{update.archiveBytes == null ? '—' : formatBytes(update.archiveBytes)}</td><td>{update.releaseId}</td><td>{t(update.staged ? 'updateReadyToActivate' : 'updateReadyToDownload')}</td><td><button className={update.staged ? 'primary-button' : 'page-button'} type="button" disabled={busy} onClick={() => void (update.staged ? activate(update) : downloadOnline(update))}>{t(update.staged ? 'updateActivate' : 'updateDownload')}</button></td></tr>)}
+        {[...available.values()].map(update => <tr key={`${update.component}:${update.releaseId}`}><td>{label(update.component)}</td><td>{displayVersion(update.component, version(update.component)) ?? t('updateVersionUnavailable')}</td><td>{displayVersion(update.component, update.version, update.releaseId)}</td><td>{update.archiveBytes == null ? '—' : formatBytes(update.archiveBytes)}</td><td>{update.releaseId}</td><td>{t(update.staged ? 'updateReadyToActivate' : 'updateReadyToDownload')}</td><td><button className={update.staged ? 'primary-button' : 'page-button'} type="button" disabled={busy} onClick={() => void (update.staged ? activate(update) : downloadOnline(update))}>{t(update.staged ? 'updateActivate' : 'updateDownload')}</button></td></tr>)}
       </tbody></table></div> : <p className="settings-config-hint">{t('updateEmpty')}</p>}
     </section>
 

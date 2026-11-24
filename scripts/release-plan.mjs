@@ -2,6 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { createPublicKey, createPrivateKey } from 'node:crypto';
+import { compareReleaseVersions, nextReleaseRevision, parseReleaseVersion } from './release-version.mjs';
 
 const root = new URL('../', import.meta.url);
 const run = (args, cwd = root) => {
@@ -9,6 +10,10 @@ const run = (args, cwd = root) => {
   if (result.status !== 0) throw Error(result.stderr.trim() || `git ${args.join(' ')} failed`);
   return result.stdout.trim();
 };
+const knownTags = () => [...new Set([
+  ...run(['tag', '--list', 'v*']).split(/\r?\n/),
+  ...run(['ls-remote', '--tags', 'origin', 'v*']).split(/\r?\n/).map(line => line.split(/\s+/)[1]?.replace(/^refs\/tags\//, '').replace(/\^\{\}$/, '')),
+].filter(Boolean))];
 const option = name => {
   const index = process.argv.indexOf(name);
   return index < 0 ? undefined : process.argv[index + 1];
@@ -33,7 +38,7 @@ export function nextPatch(version, tags = []) {
 
 export function selectLatestPublishedReleaseTag(releases) {
   const release = releases
-    .filter(item => /^v\d+\.\d+\.\d+$/.test(item.tag_name ?? '') && !item.draft && !item.prerelease &&
+    .filter(item => /^v\d+\.\d+\.\d+(?:\.\d{4})?$/.test(item.tag_name ?? '') && !item.draft && !item.prerelease &&
       Number.isFinite(Date.parse(item.published_at ?? '')) &&
       ['catalog.json', 'catalog.sig'].every(name => item.assets?.some(asset => asset.name === name)))
     .sort((left, right) => Date.parse(right.published_at) - Date.parse(left.published_at))[0];
@@ -155,11 +160,15 @@ async function plan(base, head) {
     cargoLock,
     tauri: jsonAt(head, 'src-tauri/tauri.conf.json'),
   };
-  return { base, head, paths, components: classifyChangedPaths(paths, before, after), packageVersion: after.package.version, coreVersion: /^version\s*=\s*"([^"]+)"/m.exec(after.cargo)?.[1], frontendVersion: run(['show', `${head}:src-tauri/frontend-version.txt`]).trim(), wordcraftVersion: run(['show', `${head}:src-tauri/wordcraft-version.txt`]).trim(), tauriVersion: after.tauri.version };
+  return { base, head, paths, components: classifyChangedPaths(paths, before, after), packageVersion: after.package.version, coreVersion: /^version\s*=\s*"([^"]+)"/m.exec(after.cargo)?.[1], frontendVersion: run(['show', `${head}:src-tauri/frontend-version.txt`]).trim(), wordcraftVersion: run(['show', `${head}:src-tauri/wordcraft-version.txt`]).trim(), tauriVersion: after.tauri.version,
+    previousFrontendVersion: run(['show', `${base}:src-tauri/frontend-version.txt`]).trim(), previousCoreVersion: /^version\s*=\s*"([^"]+)"/m.exec(before.cargo)?.[1], previousWordcraftVersion: run(['show', `${base}:src-tauri/wordcraft-version.txt`]).trim() };
 }
 
 async function prepare() {
   const base = await latestTag();
+  const kind = option('--kind') ?? 'STANDARD';
+  if (!['STANDARD', 'HOTFIX'].includes(kind)) throw Error('Release kind must be STANDARD or HOTFIX.');
+  if (kind === 'HOTFIX' && option('--base-version') && option('--base-version') !== parseReleaseVersion(base).baseVersion) throw Error('Requested hotfix base is not the latest published base version.');
   const current = await currentInputs();
   const paths = run(['diff', '--name-only', `${base}..HEAD`]).split(/\r?\n/).filter(Boolean);
   const before = {
@@ -179,8 +188,12 @@ async function prepare() {
   const uncommitted = [...run(['diff', '--name-only', 'HEAD']).split(/\r?\n/), ...run(['ls-files', '--others', '--exclude-standard']).split(/\r?\n/)].filter(Boolean);
   const uncommittedComponents = classifyChangedPaths(uncommitted, before, after);
   if (uncommittedComponents.length) throw Error(`Commit intended application changes before preparing a release: ${uncommittedComponents.join(', ')}.`);
-  const tags = run(['tag', '--list', 'v*']).split(/\r?\n/).filter(tag => /^v\d+\.\d+\.\d+$/.test(tag));
-  const version = nextPatch(base, tags);
+  const allTags = knownTags();
+  const tags = allTags.filter(tag => /^v\d+\.\d+\.\d+$/.test(tag));
+  const version = kind === 'HOTFIX'
+    ? nextReleaseRevision(parseReleaseVersion(base).baseVersion, allTags.filter(tag => /^v\d+\.\d+\.\d+(?:\.\d{4})?$/.test(tag)))
+    : nextPatch(parseReleaseVersion(base).baseVersion, [...tags, `v${current.package.version}`, `v${/^version\s*=\s*"([^"]+)"/m.exec(current.cargo)?.[1]}`]);
+  const nativeVersion = kind === 'HOTFIX' ? nextPatch(current.package.version, tags) : version;
   const packageText = await readFile(new URL('../package.json', import.meta.url), 'utf8');
   const lockText = await readFile(new URL('../package-lock.json', import.meta.url), 'utf8');
   const lockMatch = /(name = "b6h"\r?\nversion = ")[^\"]+("\r?\n)/.exec(current.cargoLock);
@@ -188,7 +201,7 @@ async function prepare() {
   const readme = await readFile(readmeUrl, 'utf8');
   if (components.includes('frontend') && (!JSON.parse(packageText).version || !JSON.parse(lockText).packages?.[''])) throw Error('Frontend version metadata is incomplete.');
   if (components.includes('core') && (!/^version\s*=\s*"[^\"]+"/m.test(current.cargo) || !lockMatch)) throw Error('Core version metadata is incomplete.');
-  if (!/^The current maintenance release is B6H v\d+\.\d+\.\d+\..*$/m.test(readme)) throw Error('Could not locate the README current-release line.');
+  if (!/^The current maintenance release is B6H v\d+\.\d+\.\d+(?:\.\d{4})?\..*$/m.test(readme)) throw Error('Could not locate the README current-release line.');
   const summaries = [...new Set(run(['log', '--no-merges', '--format=%s', `${base}..HEAD`, '--', 'src', 'src-tauri/src', 'src-tauri/Cargo.toml', 'src-tauri/Cargo.lock', 'public/wordcraft']).split(/\r?\n/).map(value => value.trim()).filter(Boolean))];
   if (!summaries.length) summaries.push(`Maintenance update for ${components.join(', ')}`);
   const updateJson = async (path, change) => {
@@ -198,30 +211,30 @@ async function prepare() {
     await writeFile(url, `${JSON.stringify(value, null, 2)}\n`);
   };
   if (components.includes('frontend')) {
-    await updateJson('package.json', value => { value.version = version; });
+    await updateJson('package.json', value => { value.version = nativeVersion; });
     await updateJson('package-lock.json', value => {
-      value.version = version;
-      value.packages[''].version = version;
+      value.version = nativeVersion;
+      value.packages[''].version = nativeVersion;
     });
     const uiKnowledgeUrl = new URL('../src/uiKnowledge.json', import.meta.url);
     const uiKnowledge = await readFile(uiKnowledgeUrl, 'utf8');
-    await writeFile(uiKnowledgeUrl, updateUiKnowledgeVersion(uiKnowledge, version));
-    await writeFile(new URL('../src-tauri/frontend-version.txt', import.meta.url), version);
+    await writeFile(uiKnowledgeUrl, updateUiKnowledgeVersion(uiKnowledge, nativeVersion));
+    await writeFile(new URL('../src-tauri/frontend-version.txt', import.meta.url), nativeVersion);
   }
   if (components.includes('core')) {
-    const manifest = current.cargo.replace(/^version\s*=\s*"[^"]+"/m, `version = "${version}"`);
+    const manifest = current.cargo.replace(/^version\s*=\s*"[^"]+"/m, `version = "${nativeVersion}"`);
     if (!/^version\s*=\s*"[^"]+"/m.test(current.cargo)) throw Error('Could not update src-tauri/Cargo.toml package version.');
     if (manifest !== current.cargo) await writeFile(new URL('../src-tauri/Cargo.toml', import.meta.url), manifest);
-    const lock = current.cargoLock.replace(/(name = "b6h"\r?\nversion = ")[^"]+("\r?\n)/, `$1${version}$2`);
+    const lock = current.cargoLock.replace(/(name = "b6h"\r?\nversion = ")[^"]+("\r?\n)/, `$1${nativeVersion}$2`);
     if (!/(name = "b6h"\r?\nversion = ")[^"]+("\r?\n)/.test(current.cargoLock)) throw Error('Could not update the b6h entry in src-tauri/Cargo.lock.');
     if (lock !== current.cargoLock) await writeFile(new URL('../src-tauri/Cargo.lock', import.meta.url), lock);
     const tauriUrl = new URL('../src-tauri/tauri.conf.json', import.meta.url);
     const tauri = await readFile(tauriUrl, 'utf8');
-    const updatedTauri = tauri.replace(/("version"\s*:\s*")[^"]+("\s*,?)/, `$1${version}$2`);
+    const updatedTauri = tauri.replace(/("version"\s*:\s*")[^"]+("\s*,?)/, `$1${nativeVersion}$2`);
     if (!/("version"\s*:\s*")[^"]+("\s*,?)/.test(tauri)) throw Error('Could not update src-tauri/tauri.conf.json package version.');
     if (tauri !== updatedTauri) await writeFile(tauriUrl, updatedTauri);
   }
-  if (components.includes('wordcraft')) await writeFile(new URL('../src-tauri/wordcraft-version.txt', import.meta.url), version);
+  if (components.includes('wordcraft')) await writeFile(new URL('../src-tauri/wordcraft-version.txt', import.meta.url), kind === 'HOTFIX' ? nextPatch(current.wordcraftVersion) : version);
   const componentNames = components.map(value => value[0].toUpperCase() + value.slice(1)).join(', ');
   const notes = [
     `# B6H v${version} - Maintenance Release`,
@@ -232,10 +245,10 @@ async function prepare() {
     '',
   ].join('\n');
   await writeFile(new URL('../RELEASE_NOTES.md', import.meta.url), notes);
-  const updatedReadme = readme.replace(/^The current maintenance release is B6H v\d+\.\d+\.\d+\..*$/m, `The current maintenance release is B6H v${version}. See the release notes for its component changes.`);
+  const updatedReadme = readme.replace(/^The current maintenance release is B6H v\d+\.\d+\.\d+(?:\.\d{4})?\..*$/m, `The current maintenance release is B6H v${version}. See the release notes for its component changes.`);
   if (updatedReadme === readme && !readme.includes(`The current maintenance release is B6H v${version}.`)) throw Error('Could not update the README current-release line.');
   await writeFile(readmeUrl, updatedReadme);
-  return { base, version, components, changedFiles: paths };
+  return { base, version, nativeVersion, components, changedFiles: paths };
 }
 
 async function verifySigningKey() {
@@ -260,18 +273,19 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     else if (command === 'verify-key') await verifySigningKey();
     else if (command === 'plan') {
       const tag = option('--tag') ?? process.env.GITHUB_REF_NAME;
-      if (!tag || !/^v\d+\.\d+\.\d+$/.test(tag)) throw Error('Usage: release-plan.mjs plan --tag vX.Y.Z');
+      if (!tag) throw Error('Usage: release-plan.mjs plan --tag vX.Y.Z[.RRRR]');
+      const identity = parseReleaseVersion(tag);
       const base = await resolvePlanBase(option('--base'));
       const result = await plan(base, option('--head') ?? tag);
       if (!result.components.length) throw Error(`No application component changes since ${base}.`);
-      const priorTags = run(['tag', '--list', 'v*']).split(/\r?\n/).filter(value => /^v\d+\.\d+\.\d+$/.test(value) && value !== tag);
-      if (compareVersions(tag, base) <= 0 || nextPatch(base, priorTags) !== tag.slice(1)) throw Error(`Release tag ${tag} is not the next unused maintenance version after ${base}.`);
-      if (result.components.includes('frontend') && (result.packageVersion !== tag.slice(1) || result.frontendVersion !== tag.slice(1))) throw Error(`Frontend version metadata does not match tag ${tag}. Run npm run release:prepare before tagging.`);
-      if (result.components.includes('core') && result.coreVersion !== tag.slice(1)) throw Error(`Core version ${result.coreVersion} does not match tag ${tag}. Run npm run release:prepare before tagging.`);
-      if (result.components.includes('wordcraft') && result.wordcraftVersion !== tag.slice(1)) throw Error(`Wordcraft version ${result.wordcraftVersion} does not match tag ${tag}. Run npm run release:prepare before tagging.`);
+      const priorTags = knownTags().filter(value => /^v\d+\.\d+\.\d+(?:\.\d{4})?$/.test(value) && value !== tag);
+      if (compareReleaseVersions(tag, base) <= 0 || (identity.revision ? nextReleaseRevision(identity.baseVersion, priorTags) : nextPatch(parseReleaseVersion(base).baseVersion, [...priorTags.filter(value => /^v\d+\.\d+\.\d+$/.test(value)), `v${result.previousFrontendVersion}`, `v${result.previousCoreVersion}`])) !== tag.slice(1)) throw Error(`Release tag ${tag} is not the next unused release identity after ${base}.`);
+      if (result.components.includes('frontend') && (result.packageVersion !== result.frontendVersion || (identity.revision ? compareVersions(result.frontendVersion, result.previousFrontendVersion) <= 0 : result.frontendVersion !== tag.slice(1)))) throw Error(`Frontend version metadata is invalid for ${tag}.`);
+      if (result.components.includes('core') && (result.coreVersion !== result.tauriVersion || (identity.revision ? compareVersions(result.coreVersion, result.previousCoreVersion) <= 0 : result.coreVersion !== tag.slice(1)))) throw Error(`Core version metadata is invalid for ${tag}.`);
+      if (result.components.includes('wordcraft') && (identity.revision ? compareVersions(result.wordcraftVersion, result.previousWordcraftVersion) <= 0 : result.wordcraftVersion !== tag.slice(1))) throw Error(`Wordcraft version metadata is invalid for ${tag}.`);
       const notes = run(['show', `${tag}:RELEASE_NOTES.md`]);
       if (!notes.startsWith(`# B6H v${tag.slice(1)} `)) throw Error(`RELEASE_NOTES.md must describe ${tag}; run npm run release:prepare and review its generated notes before tagging.`);
-      console.log(JSON.stringify(result));
+      console.log(JSON.stringify({ ...result, releaseIdentity: identity }));
     } else throw Error('Usage: release-plan.mjs prepare | plan --tag vX.Y.Z');
   } catch (error) {
     console.error(error.message);

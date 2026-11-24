@@ -27,6 +27,18 @@ test('release planner maps changed runtime inputs to their components', () => {
   assert.deepEqual(classifyChangedPaths(['src-tauri/frontend-version.txt', 'src-tauri/wordcraft-version.txt'], inputs('3.0.2'), inputs('3.0.3')), []);
 });
 
+test('incremental routes keep unaffected components out of the build plan', async () => {
+  const before = inputs('3.0.4'); const after = inputs('3.0.4');
+  for (const [paths, expected] of [
+    [['src/style.css'], ['frontend']],
+    [['src-tauri/src/modular_update.rs'], ['core']],
+    [['public/wordcraft/wordcraft_bg.wasm'], ['wordcraft']],
+    [['src/UpdateManager.tsx', 'src-tauri/src/modular_update.rs'], ['frontend', 'core']],
+  ]) assert.deepEqual(classifyChangedPaths(paths, before, after), expected);
+  const { scripts } = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.doesNotMatch(scripts['build:frontend-update'], /cargo|tauri build|wordcraft|nsis/i);
+});
+
 test('release planner recognizes dependency changes and increments an unused maintenance version', () => {
   const before = inputs('3.0.2');
   const after = inputs('3.0.2');
@@ -43,6 +55,15 @@ test('release preparation baseline ignores local tags without a published stable
     { tag_name: 'v3.0.6-rc.1', draft: false, prerelease: true, published_at: '2026-11-24T00:00:00Z', assets: [{ name: 'catalog.json' }, { name: 'catalog.sig' }] },
   ];
   assert.equal(selectLatestPublishedReleaseTag(releases), 'v3.0.4');
+});
+
+test('published revision supersedes local-only standard tags', () => {
+  const signed = [{ name: 'catalog.json' }, { name: 'catalog.sig' }];
+  assert.equal(selectLatestPublishedReleaseTag([
+    { tag_name: 'v3.0.6', draft: true, prerelease: false, published_at: null, assets: [] },
+    { tag_name: 'v3.0.4.0001', draft: false, prerelease: false, published_at: '2026-11-24T00:00:00Z', assets: signed },
+    { tag_name: 'v3.0.4', draft: false, prerelease: false, published_at: '2026-11-23T15:41:05Z', assets: signed },
+  ]), 'v3.0.4.0001');
 });
 
 test('release plan defaults to the published baseline instead of the nearest local tag', async t => {
@@ -73,7 +94,17 @@ test('production release signing requires explicit manual authorization on a ver
   assert.match(workflow, /release-plan\.mjs verify-key/);
 });
 
-test('production Frontend packages declare the matching minimum Core version', async () => {
+test('production Frontend packages declare the planned minimum Core version', async () => {
   const workflow = await readFile(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
-  assert.match(workflow, /pack --component frontend[^\r\n]*--core \$env:B6H_VERSION/);
+  assert.match(workflow, /\$frontendMinimumCore = if \(\$env:B6H_CORE_CHANGED -eq 'true'\) \{ \$env:B6H_CORE_VERSION \} else \{ \$env:B6H_PREVIOUS_CORE_VERSION \}/);
+  assert.match(workflow, /pack --component frontend[^\r\n]*--core \$frontendMinimumCore/);
+});
+
+test('four-part production candidates stop before package signing until legacy activation is verified', async () => {
+  const workflow = await readFile(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
+  const gate = workflow.indexOf('Revision packaging is blocked until shipped v3.0.4 discovery and activation have been verified.');
+  const signing = workflow.indexOf('Prepare signed packages, catalog, and installer assets');
+  assert.ok(gate > 0 && gate < signing);
+  assert.match(workflow, /catalog-v2\.json/);
+  assert.match(workflow, /catalog-v2\.sig/);
 });

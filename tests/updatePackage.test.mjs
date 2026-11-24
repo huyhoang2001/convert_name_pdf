@@ -22,7 +22,8 @@ test('signed frontend and Wordcraft snapshots verify offline and reject tamperin
     const packages = [];
     for (const [component, input] of [['frontend', frontend], ['wordcraft', wordcraft]]) {
       const output = join(root, `${component}.b6hupdate`);
-      assert.equal(run('pack', '--component', component, '--input', input, '--output', output, '--key', join(keys, 'test-private.pem')).status, 0);
+      const minimumCore = component === 'frontend' ? ['--core', '3.0.5'] : [];
+      assert.equal(run('pack', '--component', component, '--input', input, '--output', output, '--key', join(keys, 'test-private.pem'), ...minimumCore).status, 0);
       assert.equal(run('verify', '--package', output, '--key', join(keys, 'test-public.pem')).status, 0);
       packages.push(output);
     }
@@ -43,7 +44,7 @@ test('signed frontend and Wordcraft snapshots verify offline and reject tamperin
     assert.equal(verify(null, emptyBytes, createPublicKey(await readFile(join(keys, 'test-public.pem'))), emptySignature), true);
     assert.deepEqual(JSON.parse(emptyBytes).packages, []);
     const incompatible = join(root, 'incompatible.b6hupdate');
-    assert.equal(run('pack', '--component', 'frontend', '--input', frontend, '--output', incompatible, '--key', join(keys, 'test-private.pem'), '--core', '2.0.25').status, 0);
+    assert.equal(run('pack', '--component', 'frontend', '--input', frontend, '--output', incompatible, '--key', join(keys, 'test-private.pem'), '--core', 'not-a-version').status, 0);
     assert.notEqual(run('verify', '--package', incompatible, '--key', join(keys, 'test-public.pem')).status, 0);
     for (const [component, output] of [['frontend', packages[0]], ['wordcraft', packages[1]]]) {
       const archive = unzipSync(await readFile(output)); archive['payload/' + (component === 'frontend' ? 'index.html' : 'runtime.js')][0] ^= 1; await writeFile(output, zipSync(archive));
@@ -86,7 +87,7 @@ test('stable catalogs retain unchanged signed components and advance package and
     const newFrontend = join(packages, 'frontend-v3.0.1.b6hupdate');
     result = run('pack', '--component', 'frontend', '--input', frontend1, '--output', newFrontend,
       '--key', join(keys, 'test-private.pem'), '--key-id', 'release-test', '--channel', 'stable', '--version', '3.0.1',
-      '--release-id', 'frontend-v3.0.1', '--core', '3.0.0', '--previous-catalog', previousCatalog);
+      '--release-id', 'frontend-v3.0.1', '--core', '3.0.5', '--previous-catalog', previousCatalog);
     assert.equal(result.status, 0, result.stdout + result.stderr);
     const currentCatalog = join(currentDir, 'catalog.json');
     result = run('catalog', '--packages', newFrontend, '--previous-catalog', previousCatalog, '--output', currentCatalog,
@@ -95,6 +96,7 @@ test('stable catalogs retain unchanged signed components and advance package and
     const catalog = JSON.parse(await readFile(currentCatalog, 'utf8'));
     assert.equal(catalog.sequence, 2);
     assert.deepEqual(catalog.packages.map(item => [item.component, item.version, item.sequence]), [['wordcraft', '3.0.0', 1], ['frontend', '3.0.1', 2]]);
+    assert.equal(catalog.packages.find(item => item.component === 'frontend').requires.core, '3.0.5');
     result = run('verify-catalog', '--catalog', currentCatalog, '--key', join(keys, 'test-public.pem'), '--key-id', 'release-test', '--packages-dir', packages);
     assert.equal(result.status, 0, result.stdout + result.stderr);
     await writeFile(join(currentDir, 'catalog.sig'), 'invalid\n');

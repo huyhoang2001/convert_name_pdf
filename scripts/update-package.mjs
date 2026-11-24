@@ -20,6 +20,7 @@ const compareVersion = (left, right) => {
   const a = parse(left), b = parse(right);
   return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 };
+const isStableVersion = value => typeof value === 'string' && /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value);
 const keyId = () => {
   const id = option('--key-id') ?? 'local-test-only';
   if (!/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(id)) throw Error('Invalid signing key ID.');
@@ -204,7 +205,7 @@ with zipfile.ZipFile(p) as z:
   const manifestBytes = Buffer.from(result.manifest, 'base64');
   if (!verify(null, manifestBytes, createPublicKey(await readFile(keyPath)), Buffer.from(result.signature, 'base64'))) throw Error('Package signature is invalid.');
   const manifest = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(manifestBytes));
-  if (manifest.schemaVersion !== 1 || manifest.productId !== 'com.safe-pdf-rename.desktop' || manifest.platform !== 'windows' || manifest.arch !== 'x86_64' || !['frontend', 'wordcraft', 'core'].includes(manifest.component) || manifest.requires?.core !== '3.0.0' || manifest.requires?.ipcContract !== 1 || manifest.requires?.wordcraftBridge !== 1 || !Array.isArray(manifest.files) || manifest.files.length > MAX_FILES || (manifest.component === 'core' && manifest.files.length !== 1)) throw Error('Unsupported or invalid update manifest.');
+  if (manifest.schemaVersion !== 1 || manifest.productId !== 'com.safe-pdf-rename.desktop' || manifest.platform !== 'windows' || manifest.arch !== 'x86_64' || !['frontend', 'wordcraft', 'core'].includes(manifest.component) || !isStableVersion(manifest.requires?.core) || manifest.requires?.ipcContract !== 1 || manifest.requires?.wordcraftBridge !== 1 || !Array.isArray(manifest.files) || manifest.files.length > MAX_FILES || (manifest.component === 'core' && manifest.files.length !== 1)) throw Error('Unsupported or invalid update manifest.');
   const expected = new Set(['manifest.json', 'manifest.sig']);
   let total = 0;
   for (const file of manifest.files) {
@@ -266,7 +267,7 @@ async function verifyCatalog() {
       const packageSidecar = await readFile(`${path}.sha256`, 'utf8').then(value => value.trim(), () => '');
       if (packageSidecar && packageSidecar !== `${item.sha256} *${name}`) throw Error(`Package SHA-256 sidecar mismatch: ${name}`);
       const manifest = await verifyPackagePath(path, keyPath);
-      if (manifest.component !== item.component || manifest.version !== item.version || manifest.releaseId !== item.releaseId || manifest.sequence !== item.sequence || manifest.keyId !== catalog.keyId || manifest.channel !== catalog.channel) throw Error(`Catalog package metadata does not match ${name}.`);
+      if (manifest.component !== item.component || manifest.version !== item.version || manifest.releaseId !== item.releaseId || manifest.sequence !== item.sequence || manifest.keyId !== catalog.keyId || manifest.channel !== catalog.channel || JSON.stringify(manifest.requires) !== JSON.stringify(item.requires)) throw Error(`Catalog package metadata does not match ${name}.`);
     }
     console.log(`Verified signed catalog ${basename(catalogPath)} (sequence ${catalog.sequence}, ${catalog.packages.length} packages)`);
   } finally {
